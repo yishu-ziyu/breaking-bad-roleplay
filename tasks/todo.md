@@ -74,5 +74,13 @@
 
 - [x] 检查本地敏感文件和忽略规则。
 - [x] 初始化 Git 仓库并创建首个提交。
-- [ ] 创建 GitHub 远端仓库并推送 main 分支。
-- [ ] 验证远端仓库可访问。
+- [x] 创建 GitHub 远端仓库并推送 main 分支。
+- [x] 验证远端仓库可访问。
+
+## Review - 2026-05-19 GitHub 仓库
+
+- 本地仓库：`/Users/mahaoxuan/Desktop/黑客松/breaking-bad-roleplay`。
+- 远端仓库：`https://github.com/yishu-ziyu/breaking-bad-roleplay`。
+- 可见性：Private。
+- 默认分支：`main`。
+- 安全检查：`.env.local` 被 `.gitignore` 的 `*.local` 规则忽略，真实 MiniMax Token Plan Key 未提交。
