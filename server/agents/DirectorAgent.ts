@@ -32,6 +32,10 @@ function applyDelta(state: RelationshipState, delta: Partial<RelationshipState>)
   }
 }
 
+function isCharacterId(value: string): value is CharacterId {
+  return characterIds.includes(value as CharacterId)
+}
+
 function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
@@ -140,18 +144,23 @@ export class DirectorAgent {
       }
     }
 
-    const mentioned = characterIds.filter((id) => {
-      const normalized = request.userText.toLowerCase()
+    const requestedCrew = request.crewParticipantIds?.filter(isCharacterId) ?? characterIds
+    const allowedSpeakers = Array.from(new Set([request.characterId, ...requestedCrew])).filter(isCharacterId)
+    const normalized = request.userText.toLowerCase()
+    const mentioned = allowedSpeakers.filter((id) => {
       return normalized.includes(id) || normalized.includes(this.displayName(id).toLowerCase())
     })
-    const pressureRank = [...characterIds].sort(
+    const pressureRank = [...allowedSpeakers].sort(
       (left, right) => request.relationshipStates[right].pressure - request.relationshipStates[left].pressure,
     )
-    const speakers = Array.from(new Set([request.characterId, ...mentioned, ...pressureRank])).slice(0, 3)
+    const speakers = Array.from(new Set([request.characterId, ...mentioned, ...pressureRank])).slice(
+      0,
+      Math.min(3, allowedSpeakers.length),
+    )
     return {
       speakers,
       scene_goal: storyEvent.event_banner ? `Respond to the event: ${storyEvent.event_banner}` : 'Let the most pressured characters debate the user move.',
-      tension_note: 'Crew mode uses a director plan instead of fixed rotation.',
+      tension_note: 'Crew mode uses the user-selected roster before director speaker planning.',
     }
   }
 

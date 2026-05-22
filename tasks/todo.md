@@ -221,3 +221,18 @@
 - 本地记忆：运行时生成 `server/agents/memory/*`，并通过 `.gitignore` 忽略。
 - 前端验收：内置浏览器显示中文默认界面、Agent Runtime、剧情时钟、事件 banner、多人局导演计划、工具日志折叠入口和记忆变化；控制台无 error/warn。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过；curl smoke tests 验证单聊、多人局和 `/api/game-loop` 均可返回结构化结果。
+
+## 计划 - 2026-05-23 多人局参与者选择
+
+- [x] 给 Agent Runtime 请求增加 `crewParticipantIds`，表达用户选择的多人局入场名单。
+- [x] 让 Director 只在用户选择的 roster 内做 speaker plan，主角色始终强制入场。
+- [x] 在侧栏多人局模式下增加参与角色勾选控件。
+- [x] 运行 lint/build、API smoke test 和内置浏览器验收。
+
+## Review - 2026-05-23 多人局参与者选择
+
+- 前端：多人局模式下新增 `参与角色` 复选控件；当前主角色始终勾选且不可移除，其余角色可由用户显式加入或排除。
+- 后端：`/api/chat` 的 Agent Runtime 请求支持 `crewParticipantIds`；Director 只会在用户选择的 roster 内规划本轮发言者。
+- API 验证：请求只选择 Walter/Saul，同时消息点名 Jesse/Mike/Gus，返回 speakers 和 agent messages 均只有 `walter`、`saul`。
+- 浏览器验收：内置浏览器中切到多人局后可取消 Jesse/Skyler/Mike/Gus，仅保留 Walter/Saul；发送测试消息后页面只生成 Walter 和 Saul 回复，`/api/chat` 返回 200，控制台无 error/warn。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。

@@ -222,6 +222,8 @@ const uiText = {
     mode: 'Conversation mode',
     private: 'Private',
     crew: 'Crew',
+    crewParticipants: 'Crew roster',
+    leadParticipant: 'Lead',
     modelService: 'Live model service',
     liveMiniMax: 'MiniMax Token Plan',
     liveMiniMaxHint: 'Server-side MiniMax-M2.7 is connected through /api/chat.',
@@ -258,6 +260,8 @@ const uiText = {
     mode: '对话模式',
     private: '私聊',
     crew: '多人局',
+    crewParticipants: '参与角色',
+    leadParticipant: '主角',
     modelService: '真实模型服务',
     liveMiniMax: 'MiniMax Token Plan',
     liveMiniMaxHint: '已通过 /api/chat 服务端接入 MiniMax-M2.7。',
@@ -480,6 +484,7 @@ async function callAgentRuntime(
   userText: string,
   language: Language,
   relationshipStates: Record<CharacterId, RelationshipState>,
+  crewParticipantIds: CharacterId[],
 ): Promise<AgentRuntimeResponse> {
   const response = await fetch('/api/chat', {
     method: 'POST',
@@ -500,6 +505,7 @@ async function callAgentRuntime(
         gifQuery: chatMessage.gifQuery,
       })),
       relationshipStates,
+      crewParticipantIds: mode === 'crew' ? crewParticipantIds : [characterId],
     }),
   })
 
@@ -520,6 +526,7 @@ function App() {
   const t = uiText[language]
   const [relation, setRelation] = useState(selectedCharacter.relationOptions[0])
   const [mode, setMode] = useState<ChatMode>('direct')
+  const [crewParticipantIds, setCrewParticipantIds] = useState<CharacterId[]>(() => characters.map((character) => character.id))
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -548,10 +555,21 @@ function App() {
     [selectedCharacter, relation, mode, messages, message, language, relationshipStates],
   )
 
+  const activeCrewParticipantIds = useMemo(
+    () => Array.from(new Set([selectedCharacter.id, ...crewParticipantIds])),
+    [crewParticipantIds, selectedCharacter.id],
+  )
+
+  const toggleCrewParticipant = (id: CharacterId) => {
+    if (id === selectedCharacter.id) return
+    setCrewParticipantIds((current) => (current.includes(id) ? current.filter((currentId) => currentId !== id) : [...current, id]))
+  }
+
   const handleCharacterChange = (id: CharacterId) => {
     const nextCharacter = characters.find((character) => character.id === id) ?? selectedCharacter
     setSelectedCharacterId(id)
     setRelation(nextCharacter.relationOptions[0])
+    setCrewParticipantIds((current) => Array.from(new Set([id, ...current])))
     setMessages([
       {
         id: makeId(),
@@ -601,7 +619,16 @@ function App() {
     setError(null)
 
     try {
-      const runtime = await callAgentRuntime(selectedCharacter.id, relation, mode, nextHistory, userText, language, relationshipStates)
+      const runtime = await callAgentRuntime(
+        selectedCharacter.id,
+        relation,
+        mode,
+        nextHistory,
+        userText,
+        language,
+        relationshipStates,
+        activeCrewParticipantIds,
+      )
       setLastDirectorPlan(runtime.director_plan)
       setLastStoryEvent(runtime.story_event)
 
@@ -712,6 +739,34 @@ function App() {
             </button>
           </div>
         </section>
+
+        {mode === 'crew' && (
+          <section className="panel-section">
+            <span className="field-label">{t.crewParticipants}</span>
+            <div className="crew-participant-grid">
+              {characters.map((character) => {
+                const isLead = character.id === selectedCharacter.id
+                const isChecked = activeCrewParticipantIds.includes(character.id)
+                const className = ['crew-participant-option', isChecked ? 'active' : '', isLead ? 'lead' : '']
+                  .filter(Boolean)
+                  .join(' ')
+                return (
+                  <label className={className} key={character.id} style={{ '--character-color': character.color } as CSSProperties}>
+                    <input
+                      checked={isChecked}
+                      disabled={isLead}
+                      onChange={() => toggleCrewParticipant(character.id)}
+                      type="checkbox"
+                    />
+                    <span>{character.name.slice(0, 1)}</span>
+                    <strong>{character.name}</strong>
+                    {isLead && <em>{t.leadParticipant}</em>}
+                  </label>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         <section className="panel-section">
           <span className="field-label">{t.modelService}</span>
