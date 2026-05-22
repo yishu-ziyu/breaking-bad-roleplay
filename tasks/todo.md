@@ -191,3 +191,15 @@
 - 新增经验：`tasks/lessons.md` 记录“局部症状 -> 同类对象 -> 覆盖矩阵 -> 共享质量门槛 -> 定向实现”的规则。
 - 新增审计：`materials/breaking-bad/ROLE_GIF_COVERAGE_AUDIT.md` 明确 Walter 7、Jesse 1、Skyler 0、Saul 0、Mike 1、Gus 8 的当前状态和风险。
 - 关键结论：Jesse、Skyler、Saul、Mike 不是“以后顺手补”的小问题，而是和 Gus 重复同源的系统性素材库缺口。
+
+## 计划 - 2026-05-22 外部 AI 素材研究交付文档
+
+- [x] 汇总现有素材库、GIF 视觉语义流程、覆盖审计和 ingestion schema。
+- [x] 写一份 Gemini/外部 AI 可直接执行的探索、搜索、视觉判断和存档任务书。
+- [x] 明确 Codex 后续审核、验证和接入流程。
+
+## Review - 2026-05-22 外部 AI 素材研究交付文档
+
+- 新增文档：`materials/breaking-bad/EXTERNAL_AI_RESEARCH_AND_ARCHIVE_BRIEF.md`。
+- 文档内容：外部 AI 角色边界、优先级、目录契约、GIF JSONL schema、source schema、角色目标、搜索策略、视觉审查清单、voice/relationship schema、交付 README 模板、verification notes、Codex 审核流程和可复制给 Gemini 的最终 prompt。
+- 关键约束：外部 AI 不直接改代码，不保存完整剧本/字幕/大段台词，不把可访问 GIF 直接等同于 approved。
