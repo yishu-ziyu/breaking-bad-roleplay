@@ -165,3 +165,17 @@
 - 多人局：替换原有硬编码占位回复，先调用 MiniMax 生成 director speaker plan，再按最多三名角色逐个调用真实模型；点名角色会参与补强，测试中生成 Walter / Saul / Gus 三人回复。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
 - 浏览器验证：Codex 内置 DevTools 访问 `http://127.0.0.1:3026/`，4 次 `/api/chat` 请求均返回 200，控制台无 error/warn；截图留存 `/tmp/abq-agentic-v1.png`。
+
+## 计划 - 2026-05-22 GIF 视觉语义库工作流
+
+- [x] 派 5.3 子 agent 审计当前 GIF 资产与触发机制。
+- [x] 派 5.3 子 agent 设计外部 AI 可执行的视觉分析/语义锚定流程。
+- [x] 对当前 Gus GIF 做抽帧 contact sheet，确认视觉分析必要性。
+- [x] 写入项目内详细流程文档。
+
+## Review - 2026-05-22 GIF 视觉语义库工作流
+
+- 新增文档：`materials/breaking-bad/GIF_VISUAL_SEMANTIC_WORKFLOW.md`。
+- 新增视觉证据：`materials/breaking-bad/audits/gus-gif-contact-sheet-2026-05-22.jpg`。
+- 关键结论：当前运行时仍接近“有 `gif_search_query` 就出图”；下一版应改成 `show_gif` 显式开关 + `gif_scene_function` 语义锚定 + approved/hold/rejected 资产状态。
+- Gus 抽帧发现：扩容后虽然解决重复，但部分候选带 meme 文案或字幕覆盖，应进入 hold/rejected，而不是直接作为高质量 approved 资产。
