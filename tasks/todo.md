@@ -179,3 +179,15 @@
 - 新增视觉证据：`materials/breaking-bad/audits/gus-gif-contact-sheet-2026-05-22.jpg`。
 - 关键结论：当前运行时仍接近“有 `gif_search_query` 就出图”；下一版应改成 `show_gif` 显式开关 + `gif_scene_function` 语义锚定 + approved/hold/rejected 资产状态。
 - Gus 抽帧发现：扩容后虽然解决重复，但部分候选带 meme 文案或字幕覆盖，应进入 hold/rejected，而不是直接作为高质量 approved 资产。
+
+## 计划 - 2026-05-22 GIF 反思机制
+
+- [x] 将“不要只修单个角色，要检查同类对象”的纠偏写入 `tasks/lessons.md`。
+- [x] 建立全角色 GIF 覆盖审计，而不是只记录 Gus。
+- [x] 把视觉语义工作流的 backlog 改为先跑角色级覆盖审计。
+
+## Review - 2026-05-22 GIF 反思机制
+
+- 新增经验：`tasks/lessons.md` 记录“局部症状 -> 同类对象 -> 覆盖矩阵 -> 共享质量门槛 -> 定向实现”的规则。
+- 新增审计：`materials/breaking-bad/ROLE_GIF_COVERAGE_AUDIT.md` 明确 Walter 7、Jesse 1、Skyler 0、Saul 0、Mike 1、Gus 8 的当前状态和风险。
+- 关键结论：Jesse、Skyler、Saul、Mike 不是“以后顺手补”的小问题，而是和 Gus 重复同源的系统性素材库缺口。

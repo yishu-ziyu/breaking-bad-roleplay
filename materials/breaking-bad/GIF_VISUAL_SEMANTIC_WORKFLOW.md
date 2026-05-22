@@ -255,6 +255,7 @@ Return JSONL records matching GIF_CANDIDATE_ANALYSIS. Prefer clean, character-ce
 
 ## Implementation Backlog
 
+0. Run the role-wide coverage audit in `ROLE_GIF_COVERAGE_AUDIT.md` before fixing only one character. A repeated GIF complaint for one role should be treated as a possible class-wide media-library defect.
 1. Add `show_gif` to `RoleplayOutput` in `src/App.tsx` and `server/minimax.ts`.
 2. Update `buildContextPrompt` schema so GIF is opt-in, not query-driven.
 3. Add a `gif_scene_function` or `gif_semantic_anchor` field.
@@ -263,4 +264,3 @@ Return JSONL records matching GIF_CANDIDATE_ANALYSIS. Prefer clean, character-ce
 6. Change `resolveGif` to score approved assets and suppress weak matches.
 7. Add a small verifier script that checks per-role pool size, duplicate URLs, HTTP status, and missing `usageNotes`.
 8. Run a visual audit for Walter, Jesse, Mike, and Gus; then build Skyler and Saul from scratch with clean approved assets.
-
