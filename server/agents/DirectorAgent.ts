@@ -63,7 +63,7 @@ export class DirectorAgent {
       const agent = new AgentContainer(speaker)
       const message = await agent.runCognitiveLoop({
         userText: request.userText,
-        relation: speaker === request.characterId ? request.relation : 'scene participant',
+        relation: speaker === request.characterId ? request.relation : request.language === 'zh' ? '同场的人' : 'person in the room',
         mode: request.mode,
         language: request.language,
         history: debateHistory,

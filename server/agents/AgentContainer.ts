@@ -31,6 +31,38 @@ const characterNames: Record<CharacterId, string> = {
   gus: 'Gus',
 }
 
+const zhRelationLabels: Record<string, string> = {
+  'former student': '前学生',
+  'family member': '家人',
+  'lab partner': '实验室搭档',
+  'DEA liability': 'DEA 风险人物',
+  'old colleague': '旧同事',
+  partner: '搭档',
+  'old friend': '老朋友',
+  'dealer contact': '街头联系人',
+  'younger sibling figure': '像弟妹一样的人',
+  'person he disappointed': '被他辜负的人',
+  spouse: '配偶',
+  'bookkeeping client': '记账客户',
+  neighbor: '邻居',
+  'person hiding something': '有所隐瞒的人',
+  client: '客户',
+  witness: '证人',
+  'business partner': '生意伙伴',
+  'problem to solve': '待解决的问题',
+  'person with cash': '带现金的人',
+  asset: '资产',
+  employer: '雇主',
+  'person under protection': '被保护的人',
+  'loose end': '未处理干净的人',
+  rookie: '新人',
+  employee: '员工',
+  supplier: '供应方',
+  rival: '对手',
+  guest: '客人',
+  'person being evaluated': '被评估的人',
+}
+
 const defaultObjectives: Record<CharacterId, string[]> = {
   walter: ['recover authority', 'keep technical curiosity inside fictional dramatic boundaries'],
   jesse: ['protect self-respect', 'test whether loyalty is being exploited'],
@@ -254,10 +286,11 @@ export class AgentContainer {
     const name = characterNames[this.characterId]
     const pressure = input.relationshipState.pressure + (memoryDelta.pressure ?? 0)
     const emotion_state = pressure >= 5 ? '压迫升级' : input.language === 'zh' ? '谨慎试探' : 'guarded pressure'
+    const relationLabel = input.language === 'zh' ? (zhRelationLabels[input.relation] ?? input.relation) : input.relation
     const reply_text =
       input.language === 'zh'
-        ? this.zhFallback(input.relation, toolLogs)
-        : this.enFallback(name, input.relation, toolLogs)
+        ? this.zhFallback(relationLabel, toolLogs)
+        : this.enFallback(name, relationLabel, toolLogs)
 
     return {
       character_id: this.characterId,
@@ -387,15 +420,16 @@ ${input.userText}`
   private zhFallback(relation: string, toolLogs: AgentToolLog[]) {
     const toolBeat = toolLogs[0]?.risk_level === 'high' ? '这个房间里的风险已经变得太明显了。' : '我听见的不是问题，是压力。'
     if (this.characterId === 'jesse') return `等等，你现在这样说真的很不对劲。${toolBeat} 你到底是想让我相信你，还是想让我替你扛下来？`
-    if (this.characterId === 'skyler') return `我希望你明白，我不是在要一个表演出来的解释。${toolBeat} 请直接告诉我，${relation} 这个身份现在还意味着什么。`
+    if (this.characterId === 'skyler') return `我希望你明白，我不是在要一个表演出来的解释。${toolBeat} 请直接告诉我，你现在到底在隐瞒什么。`
     if (this.characterId === 'saul') return `好，先别把事情说得像世界末日。${toolBeat} 我们可以谈选择，但别把选择说成没有后果。`
     if (this.characterId === 'mike') return `少说一点。${toolBeat} 你先弄清楚自己是不是在让局面变得更糟。`
-    if (this.characterId === 'gus') return `我欣赏坦诚，${relation}。${toolBeat} 但我更看重纪律。你接下来的回答会说明很多。`
+    if (this.characterId === 'gus') return `我欣赏坦诚。${toolBeat} 但我更看重纪律。你接下来的回答会说明很多。`
     return `${relation}，${toolBeat} 你要理解，我现在要求的不是服从，而是精确。`
   }
 
   private enFallback(name: string, relation: string, toolLogs: AgentToolLog[]) {
     const toolBeat = toolLogs[0]?.risk_level === 'high' ? 'The risk in this room is no longer theoretical.' : 'What I hear is not a question; it is pressure.'
-    return `${name} studies you for a moment. ${toolBeat} As my ${relation}, you need to decide whether you are asking for truth or testing control.`
+    const anchor = relation === 'person in the room' ? 'You' : `As my ${relation}, you`
+    return `${name} studies you for a moment. ${toolBeat} ${anchor} need to decide whether you are asking for truth or testing control.`
   }
 }

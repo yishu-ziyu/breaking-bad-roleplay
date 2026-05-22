@@ -29,11 +29,6 @@ type ChatMessage = {
   emotion?: string
   gifQuery?: string | null
   gifUrl?: string | null
-  planSummary?: string
-  reflectionSummary?: string
-  toolLogs?: AgentToolLog[]
-  memoryDelta?: Partial<RelationshipState>
-  storyEvent?: StoryEvent | null
 }
 
 type RoleplayOutput = {
@@ -229,16 +224,11 @@ const uiText = {
     liveMiniMaxHint: 'Server-side MiniMax-M2.7 is connected through /api/chat.',
     agentRuntime: 'Agent Runtime',
     storyClock: 'Story clock',
-    toolLogs: 'Tool logs',
-    planSummary: 'Plan',
-    reflectionSummary: 'Reflection',
-    memoryDelta: 'Memory delta',
     eventBanner: 'Story event',
     relationshipState: 'Relationship State',
     statePanel: 'State Panel',
     showState: 'Show',
     hideState: 'Hide',
-    directorPlan: 'Director plan',
     promptEngine: 'Prompt Engine',
     promptLayers: 'System + context + schema',
     inspectPrompt: 'Inspect compiled prompt',
@@ -267,16 +257,11 @@ const uiText = {
     liveMiniMaxHint: '已通过 /api/chat 服务端接入 MiniMax-M2.7。',
     agentRuntime: 'Agent Runtime',
     storyClock: '剧情时钟',
-    toolLogs: '工具日志',
-    planSummary: '计划摘要',
-    reflectionSummary: '反思摘要',
-    memoryDelta: '记忆变化',
     eventBanner: '剧情事件',
     relationshipState: '关系状态',
     statePanel: '状态窗口',
     showState: '显示',
     hideState: '隐藏',
-    directorPlan: '导演计划',
     promptEngine: '提示词引擎',
     promptLayers: '系统指令 + 动态上下文 + 输出结构',
     inspectPrompt: '查看拼装后的提示词',
@@ -532,7 +517,6 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [relationshipStates, setRelationshipStates] = useState(createInitialRelationshipStates)
   const [isStatePanelOpen, setIsStatePanelOpen] = useState(false)
-  const [lastDirectorPlan, setLastDirectorPlan] = useState<DirectorPlanOutput | null>(null)
   const [lastStoryEvent, setLastStoryEvent] = useState<StoryEvent | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -580,7 +564,6 @@ function App() {
         gifUrl: null,
       },
     ])
-    setLastDirectorPlan(null)
     setLastStoryEvent(null)
   }
 
@@ -598,7 +581,6 @@ function App() {
     ])
     setMessage('')
     setError(null)
-    setLastDirectorPlan(null)
     setLastStoryEvent(null)
   }
 
@@ -629,7 +611,6 @@ function App() {
         relationshipStates,
         activeCrewParticipantIds,
       )
-      setLastDirectorPlan(runtime.director_plan)
       setLastStoryEvent(runtime.story_event)
 
       const replies: ChatMessage[] = runtime.agent_messages.map((output, index) => {
@@ -654,11 +635,6 @@ function App() {
                   recentCharacterGifUrls,
                   `${nextHistory.length}:${index}:${userText}`,
                 ),
-          planSummary: output.plan_summary,
-          reflectionSummary: output.reflection_summary,
-          toolLogs: output.tool_logs,
-          memoryDelta: output.memory_delta,
-          storyEvent: index === 0 ? runtime.story_event : null,
         }
       })
 
@@ -669,13 +645,6 @@ function App() {
     } finally {
       setIsSending(false)
     }
-  }
-
-  const renderMemoryDelta = (delta: Partial<RelationshipState> | undefined) => {
-    if (!delta) return null
-    const entries = stateMetrics.filter((metric) => delta[metric])
-    if (!entries.length) return null
-    return entries.map((metric) => `${stateLabels[metric][language]} ${delta[metric]! > 0 ? '+' : ''}${delta[metric]}`).join(' / ')
   }
 
   return (
@@ -847,11 +816,6 @@ function App() {
                 ? `${selectedCharacter.name} 与其${getRelationLabel(relation, language)}`
                 : `${selectedCharacter.name} with their ${getRelationLabel(relation, language)}`}
             </h2>
-            {mode === 'crew' && lastDirectorPlan && (
-              <span className="director-note">
-                {t.directorPlan}: {lastDirectorPlan.scene_goal || lastDirectorPlan.tension_note || lastDirectorPlan.speakers.join(', ')}
-              </span>
-            )}
             {lastStoryEvent?.event_banner && (
               <span className="director-note">
                 {t.eventBanner}: {lastStoryEvent.event_banner}
@@ -883,52 +847,6 @@ function App() {
                     {chatMessage.emotion && <span>{chatMessage.emotion}</span>}
                   </div>
                   <p>{chatMessage.text}</p>
-                  {(chatMessage.storyEvent?.event_banner ||
-                    chatMessage.planSummary ||
-                    chatMessage.reflectionSummary ||
-                    chatMessage.toolLogs?.length ||
-                    renderMemoryDelta(chatMessage.memoryDelta)) && (
-                    <div className="agent-runtime-card">
-                      {chatMessage.storyEvent?.event_banner && (
-                        <div className="runtime-row event-row">
-                          <strong>{t.eventBanner}</strong>
-                          <span>{chatMessage.storyEvent.event_banner}</span>
-                        </div>
-                      )}
-                      {chatMessage.planSummary && (
-                        <div className="runtime-row">
-                          <strong>{t.planSummary}</strong>
-                          <span>{chatMessage.planSummary}</span>
-                        </div>
-                      )}
-                      {chatMessage.reflectionSummary && (
-                        <div className="runtime-row">
-                          <strong>{t.reflectionSummary}</strong>
-                          <span>{chatMessage.reflectionSummary}</span>
-                        </div>
-                      )}
-                      {renderMemoryDelta(chatMessage.memoryDelta) && (
-                        <div className="runtime-row">
-                          <strong>{t.memoryDelta}</strong>
-                          <span>{renderMemoryDelta(chatMessage.memoryDelta)}</span>
-                        </div>
-                      )}
-                      {chatMessage.toolLogs?.length ? (
-                        <details className="tool-log-details">
-                          <summary>{t.toolLogs}</summary>
-                          <div className="tool-log-list">
-                            {chatMessage.toolLogs.map((log) => (
-                              <div className="tool-log" key={`${chatMessage.id}-${log.tool_name}`}>
-                                <strong>{log.tool_name}</strong>
-                                <span>{log.risk_level}</span>
-                                <p>{log.summary}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      ) : null}
-                    </div>
-                  )}
                   {chatMessage.gifUrl && (
                     <figure className="gif-card" data-query={chatMessage.gifQuery ?? 'crime-drama reaction'}>
                       <img
