@@ -114,55 +114,55 @@ const characters: Character[] = [
   },
 ]
 
-const gifLibrary = {
-  tense: [
-    'https://media.giphy.com/media/3oEjHCWdU7F4hkcudy/giphy.gif',
-    'https://media.giphy.com/media/3o72FfM5HJydzafgUE/giphy.gif',
-    'https://media.giphy.com/media/xT0GqgeTVaAdWZD1uw/giphy.gif',
-  ],
-  chemistry: [
-    'https://media.giphy.com/media/l0HU8V1CHKTUFtuFO/giphy.gif',
-    'https://media.giphy.com/media/xT0GqgeTVaAdWZD1uw/giphy.gif',
-    'https://media.giphy.com/media/3oEjHCWdU7F4hkcudy/giphy.gif',
-  ],
-  panic: [
-    'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
-    'https://media.giphy.com/media/xT0GqgeTVaAdWZD1uw/giphy.gif',
-    'https://media.giphy.com/media/3o72FfM5HJydzafgUE/giphy.gif',
-  ],
-  lawyer: [
-    'https://media.giphy.com/media/40dEau6bZRO3S/giphy.gif',
-    'https://media.giphy.com/media/3o6gDWzmAzrpi5DQU8/giphy.gif',
-    'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
-  ],
-  glare: [
-    'https://media.giphy.com/media/3o72FfM5HJydzafgUE/giphy.gif',
-    'https://media.giphy.com/media/3oEjHCWdU7F4hkcudy/giphy.gif',
-    'https://media.giphy.com/media/l0HU8V1CHKTUFtuFO/giphy.gif',
-  ],
-  money: [
-    'https://media.giphy.com/media/3o6gDWzmAzrpi5DQU8/giphy.gif',
-    'https://media.giphy.com/media/40dEau6bZRO3S/giphy.gif',
-    'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
-  ],
-  desert: [
-    'https://media.giphy.com/media/xT0GqgeTVaAdWZD1uw/giphy.gif',
-    'https://media.giphy.com/media/3oEjHCWdU7F4hkcudy/giphy.gif',
-    'https://media.giphy.com/media/l0HU8V1CHKTUFtuFO/giphy.gif',
-  ],
-  family: [
-    'https://media.giphy.com/media/3oEjHCWdU7F4hkcudy/giphy.gif',
-    'https://media.giphy.com/media/3o72FfM5HJydzafgUE/giphy.gif',
-    'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
-  ],
-  deal: [
-    'https://media.giphy.com/media/40dEau6bZRO3S/giphy.gif',
-    'https://media.giphy.com/media/3o6gDWzmAzrpi5DQU8/giphy.gif',
-    'https://media.giphy.com/media/l0HU8V1CHKTUFtuFO/giphy.gif',
-  ],
-} satisfies Record<string, string[]>
+type GifKey = 'default' | 'tense' | 'chemistry' | 'panic' | 'lawyer' | 'glare' | 'money' | 'desert' | 'family' | 'deal'
 
-type GifKey = keyof typeof gifLibrary
+const characterGifLibrary: Record<CharacterId, Partial<Record<GifKey, string[]>>> = {
+  walter: {
+    default: [
+      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
+      'https://media.giphy.com/media/R3S6MfUoKvBVS/giphy.gif',
+      'https://media.giphy.com/media/3oFzmkkwfOGlzZ0gxi/giphy.gif',
+    ],
+    chemistry: [
+      'https://media.giphy.com/media/R3S6MfUoKvBVS/giphy.gif',
+      'https://media.giphy.com/media/3oFzmkkwfOGlzZ0gxi/giphy.gif',
+    ],
+    glare: [
+      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
+      'https://media.giphy.com/media/3ohc11UljvpPKWeNva/giphy.gif',
+    ],
+    desert: [
+      'https://media.giphy.com/media/NUBp5KcV0PJBe/giphy.gif',
+      'https://media.giphy.com/media/CzlpZQRcd5Wjm/giphy.gif',
+    ],
+    family: [
+      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
+      'https://media.giphy.com/media/l0HUjziiiniIsRUY0/giphy.gif',
+    ],
+    panic: ['https://media.giphy.com/media/3ohc11UljvpPKWeNva/giphy.gif'],
+    tense: [
+      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
+      'https://media.giphy.com/media/l0HUjziiiniIsRUY0/giphy.gif',
+    ],
+  },
+  jesse: {
+    default: ['https://media.giphy.com/media/u7UgRRotar5du/giphy.gif'],
+    panic: ['https://media.giphy.com/media/u7UgRRotar5du/giphy.gif'],
+    tense: ['https://media.giphy.com/media/u7UgRRotar5du/giphy.gif'],
+  },
+  skyler: {},
+  saul: {},
+  mike: {
+    default: ['https://media.giphy.com/media/xT8qBgvOUl9mj2fe6c/giphy.gif'],
+    tense: ['https://media.giphy.com/media/xT8qBgvOUl9mj2fe6c/giphy.gif'],
+    glare: ['https://media.giphy.com/media/xT8qBgvOUl9mj2fe6c/giphy.gif'],
+  },
+  gus: {
+    default: ['https://media.giphy.com/media/BRWAInZmzzBm0/giphy.gif'],
+    deal: ['https://media.giphy.com/media/BRWAInZmzzBm0/giphy.gif'],
+    tense: ['https://media.giphy.com/media/BRWAInZmzzBm0/giphy.gif'],
+  },
+}
 
 const gifKeywordMap: Array<{ key: GifKey; terms: string[] }> = [
   { key: 'chemistry', terms: ['chemistry', 'cook', 'lab', 'meth', 'science', 'formula', 'reaction', 'blue'] },
@@ -347,19 +347,22 @@ function hashText(value: string) {
   return hash
 }
 
-function pickGif(key: GifKey, seed: string) {
-  const pool = gifLibrary[key]
+function pickGif(characterId: CharacterId, key: GifKey, seed: string) {
+  const characterGifs = characterGifLibrary[characterId]
+  const pool = characterGifs[key] ?? characterGifs.default
+  if (!pool?.length) return null
   return pool[hashText(`${key}:${seed}`) % pool.length]
 }
 
 function resolveGif(query: string | null | undefined, characterId: string, emotionState: string | null | undefined) {
   if (!query) return null
   const normalized = `${query} ${emotionState ?? ''} ${characterId}`.toLowerCase()
+  const safeCharacterId = characters.some((character) => character.id === characterId) ? (characterId as CharacterId) : 'walter'
   const key =
     gifKeywordMap.find(({ terms }) => terms.some((term) => normalized.includes(term)))?.key ??
     gifKeywordMap[hashText(normalized) % gifKeywordMap.length].key
 
-  return pickGif(key, normalized)
+  return pickGif(safeCharacterId, key, normalized)
 }
 
 async function callLiveMiniMax(
@@ -407,8 +410,8 @@ function App() {
       sender: 'walter',
       text: getOpener(characters[0], 'en'),
       emotion: 'controlled pressure',
-      gifQuery: 'tense desert',
-      gifUrl: pickGif('desert', 'walter controlled pressure'),
+      gifQuery: null,
+      gifUrl: null,
     },
   ])
 
@@ -430,8 +433,8 @@ function App() {
         sender: id,
         text: getOpener(nextCharacter, language),
         emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
-        gifQuery: `${id} opening pressure`,
-        gifUrl: pickGif('tense', `${id} ${language} opening pressure`),
+        gifQuery: null,
+        gifUrl: null,
       },
     ])
   }
@@ -444,8 +447,8 @@ function App() {
         sender: selectedCharacter.id,
         text: getOpener(selectedCharacter, nextLanguage),
         emotion: nextLanguage === 'zh' ? '开场压迫' : 'opening pressure',
-        gifQuery: `${selectedCharacter.id} opening pressure`,
-        gifUrl: pickGif('tense', `${selectedCharacter.id} ${nextLanguage} opening pressure`),
+        gifQuery: null,
+        gifUrl: null,
       },
     ])
     setMessage('')
@@ -626,7 +629,13 @@ function App() {
                   <p>{chatMessage.text}</p>
                   {chatMessage.gifUrl && (
                     <figure className="gif-card" data-query={chatMessage.gifQuery ?? 'crime-drama reaction'}>
-                      <img src={chatMessage.gifUrl} alt={chatMessage.gifQuery ?? 'crime-drama reaction GIF'} />
+                      <img
+                        src={chatMessage.gifUrl}
+                        alt={chatMessage.gifQuery ?? 'crime-drama reaction GIF'}
+                        onError={(event) => {
+                          event.currentTarget.closest('figure')?.setAttribute('hidden', 'true')
+                        }}
+                      />
                       <figcaption>
                         {t.gifTrigger}: {chatMessage.gifQuery}
                       </figcaption>

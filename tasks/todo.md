@@ -84,3 +84,16 @@
 - 可见性：Private。
 - 默认分支：`main`。
 - 安全检查：`.env.local` 被 `.gitignore` 的 `*.local` 规则忽略，真实 MiniMax Token Plan Key 未提交。
+
+## 计划 - 2026-05-22 GIF 角色边界
+
+- [x] 移除开场消息的强制 GIF。
+- [x] 将 GIF 池改为角色级白名单，避免 Walter 抽到 Jesse 或其他角色台词动图。
+- [x] 为 GIF 图片增加加载失败隐藏处理。
+- [x] 运行 lint/build 验证。
+
+## Review - 2026-05-22 GIF 角色边界
+
+- 修改范围：`src/App.tsx`。
+- 关键修正：`characterGifLibrary` 按角色隔离 GIF；`resolveGif` 只从当前回复角色的图池取图；开场消息不再附带 GIF；图片加载失败时隐藏整张 GIF 卡片。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。
