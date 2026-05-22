@@ -131,3 +131,18 @@
 - 关键修正：最近 3 轮同角色 GIF URL 会作为黑名单；当前标签池耗尽时，回退到该角色全量素材池中未出现过的 GIF。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
 - 页面验证：内置浏览器/DevTools 在 Walter 连续 3 轮对话中得到 3 个不同 GIF URL，控制台无 error/warn。
+
+## 计划 - 2026-05-22 左侧控制栏滚动可达性
+
+- [x] 将桌面端左侧控制栏固定在视口内，并允许自身滚动。
+- [x] 按浏览器标注更新控制栏背景色和 flex 对齐。
+- [x] 验证桌面滚动后仍能操作角色切换，移动端布局不被固定定位破坏。
+
+## Review - 2026-05-22 左侧控制栏滚动可达性
+
+- 修改范围：`src/App.css`。
+- 关键修正：桌面端 `.control-panel` 使用 `position: sticky; top: 0; max-height: 100vh; overflow-y: auto;`，聊天流变长时左侧角色切换仍保持可达。
+- 标注落实：控制栏背景改为 `#dad7ce`，`justify-content` 明确为 `flex-start`。
+- 响应式处理：`920px` 以下恢复 `position: static`、`max-height: none`、`overflow: visible`，避免移动端固定侧栏。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。
+- 页面验证：桌面端可直接点击 Jesse 切换角色；移动端断点计算样式为 `position: static`；控制台无 error/warn。
