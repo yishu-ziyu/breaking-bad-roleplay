@@ -614,7 +614,7 @@ const makeId = () => crypto.randomUUID()
 function App() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<CharacterId>('walter')
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0]
-  const [language, setLanguage] = useState<Language>('en')
+  const [language, setLanguage] = useState<Language>('zh')
   const t = uiText[language]
   const [relation, setRelation] = useState(selectedCharacter.relationOptions[0])
   const [mode, setMode] = useState<ChatMode>('direct')
@@ -628,7 +628,7 @@ function App() {
     {
       id: makeId(),
       sender: 'walter',
-      text: getOpener(characters[0], 'en'),
+      text: getOpener(characters[0], 'zh'),
       emotion: 'controlled pressure',
       gifQuery: null,
       gifUrl: null,
