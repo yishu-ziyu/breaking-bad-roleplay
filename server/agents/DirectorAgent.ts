@@ -47,8 +47,10 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
 export class DirectorAgent {
   private readonly memoryRoot = path.join(process.cwd(), 'server', 'agents', 'memory')
   private readonly worldFile = path.join(this.memoryRoot, 'world_state.json')
+  private readonly apiKey?: string
 
-  constructor() {
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey
     fs.mkdirSync(this.memoryRoot, { recursive: true })
   }
 
@@ -60,7 +62,7 @@ export class DirectorAgent {
     let debateHistory = request.history
 
     for (const speaker of directorPlan.speakers) {
-      const agent = new AgentContainer(speaker)
+      const agent = new AgentContainer(speaker, this.apiKey)
       const message = await agent.runCognitiveLoop({
         userText: request.userText,
         relation: speaker === request.characterId ? request.relation : request.language === 'zh' ? '同场的人' : 'person in the room',

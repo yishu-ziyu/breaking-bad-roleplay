@@ -46,7 +46,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   if (isAgentRuntimeRequest(request.body)) {
     try {
-      const output = await new DirectorAgent().runAgentTurn(request.body)
+      const output = await new DirectorAgent(process.env.MINIMAX_TOKEN_PLAN_KEY).runAgentTurn(request.body)
       response.status(200).json(output)
     } catch (error) {
       response.status(500).json({ error: error instanceof Error ? error.message : 'Unknown agent runtime error.' })
