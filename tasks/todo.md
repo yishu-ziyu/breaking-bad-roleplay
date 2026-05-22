@@ -97,3 +97,22 @@
 - 修改范围：`src/App.tsx`。
 - 关键修正：`characterGifLibrary` 按角色隔离 GIF；`resolveGif` 只从当前回复角色的图池取图；开场消息不再附带 GIF；图片加载失败时隐藏整张 GIF 卡片。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
+
+## 计划 - 2026-05-22 角色级素材库并行建设
+
+- [x] 启动子 agent：角色语气 profile。
+- [x] 启动子 agent：关系矩阵。
+- [x] 启动子 agent：素材库架构。
+- [x] 启动子 agent：代码侧媒体 registry。
+- [x] 主线创建 Walter 高质量样板。
+- [x] 整合子 agent 产物。
+- [x] 运行 lint/build 验证。
+- [x] 提交并推送 GitHub。
+
+## Review - 2026-05-22 角色级素材库并行建设
+
+- 子 agent 产物：`VOICE_PROFILES.md`、`RELATION_MATRIX.md`、`src/roleAssets.ts`。
+- 主线产物：`WALTER_TEMPLATE.md`、`ROLE_LIBRARY_ARCHITECTURE.md`。
+- 运行时整合：`src/App.tsx` 现在从 `src/roleAssets.ts` 读取角色级 GIF registry，不再维护另一套硬编码 GIF 池。
+- 安全边界：`.omx` 已加入 `.gitignore`，运行态状态不会提交。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。

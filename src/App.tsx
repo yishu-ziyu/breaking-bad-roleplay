@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
+import { roleAssets } from './roleAssets'
+import type { RoleGifTag } from './roleAssets'
 import './App.css'
 
 type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
@@ -114,57 +116,7 @@ const characters: Character[] = [
   },
 ]
 
-type GifKey = 'default' | 'tense' | 'chemistry' | 'panic' | 'lawyer' | 'glare' | 'money' | 'desert' | 'family' | 'deal'
-
-const characterGifLibrary: Record<CharacterId, Partial<Record<GifKey, string[]>>> = {
-  walter: {
-    default: [
-      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
-      'https://media.giphy.com/media/R3S6MfUoKvBVS/giphy.gif',
-      'https://media.giphy.com/media/3oFzmkkwfOGlzZ0gxi/giphy.gif',
-    ],
-    chemistry: [
-      'https://media.giphy.com/media/R3S6MfUoKvBVS/giphy.gif',
-      'https://media.giphy.com/media/3oFzmkkwfOGlzZ0gxi/giphy.gif',
-    ],
-    glare: [
-      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
-      'https://media.giphy.com/media/3ohc11UljvpPKWeNva/giphy.gif',
-    ],
-    desert: [
-      'https://media.giphy.com/media/NUBp5KcV0PJBe/giphy.gif',
-      'https://media.giphy.com/media/CzlpZQRcd5Wjm/giphy.gif',
-    ],
-    family: [
-      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
-      'https://media.giphy.com/media/l0HUjziiiniIsRUY0/giphy.gif',
-    ],
-    panic: ['https://media.giphy.com/media/3ohc11UljvpPKWeNva/giphy.gif'],
-    tense: [
-      'https://media.giphy.com/media/3oFzm9r8nz1CmqYtmU/giphy.gif',
-      'https://media.giphy.com/media/l0HUjziiiniIsRUY0/giphy.gif',
-    ],
-  },
-  jesse: {
-    default: ['https://media.giphy.com/media/u7UgRRotar5du/giphy.gif'],
-    panic: ['https://media.giphy.com/media/u7UgRRotar5du/giphy.gif'],
-    tense: ['https://media.giphy.com/media/u7UgRRotar5du/giphy.gif'],
-  },
-  skyler: {},
-  saul: {},
-  mike: {
-    default: ['https://media.giphy.com/media/xT8qBgvOUl9mj2fe6c/giphy.gif'],
-    tense: ['https://media.giphy.com/media/xT8qBgvOUl9mj2fe6c/giphy.gif'],
-    glare: ['https://media.giphy.com/media/xT8qBgvOUl9mj2fe6c/giphy.gif'],
-  },
-  gus: {
-    default: ['https://media.giphy.com/media/BRWAInZmzzBm0/giphy.gif'],
-    deal: ['https://media.giphy.com/media/BRWAInZmzzBm0/giphy.gif'],
-    tense: ['https://media.giphy.com/media/BRWAInZmzzBm0/giphy.gif'],
-  },
-}
-
-const gifKeywordMap: Array<{ key: GifKey; terms: string[] }> = [
+const gifKeywordMap: Array<{ key: RoleGifTag; terms: string[] }> = [
   { key: 'chemistry', terms: ['chemistry', 'cook', 'lab', 'meth', 'science', 'formula', 'reaction', 'blue'] },
   { key: 'lawyer', terms: ['lawyer', 'legal', 'saul', 'court', 'deal', 'negotiate', 'contract'] },
   { key: 'money', terms: ['money', 'cash', 'debt', 'payment', 'profit', 'empire', 'stash'] },
@@ -347,11 +299,12 @@ function hashText(value: string) {
   return hash
 }
 
-function pickGif(characterId: CharacterId, key: GifKey, seed: string) {
-  const characterGifs = characterGifLibrary[characterId]
-  const pool = characterGifs[key] ?? characterGifs.default
-  if (!pool?.length) return null
-  return pool[hashText(`${key}:${seed}`) % pool.length]
+function pickGif(characterId: CharacterId, key: RoleGifTag, seed: string) {
+  const pool = roleAssets[characterId].gifPools.filter((asset) => asset.tags.includes(key))
+  const fallbackPool = roleAssets[characterId].gifPools.filter((asset) => asset.tags.includes('default'))
+  const candidates = pool.length ? pool : fallbackPool
+  if (!candidates.length) return null
+  return candidates[hashText(`${key}:${seed}`) % candidates.length].url
 }
 
 function resolveGif(query: string | null | undefined, characterId: string, emotionState: string | null | undefined) {
