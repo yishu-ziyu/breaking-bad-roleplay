@@ -203,3 +203,21 @@
 - 新增文档：`materials/breaking-bad/EXTERNAL_AI_RESEARCH_AND_ARCHIVE_BRIEF.md`。
 - 文档内容：外部 AI 角色边界、优先级、目录契约、GIF JSONL schema、source schema、角色目标、搜索策略、视觉审查清单、voice/relationship schema、交付 README 模板、verification notes、Codex 审核流程和可复制给 Gemini 的最终 prompt。
 - 关键约束：外部 AI 不直接改代码，不保存完整剧本/字幕/大段台词，不把可访问 GIF 直接等同于 approved。
+
+## 计划 - 2026-05-23 A+C Agent Runtime 接管
+
+- [x] 审计 Antigravity 留下的 `server/agents/tools/*` 未跟踪草稿。
+- [x] 用安全命名重写角色工具，移除现实操作性参数和输出。
+- [x] 新增 `AgentContainer`，实现可审计 Plan/Reflect 摘要、工具日志和本地记忆写入。
+- [x] 新增 `DirectorAgent`，实现剧情 tick、事件和多人局 speaker plan。
+- [x] 扩展 `/api/chat` 支持 Agent Runtime 请求，并新增 `/api/game-loop`。
+- [x] 前端展示剧情时钟、事件 banner、计划/反思摘要、工具日志和记忆变化。
+- [x] 运行 lint/build、后端 smoke tests 和内置浏览器验收。
+
+## Review - 2026-05-23 A+C Agent Runtime 接管
+
+- 安全收紧：Antigravity 草稿中的 cook/laundering/recon 工具被替换为 `walter_lab_pressure_simulation`、`saul_legal_risk_theater`、`mike_perimeter_read`、`gus_compliance_evaluation`，只输出剧情压力与风险摘要。
+- 后端能力：`/api/chat` 兼容旧 MiniMax prompt 协议和新 `agentRuntimeEnabled` 协议；新 Runtime 会返回 `agent_messages`、`director_plan`、`relationship_states` 和 `story_event`。
+- 本地记忆：运行时生成 `server/agents/memory/*`，并通过 `.gitignore` 忽略。
+- 前端验收：内置浏览器显示中文默认界面、Agent Runtime、剧情时钟、事件 banner、多人局导演计划、工具日志折叠入口和记忆变化；控制台无 error/warn。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过；curl smoke tests 验证单聊、多人局和 `/api/game-loop` 均可返回结构化结果。
