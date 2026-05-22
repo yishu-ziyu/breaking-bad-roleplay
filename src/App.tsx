@@ -125,7 +125,12 @@ const gifKeywordMap: Array<{ key: RoleGifTag; terms: string[] }> = [
   { key: 'desert', terms: ['desert', 'rv', 'abq', 'albuquerque', 'border', 'heat', 'dust'] },
   { key: 'family', terms: ['family', 'wife', 'son', 'child', 'home', 'confession', 'guilt'] },
   { key: 'deal', terms: ['deal', 'business', 'meeting', 'restaurant', 'gus', 'mike', 'cartel'] },
-  { key: 'tense', terms: ['tense', 'pressure', 'moral', 'secret', 'lie', 'confrontation'] },
+  { key: 'chemistry', terms: ['classroom', 'student', 'lesson', 'teacher'] },
+  { key: 'business', terms: ['business', 'empire', 'operation', 'process', 'partner', 'transaction'] },
+  { key: 'restraint', terms: ['restraint', 'calm', 'controlled', 'contain', 'patience', 'composure'] },
+  { key: 'confrontation', terms: ['confrontation', 'cornered', 'office', 'dark office', 'accusation'] },
+  { key: 'glare', terms: ['control', 'threat', 'danger', 'intense', 'intimidation', 'stare'] },
+  { key: 'tense', terms: ['tense', 'pressure', 'moral', 'secret', 'lie', 'tension'] },
 ]
 
 const relationLabels: Record<string, Record<Language, string>> = {
@@ -299,15 +304,31 @@ function hashText(value: string) {
   return hash
 }
 
-function pickGif(characterId: CharacterId, key: RoleGifTag, seed: string) {
+function pickGif(characterId: CharacterId, key: RoleGifTag, seed: string, recentGifUrls: string[] = []) {
   const pool = roleAssets[characterId].gifPools.filter((asset) => asset.tags.includes(key))
   const fallbackPool = roleAssets[characterId].gifPools.filter((asset) => asset.tags.includes('default'))
   const candidates = pool.length ? pool : fallbackPool
   if (!candidates.length) return null
-  return candidates[hashText(`${key}:${seed}`) % candidates.length].url
+
+  const startIndex = hashText(`${key}:${seed}`) % candidates.length
+  const orderedCandidates = candidates.slice(startIndex).concat(candidates.slice(0, startIndex))
+  const freshCandidate = orderedCandidates.find((asset) => !recentGifUrls.includes(asset.url))
+  if (freshCandidate) return freshCandidate.url
+
+  const rolePool = roleAssets[characterId].gifPools
+  const roleStartIndex = hashText(`role:${key}:${seed}`) % rolePool.length
+  const orderedRolePool = rolePool.slice(roleStartIndex).concat(rolePool.slice(0, roleStartIndex))
+  const freshRoleCandidate = orderedRolePool.find((asset) => !recentGifUrls.includes(asset.url))
+  return (freshRoleCandidate ?? orderedCandidates[0]).url
 }
 
-function resolveGif(query: string | null | undefined, characterId: string, emotionState: string | null | undefined) {
+function resolveGif(
+  query: string | null | undefined,
+  characterId: string,
+  emotionState: string | null | undefined,
+  recentGifUrls: string[] = [],
+  turnSeed = '',
+) {
   if (!query) return null
   const normalized = `${query} ${emotionState ?? ''} ${characterId}`.toLowerCase()
   const safeCharacterId = characters.some((character) => character.id === characterId) ? (characterId as CharacterId) : 'walter'
@@ -315,7 +336,7 @@ function resolveGif(query: string | null | undefined, characterId: string, emoti
     gifKeywordMap.find(({ terms }) => terms.some((term) => normalized.includes(term)))?.key ??
     gifKeywordMap[hashText(normalized) % gifKeywordMap.length].key
 
-  return pickGif(safeCharacterId, key, normalized)
+  return pickGif(safeCharacterId, key, `${normalized}:${turnSeed}`, recentGifUrls)
 }
 
 async function callLiveMiniMax(
@@ -426,6 +447,10 @@ function App() {
 
     try {
       const output = await callLiveMiniMax(selectedCharacter, relation, mode, nextHistory, userText, language)
+      const recentCharacterGifUrls = nextHistory
+        .filter((chatMessage) => chatMessage.sender === selectedCharacter.id && chatMessage.gifUrl)
+        .slice(-3)
+        .map((chatMessage) => chatMessage.gifUrl as string)
 
       const primaryReply: ChatMessage = {
         id: makeId(),
@@ -433,7 +458,13 @@ function App() {
         text: output.reply_text,
         emotion: output.emotion_state,
         gifQuery: output.gif_search_query,
-        gifUrl: resolveGif(output.gif_search_query, selectedCharacter.id, output.emotion_state),
+        gifUrl: resolveGif(
+          output.gif_search_query,
+          selectedCharacter.id,
+          output.emotion_state,
+          recentCharacterGifUrls,
+          `${nextHistory.length}:${userText}`,
+        ),
       }
 
       if (mode === 'crew') {

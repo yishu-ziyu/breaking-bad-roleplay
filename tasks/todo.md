@@ -116,3 +116,18 @@
 - 运行时整合：`src/App.tsx` 现在从 `src/roleAssets.ts` 读取角色级 GIF registry，不再维护另一套硬编码 GIF 池。
 - 安全边界：`.omx` 已加入 `.gitignore`，运行态状态不会提交。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
+
+## 计划 - 2026-05-22 GIF 连续去重
+
+- [x] 复现并记录右侧多轮对话中的 GIF 重复情况。
+- [x] 在角色级 GIF 选择逻辑中加入最近几轮 URL 去重。
+- [x] 补齐常见语义关键词到角色素材标签的映射。
+- [x] 运行 lint/build，并在内置浏览器验证。
+
+## Review - 2026-05-22 GIF 连续去重
+
+- 问题证据：右侧已有 5 张 GIF 中出现两组重复 URL，原因是关键词哈希选图没有历史记忆，且单标签池耗尽后只能回选同一张。
+- 修改范围：`src/App.tsx` 的 `gifKeywordMap`、`pickGif`、`resolveGif`、`handleSend`。
+- 关键修正：最近 3 轮同角色 GIF URL 会作为黑名单；当前标签池耗尽时，回退到该角色全量素材池中未出现过的 GIF。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。
+- 页面验证：内置浏览器/DevTools 在 Walter 连续 3 轮对话中得到 3 个不同 GIF URL，控制台无 error/warn。
