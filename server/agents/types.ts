@@ -26,6 +26,7 @@ export type AgentRuntimeRequest = {
   language: 'en' | 'zh'
   history: RuntimeChatMessage[]
   relationshipStates: Record<CharacterId, RelationshipState>
+  crewParticipantIds?: CharacterId[]
 }
 
 export type AgentToolLog = {
