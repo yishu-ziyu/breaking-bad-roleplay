@@ -146,3 +146,22 @@
 - 响应式处理：`920px` 以下恢复 `position: static`、`max-height: none`、`overflow: visible`，避免移动端固定侧栏。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
 - 页面验证：桌面端可直接点击 Jesse 切换角色；移动端断点计算样式为 `position: static`；控制台无 error/warn。
+
+## 计划 - 2026-05-22 Agentic Roleplay V1
+
+- [x] 并行补齐 Jesse / Skyler / Saul / Mike / Gus 的 Walter 级角色模板。
+- [x] 将角色素材从文档沉淀到运行时角色 registry，用于 prompt 拼装。
+- [x] 实现会话内关系状态：信任、怀疑、压力、亲近、威胁感。
+- [x] 增加可开关关系状态窗口，默认不强迫破坏沉浸。
+- [x] 把多人局从占位回复升级为导演模型 speaker plan，单轮最多 3 个角色。
+- [x] 让 A/B/C 验收可验证：模板存在、3-5 轮状态变化、导演选角不是固定轮流。
+- [x] 运行 lint/build，内置浏览器验证，并提交推送。
+
+## Review - 2026-05-22 Agentic Roleplay V1
+
+- 子 agent 产物：`JESSE_TEMPLATE.md`、`SKYLER_TEMPLATE.md`、`SAUL_TEMPLATE.md`、`MIKE_TEMPLATE.md`、`GUS_TEMPLATE.md`，均按 Walter 模板结构补齐角色内核、语气规则、关系规则、情绪/视觉标签和验收标准。
+- 运行时整合：新增 `src/roleProfiles.ts`，`src/App.tsx` 将角色 profile、关系锚点、会话内关系状态注入 MiniMax prompt。
+- 关系状态：侧栏新增可开关状态窗口，显示 trust / suspicion / pressure / closeness / threat；真实对话后 Walter 状态从 `Suspicion +1 / Pressure +1` 变化到 `Suspicion +5 / Pressure +5`。
+- 多人局：替换原有硬编码占位回复，先调用 MiniMax 生成 director speaker plan，再按最多三名角色逐个调用真实模型；点名角色会参与补强，测试中生成 Walter / Saul / Gus 三人回复。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。
+- 浏览器验证：Codex 内置 DevTools 访问 `http://127.0.0.1:3026/`，4 次 `/api/chat` 请求均返回 200，控制台无 error/warn；截图留存 `/tmp/abq-agentic-v1.png`。

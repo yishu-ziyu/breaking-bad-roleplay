@@ -9,6 +9,8 @@ export type RoleplayOutput = {
   gif_search_query: string | null
 }
 
+export type MiniMaxJsonOutput = RoleplayOutput | Record<string, unknown>
+
 const minimaxEndpoint = 'https://api.minimaxi.com/anthropic/v1/messages'
 
 function extractMiniMaxText(payload: unknown): string {
@@ -20,7 +22,7 @@ function extractMiniMaxText(payload: unknown): string {
   return text.trim()
 }
 
-function parseRoleplayOutput(text: string): RoleplayOutput {
+function parseMiniMaxJson(text: string): MiniMaxJsonOutput {
   const trimmed = text.trim()
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim()
   const candidate = fenced ?? trimmed
@@ -39,7 +41,7 @@ function parseRoleplayOutput(text: string): RoleplayOutput {
 export async function callMiniMaxTokenPlan(
   apiKey: string | undefined,
   request: MiniMaxChatRequest,
-): Promise<RoleplayOutput> {
+): Promise<MiniMaxJsonOutput> {
   if (!apiKey) {
     throw new Error('MINIMAX_TOKEN_PLAN_KEY is not configured.')
   }
@@ -74,5 +76,5 @@ export async function callMiniMaxTokenPlan(
     throw new Error(detail || `MiniMax request failed with status ${response.status}.`)
   }
 
-  return parseRoleplayOutput(extractMiniMaxText(await response.json()))
+  return parseMiniMaxJson(extractMiniMaxText(await response.json()))
 }
