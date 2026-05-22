@@ -236,3 +236,18 @@
 - API 验证：请求只选择 Walter/Saul，同时消息点名 Jesse/Mike/Gus，返回 speakers 和 agent messages 均只有 `walter`、`saul`。
 - 浏览器验收：内置浏览器中切到多人局后可取消 Jesse/Skyler/Mike/Gus，仅保留 Walter/Saul；发送测试消息后页面只生成 Walter 和 Saul 回复，`/api/chat` 返回 200，控制台无 error/warn。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
+
+## 计划 - 2026-05-23 隐藏玩家界面运行时调试信息
+
+- [x] 从聊天气泡中移除计划摘要、反思摘要、工具日志和记忆变化渲染。
+- [x] 删除对应的玩家界面文案和样式，避免折叠入口继续破坏沉浸。
+- [x] 移除顶部导演计划展示，并清理 `scene participant` / 英文关系锚点泄露。
+- [x] 运行 lint/build，并用内置浏览器确认聊天流只显示角色内容。
+
+## Review - 2026-05-23 隐藏玩家界面运行时调试信息
+
+- 聊天气泡不再渲染 `计划摘要`、`反思摘要`、`记忆变化`、`工具日志` 等开发者审计字段。
+- 顶部不再展示 Director 的内部 speaker plan，只保留玩家可理解的剧情事件。
+- 后端 fallback 清理了 `scene participant` 和英文关系锚点外露，中文回复会使用中文关系标签或自然称呼。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。
+- 浏览器验收：内置浏览器多人局发送消息后，只显示用户消息、角色名、情绪标签和角色回复；`/api/chat` 返回 200，控制台无 error/warn。
