@@ -43,7 +43,7 @@ export default defineConfig(({ mode }) => {
               const body = await readJsonBody(request)
               const output =
                 typeof body === 'object' && body !== null && (body as { agentRuntimeEnabled?: unknown }).agentRuntimeEnabled === true
-                  ? await new DirectorAgent().runAgentTurn(body as never)
+                  ? await new DirectorAgent(env.MINIMAX_TOKEN_PLAN_KEY).runAgentTurn(body as never)
                   : await callMiniMaxTokenPlan(env.MINIMAX_TOKEN_PLAN_KEY, body as { systemPrompt: string; contextPrompt: string })
               response.setHeader('Content-Type', 'application/json')
               response.end(JSON.stringify(output))

@@ -251,3 +251,21 @@
 - 后端 fallback 清理了 `scene participant` 和英文关系锚点外露，中文回复会使用中文关系标签或自然称呼。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
 - 浏览器验收：内置浏览器多人局发送消息后，只显示用户消息、角色名、情绪标签和角色回复；`/api/chat` 返回 200，控制台无 error/warn。
+
+## 计划 - 2026-05-23 恢复 Agent Runtime 真实模型接管
+
+- [x] 修复 Vite dev server 中 Agent Runtime 未显式传入 MiniMax Token Plan key 导致静默 fallback 的问题。
+- [x] 给每个运行时角色补入 compact voice card，避免真实模型接管后仍然泛化、重复。
+- [x] 将默认 UI 中 `Agent Runtime` / `JSON Schema` 技术标签改成玩家可理解的角色引擎文案。
+- [x] 运行 lint/build 和真实 `/api/chat` smoke test，确认回复不再是固定模板。
+- [x] 用内置浏览器验证多人局回复有模型生成差异，且开发者信息仍不显示。
+
+## Review - 2026-05-23 恢复 Agent Runtime 真实模型接管
+
+- 根因：Vite dev middleware 用 `loadEnv` 读到了 MiniMax key，但 Agent Runtime 内部只读取 `process.env.MINIMAX_TOKEN_PLAN_KEY`，导致本地多人局静默降级到 fallback 模板。
+- 修复：`vite.config.ts` 和 Vercel API 均显式把 key 传给 `DirectorAgent`，再传给每个 `AgentContainer`。
+- 质量补强：每个角色增加 compact voice card，提示模型避免重复近期句式，并禁止在玩家回复里暴露 director/tool/memory/plan/fallback 等内部词。
+- UI 清理：默认界面把 `Agent Runtime` 和 `JSON Schema` 改为 `真实角色引擎`、`角色边界已启用`。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过。
+- 真实模型验证：`/api/chat` 多人局返回 Walter/Jesse/Skyler 三条差异化回复，不再是固定模板句。
+- 浏览器验收：内置浏览器多人局显示真实模型回复，无计划/反思/工具/记忆调试块，控制台无 error/warn。

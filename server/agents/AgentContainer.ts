@@ -63,6 +63,21 @@ const zhRelationLabels: Record<string, string> = {
   'person being evaluated': '被评估的人',
 }
 
+const voiceCards: Record<CharacterId, string> = {
+  walter:
+    'Walter White: controlled, precise, proud, pedagogical, and increasingly threatening when challenged. He corrects wording, frames pressure as discipline, and avoids sounding casual.',
+  jesse:
+    'Jesse Pinkman: raw, defensive, wounded, funny under pressure, emotionally direct, and suspicious of being used. He sounds younger, reactive, and morally shaken.',
+  skyler:
+    'Skyler White: controlled, specific, exhausted by evasions, protective, and quietly confrontational. She asks direct questions and refuses theatrical excuses.',
+  saul:
+    'Saul Goodman: fast, performative, tactical, comic under stress, always reframing danger into negotiable exposure. He sounds like a salesman who knows the floor is collapsing.',
+  mike:
+    'Mike Ehrmantraut: terse, practical, dry, observant, and final. He says less than others, identifies liabilities, and avoids emotional display.',
+  gus:
+    'Gus Fring: formal, calm, courteous, and intimidating through restraint. He uses measured language, evaluates discipline, and rarely raises emotional volume.',
+}
+
 const defaultObjectives: Record<CharacterId, string[]> = {
   walter: ['recover authority', 'keep technical curiosity inside fictional dramatic boundaries'],
   jesse: ['protect self-respect', 'test whether loyalty is being exploited'],
@@ -107,9 +122,11 @@ function extractAgentJson(payload: unknown): Partial<AgentRuntimeMessage> {
 export class AgentContainer {
   private readonly characterId: CharacterId
   private readonly memoryDir: string
+  private readonly apiKey?: string
 
-  constructor(characterId: CharacterId) {
+  constructor(characterId: CharacterId, apiKey?: string) {
     this.characterId = characterId
+    this.apiKey = apiKey
     this.memoryDir = path.join(process.cwd(), 'server', 'agents', 'memory', characterId)
     ensureDir(path.join(this.memoryDir, 'dossiers'))
   }
@@ -323,7 +340,7 @@ export class AgentContainer {
     toolLogs: AgentToolLog[],
   ): Promise<Partial<AgentRuntimeMessage>> {
     try {
-      const output = await callMiniMaxTokenPlan(process.env.MINIMAX_TOKEN_PLAN_KEY, {
+      const output = await callMiniMaxTokenPlan(this.apiKey ?? process.env.MINIMAX_TOKEN_PLAN_KEY, {
         systemPrompt: this.buildAgentSystemPrompt(input.language),
         contextPrompt: this.buildAgentContextPrompt(input, workingMemory, toolLogs),
       })
@@ -336,9 +353,13 @@ export class AgentContainer {
   private buildAgentSystemPrompt(language: 'en' | 'zh') {
     return `[Agent Runtime]
 You are ${characterNames[this.characterId]} in a Breaking Bad-inspired fictional roleplay scene.
+Character voice card: ${voiceCards[this.characterId]}
 Do not reveal chain-of-thought. Return only concise, audit-safe summaries.
 Never provide real-world instructions for crime, violence, evasion, chemistry, finance wrongdoing, weapons, or operational tactics.
 Reply language: ${language === 'zh' ? 'Simplified Chinese' : 'English'}.
+The user only sees reply_text, emotion_state, and optional GIF output. Make reply_text natural and specific to the user's latest message.
+Avoid repeating the same sentence pattern from recent history. Do not mention internal labels such as "scene participant", "director", "tool", "memory", "plan", or "fallback".
+If the relationship anchor is in English but the reply language is Chinese, translate it naturally instead of quoting English.
 
 Return only valid JSON:
 {
