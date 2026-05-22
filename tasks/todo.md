@@ -269,3 +269,17 @@
 - 验证命令：`npm run lint` 通过；`npm run build` 通过。
 - 真实模型验证：`/api/chat` 多人局返回 Walter/Jesse/Skyler 三条差异化回复，不再是固定模板句。
 - 浏览器验收：内置浏览器多人局显示真实模型回复，无计划/反思/工具/记忆调试块，控制台无 error/warn。
+
+## 计划 - 2026-05-23 角色切换保留聊天历史
+
+- [x] 将单一 `messages` 状态改为 `characterId -> ChatMessage[]` 的会话历史表。
+- [x] 将关系锚点改为 `characterId -> relation`，切换角色时保留各自语境。
+- [x] 语言切换不再清空当前聊天流。
+- [x] 运行 lint/build，并用内置浏览器验证 Walter -> Jesse -> Walter 后历史仍在。
+
+## Review - 2026-05-23 角色切换保留聊天历史
+
+- 前端现在为六个角色分别持有聊天历史，切换角色只切换当前视图，不重建消息流。
+- 每个角色的关系锚点也独立保存，避免切回时语境下拉被重置。
+- 浏览器验收：给 Walter 发送“历史测试：这句话切换回来以后还应该在。”后切到 Jesse，再切回 Walter，原用户消息和 Walter 回复仍然保留。
+- 验证命令：`npm run lint` 通过；`npm run build` 通过；浏览器 `/api/chat` 200，控制台无 error/warn。

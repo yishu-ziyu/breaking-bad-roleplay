@@ -504,12 +504,35 @@ async function callAgentRuntime(
 
 const makeId = () => crypto.randomUUID()
 
+function createOpenerMessage(character: Character, language: Language): ChatMessage {
+  return {
+    id: makeId(),
+    sender: character.id,
+    text: getOpener(character, language),
+    emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
+    gifQuery: null,
+    gifUrl: null,
+  }
+}
+
+function createInitialChatHistories(language: Language): Record<CharacterId, ChatMessage[]> {
+  return Object.fromEntries(characters.map((character) => [character.id, [createOpenerMessage(character, language)]])) as Record<
+    CharacterId,
+    ChatMessage[]
+  >
+}
+
+function createInitialRelations(): Record<CharacterId, string> {
+  return Object.fromEntries(characters.map((character) => [character.id, character.relationOptions[0]])) as Record<CharacterId, string>
+}
+
 function App() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<CharacterId>('walter')
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0]
   const [language, setLanguage] = useState<Language>('zh')
   const t = uiText[language]
-  const [relation, setRelation] = useState(selectedCharacter.relationOptions[0])
+  const [relationsByCharacter, setRelationsByCharacter] = useState(createInitialRelations)
+  const relation = relationsByCharacter[selectedCharacterId] ?? selectedCharacter.relationOptions[0]
   const [mode, setMode] = useState<ChatMode>('direct')
   const [crewParticipantIds, setCrewParticipantIds] = useState<CharacterId[]>(() => characters.map((character) => character.id))
   const [message, setMessage] = useState('')
@@ -518,16 +541,22 @@ function App() {
   const [relationshipStates, setRelationshipStates] = useState(createInitialRelationshipStates)
   const [isStatePanelOpen, setIsStatePanelOpen] = useState(false)
   const [lastStoryEvent, setLastStoryEvent] = useState<StoryEvent | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: makeId(),
-      sender: 'walter',
-      text: getOpener(characters[0], 'zh'),
-      emotion: 'controlled pressure',
-      gifQuery: null,
-      gifUrl: null,
-    },
-  ])
+  const [chatHistories, setChatHistories] = useState(() => createInitialChatHistories('zh'))
+  const messages = useMemo(
+    () => chatHistories[selectedCharacterId] ?? [createOpenerMessage(selectedCharacter, language)],
+    [chatHistories, language, selectedCharacter, selectedCharacterId],
+  )
+
+  const setMessages = (updater: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])) => {
+    setChatHistories((current) => {
+      const currentMessages = current[selectedCharacterId] ?? [createOpenerMessage(selectedCharacter, language)]
+      const nextMessages = typeof updater === 'function' ? updater(currentMessages) : updater
+      return {
+        ...current,
+        [selectedCharacterId]: nextMessages,
+      }
+    })
+  }
 
   const promptPreview = useMemo(
     () => ({
@@ -550,35 +579,21 @@ function App() {
   }
 
   const handleCharacterChange = (id: CharacterId) => {
-    const nextCharacter = characters.find((character) => character.id === id) ?? selectedCharacter
     setSelectedCharacterId(id)
-    setRelation(nextCharacter.relationOptions[0])
     setCrewParticipantIds((current) => Array.from(new Set([id, ...current])))
-    setMessages([
-      {
-        id: makeId(),
-        sender: id,
-        text: getOpener(nextCharacter, language),
-        emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
-        gifQuery: null,
-        gifUrl: null,
-      },
-    ])
+    setChatHistories((current) => {
+      if (current[id]) return current
+      const nextCharacter = characters.find((character) => character.id === id) ?? selectedCharacter
+      return {
+        ...current,
+        [id]: [createOpenerMessage(nextCharacter, language)],
+      }
+    })
     setLastStoryEvent(null)
   }
 
   const handleLanguageChange = (nextLanguage: Language) => {
     setLanguage(nextLanguage)
-    setMessages([
-      {
-        id: makeId(),
-        sender: selectedCharacter.id,
-        text: getOpener(selectedCharacter, nextLanguage),
-        emotion: nextLanguage === 'zh' ? '开场压迫' : 'opening pressure',
-        gifQuery: null,
-        gifUrl: null,
-      },
-    ])
     setMessage('')
     setError(null)
     setLastStoryEvent(null)
@@ -688,7 +703,16 @@ function App() {
 
         <section className="panel-section">
           <label htmlFor="relation">{t.relation}</label>
-          <select id="relation" value={relation} onChange={(event) => setRelation(event.target.value)}>
+          <select
+            id="relation"
+            value={relation}
+            onChange={(event) =>
+              setRelationsByCharacter((current) => ({
+                ...current,
+                [selectedCharacter.id]: event.target.value,
+              }))
+            }
+          >
             {selectedCharacter.relationOptions.map((option) => (
               <option key={option} value={option}>
                 {formatRelation(selectedCharacter, option, language)}
