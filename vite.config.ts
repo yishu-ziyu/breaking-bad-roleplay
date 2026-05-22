@@ -1,7 +1,9 @@
 import type { IncomingMessage } from 'node:http'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import gameLoopHandler from './api/game-loop'
 import { callMiniMaxTokenPlan } from './server/minimax'
+import { DirectorAgent } from './server/agents/DirectorAgent'
 
 function readJsonBody(request: IncomingMessage) {
   return new Promise<unknown>((resolve, reject) => {
@@ -39,7 +41,10 @@ export default defineConfig(({ mode }) => {
 
             try {
               const body = await readJsonBody(request)
-              const output = await callMiniMaxTokenPlan(env.MINIMAX_TOKEN_PLAN_KEY, body as { systemPrompt: string; contextPrompt: string })
+              const output =
+                typeof body === 'object' && body !== null && (body as { agentRuntimeEnabled?: unknown }).agentRuntimeEnabled === true
+                  ? await new DirectorAgent().runAgentTurn(body as never)
+                  : await callMiniMaxTokenPlan(env.MINIMAX_TOKEN_PLAN_KEY, body as { systemPrompt: string; contextPrompt: string })
               response.setHeader('Content-Type', 'application/json')
               response.end(JSON.stringify(output))
             } catch (error) {
@@ -47,6 +52,22 @@ export default defineConfig(({ mode }) => {
               response.setHeader('Content-Type', 'application/json')
               response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown MiniMax request error.' }))
             }
+          })
+          server.middlewares.use('/api/game-loop', async (request, response) => {
+            const body = request.method === 'POST' ? await readJsonBody(request).catch(() => ({})) : {}
+            await gameLoopHandler(
+              { method: request.method, body },
+              {
+                status(code: number) {
+                  response.statusCode = code
+                  return this
+                },
+                json(payload: unknown) {
+                  response.setHeader('Content-Type', 'application/json')
+                  response.end(JSON.stringify(payload))
+                },
+              },
+            )
           })
         },
       },

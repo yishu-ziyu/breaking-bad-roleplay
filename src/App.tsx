@@ -29,18 +29,52 @@ type ChatMessage = {
   emotion?: string
   gifQuery?: string | null
   gifUrl?: string | null
+  planSummary?: string
+  reflectionSummary?: string
+  toolLogs?: AgentToolLog[]
+  memoryDelta?: Partial<RelationshipState>
+  storyEvent?: StoryEvent | null
 }
 
 type RoleplayOutput = {
   reply_text: string
   emotion_state: string
   gif_search_query: string | null
+  show_gif?: boolean
 }
 
 type DirectorPlanOutput = {
   speakers: CharacterId[]
   scene_goal?: string
   tension_note?: string
+}
+
+type AgentToolLog = {
+  tool_name: string
+  summary: string
+  risk_level: 'low' | 'medium' | 'high'
+}
+
+type AgentRuntimeMessage = RoleplayOutput & {
+  character_id: CharacterId
+  plan_summary: string
+  reflection_summary: string
+  tool_logs: AgentToolLog[]
+  memory_delta: Partial<RelationshipState>
+}
+
+type StoryEvent = {
+  tick: number
+  event_banner: string | null
+  global_pressure_delta: number
+  affected_characters: CharacterId[]
+}
+
+type AgentRuntimeResponse = {
+  agent_messages: AgentRuntimeMessage[]
+  director_plan: DirectorPlanOutput
+  relationship_states: Record<CharacterId, RelationshipState>
+  story_event: StoryEvent
 }
 
 type PromptContextOptions = {
@@ -191,6 +225,13 @@ const uiText = {
     modelService: 'Live model service',
     liveMiniMax: 'MiniMax Token Plan',
     liveMiniMaxHint: 'Server-side MiniMax-M2.7 is connected through /api/chat.',
+    agentRuntime: 'Agent Runtime',
+    storyClock: 'Story clock',
+    toolLogs: 'Tool logs',
+    planSummary: 'Plan',
+    reflectionSummary: 'Reflection',
+    memoryDelta: 'Memory delta',
+    eventBanner: 'Story event',
     relationshipState: 'Relationship State',
     statePanel: 'State Panel',
     showState: 'Show',
@@ -220,6 +261,13 @@ const uiText = {
     modelService: '真实模型服务',
     liveMiniMax: 'MiniMax Token Plan',
     liveMiniMaxHint: '已通过 /api/chat 服务端接入 MiniMax-M2.7。',
+    agentRuntime: 'Agent Runtime',
+    storyClock: '剧情时钟',
+    toolLogs: '工具日志',
+    planSummary: '计划摘要',
+    reflectionSummary: '反思摘要',
+    memoryDelta: '记忆变化',
+    eventBanner: '剧情事件',
     relationshipState: '关系状态',
     statePanel: '状态窗口',
     showState: '显示',
@@ -261,14 +309,6 @@ function formatRelation(character: Character, relation: string, language: Langua
 
 function getOpener(character: Character, language: Language) {
   return character.opener[language]
-}
-
-function isCharacterId(value: string): value is CharacterId {
-  return characters.some((character) => character.id === value)
-}
-
-function clampStateValue(value: number) {
-  return Math.max(-5, Math.min(5, value))
 }
 
 function createInitialRelationshipStates(): Record<CharacterId, RelationshipState> {
@@ -335,6 +375,7 @@ If the user asks for actionable illegal details, refuse in-character by redirect
 Keep replies concise, emotionally specific, and cinematic.
 Use the selected relationship to adjust trust, intimidation, protectiveness, suspicion, or leverage.
 When a visual reaction would help the scene, set gif_search_query to one to three English keywords.
+Set show_gif to true only when the visual beat is strong and role-appropriate; default to false when a GIF would feel decorative.
 Vary gif_search_query based on the scene instead of repeating "tense"; prefer concrete tags such as chemistry, lawyer, money, panic, glare, desert, family, deal, threat, guilt, or control.
 
 ${buildRoleProfilePrompt(character, relation)}`
@@ -382,69 +423,10 @@ Return only valid JSON matching the required schema:
 {
   "reply_text": "your in-character reply",
   "emotion_state": "current emotion state",
+  "show_gif": false,
   "gif_search_query": "1-3 English keywords, or null"
 }
 Do not use Markdown formatting inside reply_text.`
-}
-
-function buildDirectorSystemPrompt(language: Language) {
-  return `[Director Role]
-You are the scene director for a Breaking Bad-inspired roleplay chat.
-Your job is to decide which characters should speak next based on the current user message, recent chat history, relationship states, and dramatic fit.
-
-[Rules]
-Choose 1 to 3 speakers only.
-Do not use fixed rotation.
-Prefer the characters with the strongest stake in the user's message.
-Keep the selected lead character involved unless the scene strongly demands a different response.
-Return character ids only: walter, jesse, skyler, saul, mike, gus.
-Target explanation language: ${language === 'zh' ? 'Simplified Chinese' : 'English'}.
-
-[Output Formatting]
-Return only valid JSON:
-{
-  "speakers": ["walter"],
-  "scene_goal": "brief dramatic goal",
-  "tension_note": "brief reason these speakers were chosen"
-}`
-}
-
-function buildDirectorContextPrompt(
-  selectedCharacter: Character,
-  relation: string,
-  history: ChatMessage[],
-  userText: string,
-  language: Language,
-  relationshipStates: Record<CharacterId, RelationshipState>,
-) {
-  const readableHistory = history
-    .slice(-12)
-    .map((message) => {
-      if (message.sender === 'user') return `${uiText[language].you}: ${message.text}`
-      const speaker = characters.find((character) => character.id === message.sender)
-      return `${speaker?.name ?? message.sender}: ${message.text}`
-    })
-    .join('\n')
-
-  const states = characters
-    .map((character) => `${character.id}: ${formatRelationshipState(relationshipStates[character.id], language)}`)
-    .join('\n')
-
-  return `[Scene Setup]
-Selected lead character: ${selectedCharacter.id}.
-User relationship anchor: ${formatRelation(selectedCharacter, relation, language)}.
-Reply language: ${language === 'zh' ? 'Simplified Chinese' : 'English'}.
-
-[Session Relationship States]
-${states}
-
-[Recent Chat History]
-${readableHistory || 'No previous messages yet.'}
-
-[User Message]
-${userText}
-
-Pick the next speaker plan now.`
 }
 
 function hashText(value: string) {
@@ -490,123 +472,43 @@ function resolveGif(
   return pickGif(safeCharacterId, key, `${normalized}:${turnSeed}`, recentGifUrls)
 }
 
-async function callLiveMiniMax(
-  character: Character,
+async function callAgentRuntime(
+  characterId: CharacterId,
   relation: string,
   mode: ChatMode,
   history: ChatMessage[],
   userText: string,
   language: Language,
-  options: PromptContextOptions = {},
-): Promise<RoleplayOutput> {
-  const response = await fetch('/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      systemPrompt: buildSystemPrompt(character, relation, language),
-      contextPrompt: buildContextPrompt(character, relation, mode, history, userText, language, options),
-    }),
-  })
-
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(detail?.error || `MiniMax request failed with status ${response.status}.`)
-  }
-
-  return (await response.json()) as RoleplayOutput
-}
-
-async function callDirectorPlan(
-  selectedCharacter: Character,
-  relation: string,
-  history: ChatMessage[],
-  userText: string,
-  language: Language,
   relationshipStates: Record<CharacterId, RelationshipState>,
-): Promise<DirectorPlanOutput> {
+): Promise<AgentRuntimeResponse> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      systemPrompt: buildDirectorSystemPrompt(language),
-      contextPrompt: buildDirectorContextPrompt(selectedCharacter, relation, history, userText, language, relationshipStates),
+      agentRuntimeEnabled: true,
+      mode,
+      characterId,
+      relation,
+      userText,
+      language,
+      history: history.map((chatMessage) => ({
+        sender: chatMessage.sender,
+        text: chatMessage.text,
+        emotion: chatMessage.emotion,
+        gifQuery: chatMessage.gifQuery,
+      })),
+      relationshipStates,
     }),
   })
 
   if (!response.ok) {
     const detail = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(detail?.error || `MiniMax director request failed with status ${response.status}.`)
+    throw new Error(detail?.error || `Agent runtime request failed with status ${response.status}.`)
   }
 
-  return normalizeDirectorPlan((await response.json()) as Record<string, unknown>, selectedCharacter.id, userText)
-}
-
-function getMentionedCharacterIds(userText: string) {
-  const normalized = userText.toLowerCase()
-  return characters
-    .filter((character) => normalized.includes(character.name.toLowerCase()) || normalized.includes(character.id))
-    .map((character) => character.id)
-}
-
-function normalizeDirectorPlan(
-  output: Record<string, unknown>,
-  selectedCharacterId: CharacterId,
-  userText: string,
-): DirectorPlanOutput {
-  const rawSpeakers = Array.isArray(output.speakers) ? output.speakers : []
-  const speakers = rawSpeakers.filter((value): value is CharacterId => typeof value === 'string' && isCharacterId(value))
-  const uniqueSpeakers = Array.from(new Set([...speakers, ...getMentionedCharacterIds(userText)]))
-  const selectedFirst = uniqueSpeakers.includes(selectedCharacterId)
-    ? uniqueSpeakers
-    : [selectedCharacterId, ...uniqueSpeakers]
-
-  return {
-    speakers: selectedFirst.slice(0, 3),
-    scene_goal: typeof output.scene_goal === 'string' ? output.scene_goal : undefined,
-    tension_note: typeof output.tension_note === 'string' ? output.tension_note : undefined,
-  }
-}
-
-function getRelationshipDelta(userText: string, output: RoleplayOutput, mode: ChatMode): Partial<RelationshipState> {
-  const normalized = `${userText} ${output.reply_text} ${output.emotion_state} ${output.gif_search_query ?? ''}`.toLowerCase()
-  const delta: Partial<RelationshipState> = {
-    pressure: mode === 'crew' ? 2 : 1,
-  }
-
-  if (/\b(trust|help|sorry|family|please|protect|truth)\b|信任|帮|抱歉|家人|求你|保护|真相/.test(normalized)) {
-    delta.trust = 1
-    delta.closeness = 1
-  }
-
-  if (/\b(lie|secret|dea|police|law|liability|risk|witness|caught)\b|谎|秘密|警察|法律|风险|证人|抓/.test(normalized)) {
-    delta.suspicion = 1
-  }
-
-  if (/\b(danger|threat|kill|gun|cartel|gus|mike|cornered|control)\b|危险|威胁|杀|枪|卡特尔|逼|控制/.test(normalized)) {
-    delta.threat = 1
-    delta.pressure = (delta.pressure ?? 0) + 1
-  }
-
-  if (/\b(angry|fear|panic|cornered|suspicious|pressure|warning|tense)\b|愤怒|恐惧|惊慌|怀疑|压力|警告|紧张/.test(normalized)) {
-    delta.suspicion = (delta.suspicion ?? 0) + 1
-    delta.pressure = (delta.pressure ?? 0) + 1
-  }
-
-  return delta
-}
-
-function applyRelationshipDelta(state: RelationshipState, delta: Partial<RelationshipState>) {
-  return stateMetrics.reduce(
-    (nextState, metric) => ({
-      ...nextState,
-      [metric]: clampStateValue(state[metric] + (delta[metric] ?? 0)),
-    }),
-    {} as RelationshipState,
-  )
+  return (await response.json()) as AgentRuntimeResponse
 }
 
 const makeId = () => crypto.randomUUID()
@@ -624,6 +526,7 @@ function App() {
   const [relationshipStates, setRelationshipStates] = useState(createInitialRelationshipStates)
   const [isStatePanelOpen, setIsStatePanelOpen] = useState(false)
   const [lastDirectorPlan, setLastDirectorPlan] = useState<DirectorPlanOutput | null>(null)
+  const [lastStoryEvent, setLastStoryEvent] = useState<StoryEvent | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: makeId(),
@@ -660,6 +563,7 @@ function App() {
       },
     ])
     setLastDirectorPlan(null)
+    setLastStoryEvent(null)
   }
 
   const handleLanguageChange = (nextLanguage: Language) => {
@@ -677,6 +581,7 @@ function App() {
     setMessage('')
     setError(null)
     setLastDirectorPlan(null)
+    setLastStoryEvent(null)
   }
 
   const handleSend = async (event: FormEvent) => {
@@ -696,71 +601,54 @@ function App() {
     setError(null)
 
     try {
-      const speakerPlan =
-        mode === 'crew'
-          ? await callDirectorPlan(selectedCharacter, relation, nextHistory, userText, language, relationshipStates)
-          : ({ speakers: [selectedCharacter.id] } satisfies DirectorPlanOutput)
+      const runtime = await callAgentRuntime(selectedCharacter.id, relation, mode, nextHistory, userText, language, relationshipStates)
+      setLastDirectorPlan(runtime.director_plan)
+      setLastStoryEvent(runtime.story_event)
 
-      setLastDirectorPlan(mode === 'crew' ? speakerPlan : null)
-
-      const replies: ChatMessage[] = []
-      const outputsBySpeaker: Array<{ speaker: CharacterId; output: RoleplayOutput }> = []
-      const activeAnchor = formatRelation(selectedCharacter, relation, language)
-
-      for (const speakerId of speakerPlan.speakers) {
-        const speaker = characters.find((character) => character.id === speakerId) ?? selectedCharacter
-        const speakerRelation = speaker.id === selectedCharacter.id ? relation : speaker.relationOptions[0]
-        const recentCharacterGifUrls = [...nextHistory, ...replies]
-          .filter((chatMessage) => chatMessage.sender === speaker.id && chatMessage.gifUrl)
+      const replies: ChatMessage[] = runtime.agent_messages.map((output, index) => {
+        const recentCharacterGifUrls = nextHistory
+          .filter((chatMessage) => chatMessage.sender === output.character_id && chatMessage.gifUrl)
           .slice(-3)
           .map((chatMessage) => chatMessage.gifUrl as string)
-        const sceneInstruction =
-          mode === 'crew'
-            ? [
-                speakerPlan.scene_goal ? `Director goal: ${speakerPlan.scene_goal}` : '',
-                speakerPlan.tension_note ? `Director tension: ${speakerPlan.tension_note}` : '',
-                'You are one speaker in a crew scene. React to the user and prior speakers. Do not speak for other characters.',
-              ]
-                .filter(Boolean)
-                .join(' ')
-            : undefined
 
-        const output = await callLiveMiniMax(speaker, speakerRelation, mode, [...nextHistory, ...replies], userText, language, {
-          relationshipState: relationshipStates[speaker.id],
-          activeAnchor,
-          sceneInstruction,
-        })
-
-        outputsBySpeaker.push({ speaker: speaker.id, output })
-        replies.push({
+        return {
           id: makeId(),
-          sender: speaker.id,
+          sender: output.character_id,
           text: output.reply_text,
           emotion: output.emotion_state,
           gifQuery: output.gif_search_query,
-          gifUrl: resolveGif(
-            output.gif_search_query,
-            speaker.id,
-            output.emotion_state,
-            recentCharacterGifUrls,
-            `${nextHistory.length}:${replies.length}:${userText}`,
-          ),
-        })
-      }
-
-      setRelationshipStates((currentStates) => {
-        const nextStates = { ...currentStates }
-        outputsBySpeaker.forEach(({ speaker, output }) => {
-          nextStates[speaker] = applyRelationshipDelta(nextStates[speaker], getRelationshipDelta(userText, output, mode))
-        })
-        return nextStates
+          gifUrl:
+            output.show_gif === false
+              ? null
+              : resolveGif(
+                  output.gif_search_query,
+                  output.character_id,
+                  output.emotion_state,
+                  recentCharacterGifUrls,
+                  `${nextHistory.length}:${index}:${userText}`,
+                ),
+          planSummary: output.plan_summary,
+          reflectionSummary: output.reflection_summary,
+          toolLogs: output.tool_logs,
+          memoryDelta: output.memory_delta,
+          storyEvent: index === 0 ? runtime.story_event : null,
+        }
       })
+
+      setRelationshipStates(runtime.relationship_states)
       setMessages((current) => [...current, ...replies])
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Unknown request error.')
     } finally {
       setIsSending(false)
     }
+  }
+
+  const renderMemoryDelta = (delta: Partial<RelationshipState> | undefined) => {
+    if (!delta) return null
+    const entries = stateMetrics.filter((metric) => delta[metric])
+    if (!entries.length) return null
+    return entries.map((metric) => `${stateLabels[metric][language]} ${delta[metric]! > 0 ? '+' : ''}${delta[metric]}`).join(' / ')
   }
 
   return (
@@ -829,9 +717,18 @@ function App() {
           <span className="field-label">{t.modelService}</span>
           <div className="service-status">
             <strong>{t.liveMiniMax}</strong>
-            <span>MiniMax-M2.7</span>
+            <span>{t.agentRuntime}</span>
           </div>
           <p className="hint">{t.liveMiniMaxHint}</p>
+        </section>
+
+        <section className="panel-section">
+          <span className="field-label">{t.storyClock}</span>
+          <div className="service-status">
+            <strong>Tick {lastStoryEvent?.tick ?? 0}</strong>
+            <span>{mode === 'crew' ? t.crew : t.private}</span>
+          </div>
+          {lastStoryEvent?.event_banner && <p className="hint">{lastStoryEvent.event_banner}</p>}
         </section>
 
         <section className="panel-section">
@@ -900,6 +797,11 @@ function App() {
                 {t.directorPlan}: {lastDirectorPlan.scene_goal || lastDirectorPlan.tension_note || lastDirectorPlan.speakers.join(', ')}
               </span>
             )}
+            {lastStoryEvent?.event_banner && (
+              <span className="director-note">
+                {t.eventBanner}: {lastStoryEvent.event_banner}
+              </span>
+            )}
           </div>
           <div className="schema-pill">{t.schema}</div>
         </header>
@@ -926,6 +828,52 @@ function App() {
                     {chatMessage.emotion && <span>{chatMessage.emotion}</span>}
                   </div>
                   <p>{chatMessage.text}</p>
+                  {(chatMessage.storyEvent?.event_banner ||
+                    chatMessage.planSummary ||
+                    chatMessage.reflectionSummary ||
+                    chatMessage.toolLogs?.length ||
+                    renderMemoryDelta(chatMessage.memoryDelta)) && (
+                    <div className="agent-runtime-card">
+                      {chatMessage.storyEvent?.event_banner && (
+                        <div className="runtime-row event-row">
+                          <strong>{t.eventBanner}</strong>
+                          <span>{chatMessage.storyEvent.event_banner}</span>
+                        </div>
+                      )}
+                      {chatMessage.planSummary && (
+                        <div className="runtime-row">
+                          <strong>{t.planSummary}</strong>
+                          <span>{chatMessage.planSummary}</span>
+                        </div>
+                      )}
+                      {chatMessage.reflectionSummary && (
+                        <div className="runtime-row">
+                          <strong>{t.reflectionSummary}</strong>
+                          <span>{chatMessage.reflectionSummary}</span>
+                        </div>
+                      )}
+                      {renderMemoryDelta(chatMessage.memoryDelta) && (
+                        <div className="runtime-row">
+                          <strong>{t.memoryDelta}</strong>
+                          <span>{renderMemoryDelta(chatMessage.memoryDelta)}</span>
+                        </div>
+                      )}
+                      {chatMessage.toolLogs?.length ? (
+                        <details className="tool-log-details">
+                          <summary>{t.toolLogs}</summary>
+                          <div className="tool-log-list">
+                            {chatMessage.toolLogs.map((log) => (
+                              <div className="tool-log" key={`${chatMessage.id}-${log.tool_name}`}>
+                                <strong>{log.tool_name}</strong>
+                                <span>{log.risk_level}</span>
+                                <p>{log.summary}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
+                  )}
                   {chatMessage.gifUrl && (
                     <figure className="gif-card" data-query={chatMessage.gifQuery ?? 'crime-drama reaction'}>
                       <img

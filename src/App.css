@@ -469,6 +469,71 @@ pre {
   gap: 8px;
 }
 
+.agent-runtime-card {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(32, 42, 20, 0.12);
+  border-radius: 8px;
+  background: rgba(226, 222, 201, 0.48);
+}
+
+.runtime-row {
+  display: grid;
+  gap: 3px;
+}
+
+.runtime-row strong,
+.tool-log strong {
+  color: #17200e;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.runtime-row span,
+.tool-log span,
+.tool-log p {
+  color: #5d604c;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.event-row {
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(247, 206, 70, 0.22);
+}
+
+.tool-log-details {
+  background: rgba(255, 254, 246, 0.7);
+}
+
+.tool-log-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.tool-log {
+  display: grid;
+  gap: 4px;
+}
+
+.tool-log span {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #d7e36f;
+  color: #14200d;
+  font-weight: 900;
+}
+
+.tool-log p {
+  margin: 0;
+}
+
 .gif-card img {
   width: min(100%, 330px);
   aspect-ratio: 16 / 9;

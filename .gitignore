@@ -19,6 +19,7 @@ playwright-report
 !.vscode/extensions.json
 .idea
 .omx
+server/agents/memory
 .DS_Store
 *.suo
 *.ntvs*
