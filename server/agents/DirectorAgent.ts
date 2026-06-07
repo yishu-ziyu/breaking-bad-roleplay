@@ -1,182 +1,163 @@
-import fs from 'node:fs'
-import path from 'node:path'
-import { AgentContainer } from './AgentContainer'
-import type {
-  AgentRuntimeRequest,
-  AgentRuntimeResponse,
-  CharacterId,
-  DirectorPlan,
-  RelationshipState,
-  StoryEvent,
-} from './types'
+import fs from 'fs';
+import path from 'path';
+import { AgentContainer } from './AgentContainer';
+import type { RelationshipState } from './AgentContainer';
 
-const characterIds: CharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
-
-type WorldState = {
-  tick: number
-  last_event: string | null
-  updated_at: string
+export interface StoryEvent {
+  type: 'DEA_SWEEP' | 'PRECURSOR_SEIZURE' | 'LOCKDOWN';
+  description: string;
 }
 
-function clampStateValue(value: number) {
-  return Math.max(-5, Math.min(5, value))
-}
-
-function applyDelta(state: RelationshipState, delta: Partial<RelationshipState>): RelationshipState {
-  return {
-    trust: clampStateValue(state.trust + (delta.trust ?? 0)),
-    suspicion: clampStateValue(state.suspicion + (delta.suspicion ?? 0)),
-    pressure: clampStateValue(state.pressure + (delta.pressure ?? 0)),
-    closeness: clampStateValue(state.closeness + (delta.closeness ?? 0)),
-    threat: clampStateValue(state.threat + (delta.threat ?? 0)),
-  }
-}
-
-function isCharacterId(value: string): value is CharacterId {
-  return characterIds.includes(value as CharacterId)
-}
-
-function readJsonFile<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
-  } catch {
-    return fallback
-  }
+export interface DebateLogEntry {
+  sender: string;
+  text: string;
+  emotion: string;
+  gifQuery: string | null;
+  tool_executed: string | null;
+  tool_log: string | null;
+  updated_relationship_state: RelationshipState;
+  thinking: string;
 }
 
 export class DirectorAgent {
-  private readonly memoryRoot = path.join(process.cwd(), 'server', 'agents', 'memory')
-  private readonly worldFile = path.join(this.memoryRoot, 'world_state.json')
-  private readonly apiKey?: string
+  private activeAgents: Map<string, AgentContainer>;
+  private storyTick: number = 0;
+  private stateFilePath: string;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey
-    fs.mkdirSync(this.memoryRoot, { recursive: true })
-  }
-
-  async runAgentTurn(request: AgentRuntimeRequest): Promise<AgentRuntimeResponse> {
-    const storyEvent = this.advanceClockTick(request.mode)
-    const directorPlan = this.planSpeakers(request, storyEvent)
-    const relationshipStates = { ...request.relationshipStates }
-    const agentMessages = []
-    let debateHistory = request.history
-
-    for (const speaker of directorPlan.speakers) {
-      const agent = new AgentContainer(speaker, this.apiKey)
-      const message = await agent.runCognitiveLoop({
-        userText: request.userText,
-        relation: speaker === request.characterId ? request.relation : request.language === 'zh' ? '同场的人' : 'person in the room',
-        mode: request.mode,
-        language: request.language,
-        history: debateHistory,
-        relationshipState: relationshipStates[speaker],
-        sceneGoal: directorPlan.scene_goal,
-        tensionNote: directorPlan.tension_note,
-      })
-      relationshipStates[speaker] = applyDelta(relationshipStates[speaker], message.memory_delta)
-      agentMessages.push(message)
-      debateHistory = [...debateHistory, { sender: speaker, text: message.reply_text, emotion: message.emotion_state }]
+  constructor() {
+    const memoryDir = path.join(process.cwd(), 'server', 'agents', 'memory');
+    if (!fs.existsSync(memoryDir)) {
+      fs.mkdirSync(memoryDir, { recursive: true });
+    }
+    this.stateFilePath = path.join(memoryDir, 'director_state.json');
+    if (fs.existsSync(this.stateFilePath)) {
+      try {
+        const state = JSON.parse(fs.readFileSync(this.stateFilePath, 'utf-8'));
+        this.storyTick = state.tick || 0;
+      } catch {
+        this.storyTick = 0;
+      }
     }
 
-    if (storyEvent.global_pressure_delta > 0) {
-      for (const characterId of storyEvent.affected_characters) {
-        relationshipStates[characterId] = applyDelta(relationshipStates[characterId], {
-          pressure: storyEvent.global_pressure_delta,
-          suspicion: storyEvent.global_pressure_delta > 1 ? 1 : 0,
-        })
-      }
+    this.activeAgents = new Map([
+      ['walter', new AgentContainer('walter')],
+      ['jesse', new AgentContainer('jesse')],
+      ['saul', new AgentContainer('saul')],
+      ['mike', new AgentContainer('mike')],
+      ['gus', new AgentContainer('gus')],
+      ['skyler', new AgentContainer('skyler')]
+    ]);
+  }
+
+  public async advanceClockTick(): Promise<{ tick: number; event: StoryEvent | null; globalStates: Record<string, Record<string, RelationshipState>> }> {
+    this.storyTick += 1;
+    fs.writeFileSync(this.stateFilePath, JSON.stringify({ tick: this.storyTick }));
+    let spawnedEvent: StoryEvent | null = null;
+
+    // 20% chance or every 5 ticks triggers a macro story event (Design C)
+    if (this.storyTick % 5 === 0) {
+      spawnedEvent = this.spawnRandomEvent();
+      this.applyEventGlobalSideEffects(spawnedEvent);
+    }
+
+    // Load global state dossier status for each agent to feed back to frontend
+    const globalStates: Record<string, Record<string, RelationshipState>> = {};
+    for (const [id, agent] of this.activeAgents.entries()) {
+      // Find representative relationship status (we can average them or take jesse/walter's view)
+      const dossiers = agent.loadAllDossiers();
+      const representation: Record<string, RelationshipState> = {};
+      dossiers.forEach(d => {
+        representation[d.peer_id] = d.relationship_state;
+      });
+      globalStates[id] = representation;
     }
 
     return {
-      agent_messages: agentMessages,
-      director_plan: directorPlan,
-      relationship_states: relationshipStates,
-      story_event: storyEvent,
-    }
+      tick: this.storyTick,
+      event: spawnedEvent,
+      globalStates
+    };
   }
 
-  advanceClockTick(mode: 'direct' | 'crew'): StoryEvent {
-    const current = readJsonFile<WorldState>(this.worldFile, {
-      tick: 0,
-      last_event: null,
-      updated_at: new Date().toISOString(),
-    })
-    const tick = current.tick + 1
-    const event = this.eventForTick(tick, mode)
-    const nextState: WorldState = {
-      tick,
-      last_event: event.event_banner,
-      updated_at: new Date().toISOString(),
-    }
-    fs.writeFileSync(this.worldFile, `${JSON.stringify(nextState, null, 2)}\n`)
-    return event
-  }
+  public async runBackgroundAgentDebate(topic: string, characters: string[], activePeerId: string = 'user', llmProvider: string = 'mimo'): Promise<DebateLogEntry[]> {
+    const debateLogs: DebateLogEntry[] = [];
+    let lastReply = topic;
 
-  private eventForTick(tick: number, mode: 'direct' | 'crew'): StoryEvent {
-    if (tick % 6 === 0) {
-      return {
-        tick,
-        event_banner: 'DEA pressure rises across Albuquerque.',
-        global_pressure_delta: 2,
-        affected_characters: characterIds,
-      }
-    }
-    if (tick % 4 === 0) {
-      return {
-        tick,
-        event_banner: mode === 'crew' ? 'A background dispute pulls more characters into the room.' : 'A quiet rumor changes the pressure in the room.',
-        global_pressure_delta: 1,
-        affected_characters: ['walter', 'jesse', 'saul'],
-      }
-    }
-    return {
-      tick,
-      event_banner: null,
-      global_pressure_delta: 0,
-      affected_characters: [],
-    }
-  }
+    // NPCs talk back and forth for up to 3 turns
+    for (let turn = 0; turn < 3; turn++) {
+      const activeChar = characters[turn % characters.length];
+      const agent = this.activeAgents.get(activeChar);
+      
+      if (agent) {
+        // Run ReAct loop for this character reacting to the previous turn's dialog
+        const response = await agent.runCognitiveLoop(lastReply, {
+          systemTick: this.storyTick,
+          activePeerId,
+          isDebateTurn: true,
+          debateTurnIndex: turn,
+          llmProvider
+        });
 
-  private planSpeakers(request: AgentRuntimeRequest, storyEvent: StoryEvent): DirectorPlan {
-    if (request.mode === 'direct') {
-      return {
-        speakers: [request.characterId],
-        scene_goal: 'Answer through the selected relationship while updating memory.',
-        tension_note: storyEvent.event_banner ?? 'Private scene; no background debate required.',
+        debateLogs.push({
+          sender: activeChar,
+          text: response.reply_text,
+          emotion: response.emotion_state,
+          gifQuery: response.gif_search_query,
+          tool_executed: response.tool_executed,
+          tool_log: response.tool_log,
+          updated_relationship_state: response.updated_relationship_state,
+          thinking: response.thinking
+        });
+
+        lastReply = response.reply_text;
       }
     }
 
-    const requestedCrew = request.crewParticipantIds?.filter(isCharacterId) ?? characterIds
-    const allowedSpeakers = Array.from(new Set([request.characterId, ...requestedCrew])).filter(isCharacterId)
-    const normalized = request.userText.toLowerCase()
-    const mentioned = allowedSpeakers.filter((id) => {
-      return normalized.includes(id) || normalized.includes(this.displayName(id).toLowerCase())
-    })
-    const pressureRank = [...allowedSpeakers].sort(
-      (left, right) => request.relationshipStates[right].pressure - request.relationshipStates[left].pressure,
-    )
-    const speakers = Array.from(new Set([request.characterId, ...mentioned, ...pressureRank])).slice(
-      0,
-      Math.min(3, allowedSpeakers.length),
-    )
-    return {
-      speakers,
-      scene_goal: storyEvent.event_banner ? `Respond to the event: ${storyEvent.event_banner}` : 'Let the most pressured characters debate the user move.',
-      tension_note: 'Crew mode uses the user-selected roster before director speaker planning.',
-    }
+    return debateLogs;
   }
 
-  private displayName(characterId: CharacterId) {
-    return characterId === 'jesse'
-      ? 'Jesse'
-      : characterId === 'skyler'
-        ? 'Skyler'
-        : characterId === 'saul'
-          ? 'Saul'
-          : characterId === 'mike'
-            ? 'Mike'
-            : characterId === 'gus'
-              ? 'Gus'
-              : 'Walter'
+  private spawnRandomEvent(): StoryEvent {
+    const events: StoryEvent[] = [
+      {
+        type: 'DEA_SWEEP',
+        description: 'DEA initiates high-alert sweep across Albuquerque. Suspicion increases +2 globally!'
+      },
+      {
+        type: 'PRECURSOR_SEIZURE',
+        description: 'Methylamine chemical supplier shipment seized by border patrol. Walter and Jesse cook outputs reduced, pressure rises!'
+      },
+      {
+        type: 'LOCKDOWN',
+        description: 'Gus Fring goes into high safehouse lockdown mode. Security sweeps active, global threat level rises!'
+      }
+    ];
+    return events[Math.floor(Math.random() * events.length)];
+  }
+
+  private applyEventGlobalSideEffects(event: StoryEvent) {
+    for (const agent of this.activeAgents.values()) {
+      const wm = agent.loadWorkingMemory();
+      if (!wm.environment_alerts) wm.environment_alerts = [];
+      wm.environment_alerts.push(`${event.type}: ${event.description}`);
+      
+      // Update peer dossiers based on event deltas
+      const dossiers = agent.loadAllDossiers();
+      dossiers.forEach(d => {
+        const nextState = { ...d.relationship_state };
+        if (event.type === 'DEA_SWEEP') {
+          nextState.suspicion = Math.min(5, nextState.suspicion + 2);
+          nextState.pressure = Math.min(5, nextState.pressure + 1);
+        } else if (event.type === 'PRECURSOR_SEIZURE') {
+          nextState.pressure = Math.min(5, nextState.pressure + 2);
+        } else if (event.type === 'LOCKDOWN') {
+          nextState.threat = Math.min(5, nextState.threat + 2);
+          nextState.suspicion = Math.min(5, nextState.suspicion + 1);
+        }
+        d.relationship_state = nextState;
+        agent.savePeerDossier(d.peer_id, d);
+      });
+
+      agent.saveWorkingMemory(wm);
+    }
   }
 }
