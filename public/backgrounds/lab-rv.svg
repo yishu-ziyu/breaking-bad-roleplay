@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="labWall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3020"/>
+      <stop offset="0.5" stop-color="#2a2018"/>
+      <stop offset="1" stop-color="#1a1410"/>
+    </linearGradient>
+    <radialGradient id="labLight" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0" stop-color="#f7ce46" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#f7ce46" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#f7ce46" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="labHaze" cx="0.5" cy="0.6" r="0.5">
+      <stop offset="0" stop-color="#5d604c" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#5d604c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="labFume" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3530"/>
+      <stop offset="1" stop-color="#1a1410"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Back wall -->
+  <rect width="1920" height="1080" fill="url(#labWall)"/>
+
+  <!-- Overhead light glow -->
+  <ellipse cx="960" cy="120" rx="900" ry="400" fill="url(#labLight)"/>
+
+  <!-- Chemical haze -->
+  <ellipse cx="960" cy="650" rx="1100" ry="350" fill="url(#labHaze)"/>
+
+  <!-- Fume hood silhouette (back center-left) -->
+  <g stroke="#0a0805" stroke-width="2.5" stroke-linejoin="round">
+    <path d="M 360 220 L 700 220 L 720 280 L 700 340 L 360 340 L 380 280 Z"
+          fill="url(#labFume)"/>
+    <!-- fume hood glass front -->
+    <rect x="395" y="260" width="280" height="70" fill="#1a1410" stroke="#0a0805" stroke-width="2"/>
+    <!-- sash line -->
+    <line x1="395" y1="295" x2="675" y2="295" stroke="#0a0805" stroke-width="1.5"/>
+    <!-- hood vent at top -->
+    <rect x="450" y="180" width="160" height="40" fill="#1a1410" stroke="#0a0805" stroke-width="2"/>
+    <line x1="470" y1="180" x2="470" y2="220" stroke="#0a0805" stroke-width="1"/>
+    <line x1="490" y1="180" x2="490" y2="220" stroke="#0a0805" stroke-width="1"/>
+    <line x1="510" y1="180" x2="510" y2="220" stroke="#0a0805" stroke-width="1"/>
+    <line x1="530" y1="180" x2="530" y2="220" stroke="#0a0805" stroke-width="1"/>
+    <line x1="550" y1="180" x2="550" y2="220" stroke="#0a0805" stroke-width="1"/>
+    <line x1="570" y1="180" x2="570" y2="220" stroke="#0a0805" stroke-width="1"/>
+    <line x1="590" y1="180" x2="590" y2="220" stroke="#0a0805" stroke-width="1"/>
+  </g>
+
+  <!-- Counter -->
+  <rect x="100" y="540" width="900" height="60" fill="#1a1410" stroke="#0a0805" stroke-width="2.5"/>
+  <line x1="100" y1="540" x2="1000" y2="540" stroke="#5d604c" stroke-width="1" stroke-opacity="0.4"/>
+
+  <!-- Beakers / flasks on counter (left group) -->
+  <g stroke="#0a0805" stroke-width="2" stroke-linejoin="round">
+    <!-- Erlenmeyer flask 1 -->
+    <path d="M 180 540 L 180 480 L 200 460 L 200 540 Z" fill="#2a2018"/>
+    <line x1="180" y1="500" x2="200" y2="500" stroke="#5d604c" stroke-width="1.5"/>
+    <!-- Round flask 2 -->
+    <ellipse cx="240" cy="510" rx="22" ry="22" fill="#2a2018"/>
+    <line x1="232" y1="495" x2="232" y2="478" stroke="#0a0805" stroke-width="2"/>
+    <line x1="248" y1="495" x2="248" y2="478" stroke="#0a0805" stroke-width="2"/>
+    <rect x="230" y="475" width="20" height="6" fill="#0a0805"/>
+    <!-- Beaker -->
+    <rect x="290" y="495" width="40" height="45" fill="#2a2018"/>
+    <line x1="295" y1="510" x2="295" y2="540" stroke="#5d604c" stroke-width="1"/>
+    <line x1="310" y1="510" x2="310" y2="540" stroke="#5d604c" stroke-width="1"/>
+    <line x1="325" y1="510" x2="325" y2="540" stroke="#5d604c" stroke-width="1"/>
+    <!-- Tall cylinder -->
+    <rect x="350" y="460" width="22" height="80" fill="#2a2018"/>
+    <line x1="350" y1="495" x2="372" y2="495" stroke="#5d604c" stroke-width="1.5"/>
+    <!-- Small flask -->
+    <path d="M 410 540 L 410 510 L 400 500 L 420 500 L 410 510 Z" fill="#2a2018"/>
+  </g>
+
+  <!-- Distillation setup (center) -->
+  <g stroke="#0a0805" stroke-width="2" fill="none">
+    <!-- Round bottom flask on stand -->
+    <ellipse cx="550" cy="500" rx="40" ry="35" fill="#2a2018"/>
+    <line x1="510" y1="500" x2="590" y2="500" stroke="#5d604c" stroke-width="1"/>
+    <!-- Stand rod -->
+    <line x1="630" y1="540" x2="630" y2="380" stroke="#0a0805" stroke-width="2.5"/>
+    <rect x="600" y="375" width="60" height="10" fill="#0a0805"/>
+    <!-- Condenser tube -->
+    <rect x="600" y="430" width="20" height="80" fill="none" stroke="#0a0805" stroke-width="2"/>
+    <!-- connection line from flask to condenser -->
+    <path d="M 590 480 L 600 470 L 600 450" stroke="#0a0805" stroke-width="2" fill="none"/>
+  </g>
+
+  <!-- Bunsen burner under flask -->
+  <g stroke="#0a0805" stroke-width="2">
+    <rect x="535" y="540" width="30" height="15" fill="#0a0805"/>
+    <path d="M 545 525 Q 550 510 555 525" fill="#f7ce46" opacity="0.7" stroke="none"/>
+  </g>
+
+  <!-- More lab items (right of counter) -->
+  <g stroke="#0a0805" stroke-width="2">
+    <!-- Test tube rack -->
+    <rect x="700" y="510" width="80" height="30" fill="#1a1410"/>
+    <rect x="710" y="475" width="6" height="35" fill="#2a2018"/>
+    <rect x="725" y="475" width="6" height="35" fill="#2a2018"/>
+    <rect x="740" y="475" width="6" height="35" fill="#2a2018"/>
+    <rect x="755" y="475" width="6" height="35" fill="#2a2018"/>
+    <rect x="770" y="475" width="6" height="35" fill="#2a2018"/>
+    <!-- Bottle -->
+    <rect x="820" y="490" width="35" height="50" fill="#2a2018"/>
+    <rect x="830" y="475" width="15" height="15" fill="#0a0805"/>
+    <!-- Small jar -->
+    <ellipse cx="890" cy="535" rx="22" ry="8" fill="#2a2018"/>
+    <rect x="876" y="510" width="28" height="25" fill="#2a2018"/>
+  </g>
+
+  <!-- Right side bunks (silhouettes in shadow) -->
+  <g stroke="#0a0805" stroke-width="2.5">
+    <rect x="1180" y="280" width="600" height="100" fill="#0a0805"/>
+    <rect x="1180" y="380" width="600" height="100" fill="#0a0805"/>
+    <line x1="1180" y1="280" x2="1180" y2="480" stroke="#0a0805" stroke-width="3"/>
+    <line x1="1780" y1="280" x2="1780" y2="480" stroke="#0a0805" stroke-width="3"/>
+    <line x1="1200" y1="280" x2="1200" y2="220" stroke="#0a0805" stroke-width="2"/>
+    <line x1="1760" y1="280" x2="1760" y2="220" stroke="#0a0805" stroke-width="2"/>
+    <!-- blanket roll -->
+    <rect x="1300" y="350" width="120" height="30" fill="#1a1410" stroke="#0a0805" stroke-width="1.5"/>
+    <rect x="1500" y="450" width="100" height="30" fill="#1a1410" stroke="#0a0805" stroke-width="1.5"/>
+  </g>
+
+  <!-- Left wall shelves with chemical bottles -->
+  <g stroke="#0a0805" stroke-width="2">
+    <line x1="0" y1="420" x2="280" y2="420" stroke="#0a0805" stroke-width="3"/>
+    <!-- Bottles on shelf -->
+    <rect x="40" y="380" width="20" height="40" fill="#2a2018"/>
+    <rect x="45" y="370" width="10" height="10" fill="#0a0805"/>
+    <rect x="80" y="385" width="18" height="35" fill="#2a2018"/>
+    <ellipse cx="125" cy="410" rx="14" ry="10" fill="#2a2018"/>
+    <rect x="155" y="375" width="22" height="45" fill="#2a2018"/>
+    <rect x="195" y="385" width="16" height="35" fill="#2a2018"/>
+    <rect x="225" y="390" width="20" height="30" fill="#2a2018"/>
+  </g>
+
+  <!-- Wall cabinets (right) -->
+  <g stroke="#0a0805" stroke-width="2.5">
+    <rect x="1450" y="180" width="280" height="120" fill="#1a1410"/>
+    <line x1="1590" y1="180" x2="1590" y2="300" stroke="#0a0805" stroke-width="2"/>
+    <line x1="1450" y1="240" x2="1730" y2="240" stroke="#0a0805" stroke-width="1.5"/>
+    <circle cx="1575" cy="280" r="3" fill="#f7ce46" opacity="0.6"/>
+    <circle cx="1605" cy="280" r="3" fill="#f7ce46" opacity="0.6"/>
+  </g>
+
+  <!-- Floor -->
+  <rect x="0" y="600" width="1920" height="480" fill="#0a0805"/>
+  <g stroke="#1a1410" stroke-width="1" fill="none">
+    <line x1="0" y1="700" x2="1920" y2="700" stroke-opacity="0.4"/>
+    <line x1="0" y1="850" x2="1920" y2="850" stroke-opacity="0.4"/>
+  </g>
+
+  <!-- Yellow light cone from above -->
+  <path d="M 870 80 L 1050 80 L 1200 800 L 720 800 Z" fill="#f7ce46" opacity="0.05"/>
+</svg>

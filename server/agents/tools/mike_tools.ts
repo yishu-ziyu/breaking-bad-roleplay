@@ -1,25 +1,43 @@
-import type { SafeToolResult } from './walter_tools'
+import fs from 'fs';
+import path from 'path';
 
-export type MikePerimeterInput = {
-  pressure: number
-  threat: number
-  userText: string
+interface ReconResult {
+  observedMovements: string;
+  threatLevelReduction: number;
+  message: string;
 }
 
-export function mike_perimeter_read(input: MikePerimeterInput): SafeToolResult {
-  const normalized = input.userText.toLowerCase()
-  const mentionsDanger = /danger|threat|cartel|gun|follow|watch|危险|威胁|盯|跟踪|枪|卡特尔/.test(normalized)
-  const risk = input.pressure + input.threat + (mentionsDanger ? 2 : 0)
-  const risk_level = risk >= 7 ? 'high' : risk >= 4 ? 'medium' : 'low'
+export function mike_reconnaissance(target: string): ReconResult {
+  const memoryDir = path.join(process.cwd(), 'server', 'agents', 'memory', 'mike');
+  if (!fs.existsSync(memoryDir)) {
+    fs.mkdirSync(memoryDir, { recursive: true });
+  }
+
+  const reports = [
+    `Target spotted meeting a shell contact at the Loyola's Diner parking lot. Envelopes exchanged. No signs of tail.`,
+    `Tracked target to a public phone booth in downtown ABQ. Logged two outbound calls. Suspect is nervous.`,
+    `Target spent three hours at nail salon. Nothing out of the ordinary. Perimeter swept. Security cameras checked.`,
+    `Target is staying put at residential address. Checked garbage bins; recovered shredded bank receipts. Minimal activity.`
+  ];
+
+  const report = reports[Math.floor(Math.random() * reports.length)];
+  const reduction = 1.5; // Threat level reduction score
+  const message = `Reconnaissance sweep completed on ${target}. threat_reduction: -${reduction}. Surveillance logs recorded.`;
+
+  // Write reconnaissance surveillance file
+  const reconLogsPath = path.join(memoryDir, 'surveillance_logs.jsonl');
+  const logEntry = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    target,
+    report,
+    threat_reduction: reduction,
+    sweep_status: "Secured"
+  });
+  fs.appendFileSync(reconLogsPath, logEntry + '\n');
 
   return {
-    tool_name: 'mike_perimeter_read',
-    summary:
-      risk_level === 'high'
-        ? 'Mike reads the room as unstable and cuts the conversation down to consequences and exits.'
-        : 'Mike gives a restrained situational read, keeping the focus on judgment rather than tactics.',
-    pressure_delta: mentionsDanger ? 1 : 0,
-    suspicion_delta: 0,
-    risk_level,
-  }
+    observedMovements: report,
+    threatLevelReduction: reduction,
+    message
+  };
 }

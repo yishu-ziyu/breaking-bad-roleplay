@@ -1,0 +1,183 @@
+/* =================================================================
+   ABQ Roleplay Lab — Design Tokens
+   =================================================================
+   Centralized design tokens for the Breaking Bad roleplay experience.
+   Inspired by BB's signature palette: yellow + olive + deep brown,
+   with charcoal/cream/warm-gray surfaces and BB-character accents.
+   后续所有视觉改造（P0-B 场景背景、P0-C 角色剪影、P0-F 动画）都基于这套 token。
+   ================================================================= */
+
+:root {
+  /* -----------------------------------------------------------------
+     1. BB Brand Colors (核心品牌色)
+     ----------------------------------------------------------------- */
+  --color-bb-yellow: #f7ce46;        /* Saul 风格强调色，CTA / active state */
+  --color-bb-olive: #8ea93f;         /* 主辅色，化学绿 */
+  --color-bb-olive-soft: #d7e36f;    /* 渐变末端 / Walter 角色色 */
+  --color-bb-charcoal: #17200e;      /* 深墨绿，主文字 + 头图 */
+  --color-bb-ink: #14200d;           /* 极深墨绿，次级文字 + 按钮文本 */
+  --color-bb-violet: #211434;        /* 暗紫渐变起色 */
+  --color-bb-shadow: #080b08;        /* 接近全黑，阴影用 */
+
+  /* -----------------------------------------------------------------
+     2. Character Color Tokens (角色色)
+        注意：--character-color 由组件 style 内联覆盖（见 App.tsx）
+        这里给静态场景或非 inline 场景使用，CSS 中优先用 var(--character-color)
+     ----------------------------------------------------------------- */
+  --color-char-walter: #d7e36f;
+  --color-char-jesse: #93d7ff;
+  --color-char-skyler: #f3d9a2;
+  --color-char-saul: #f7ce46;
+  --color-char-mike: #b9c0a5;
+  --color-char-gus: #b2f09a;
+
+  /* -----------------------------------------------------------------
+     3. Surfaces (表面色)
+     ----------------------------------------------------------------- */
+  --color-surface-cream: #fffef6;        /* 卡片 / 输入框 */
+  --color-surface-warm: #dad7ce;         /* 控制面板背景 */
+  --color-surface-warm-2: #e2dec9;       /* segmented control bg */
+  --color-surface-warm-3: #d7d2bb;       /* meter track */
+  --color-surface-yellow-soft: #fff7d0;  /* user message bg */
+  --color-surface-dark-1: #1d2612;       /* 渐变深橄榄 */
+  --color-surface-dark-2: #1a1223;       /* 渐变深紫 */
+  --color-surface-charcoal-soft: rgba(23, 32, 14, 0.06);
+
+  /* -----------------------------------------------------------------
+     4. Text (文本色)
+     ----------------------------------------------------------------- */
+  --color-text-ink: #15180d;          /* body text */
+  --color-text-strong: #17200e;       /* heading / strong */
+  --color-text-muted: #5d604c;        /* hint / 弱化 */
+  --color-text-muted-2: #60634e;      /* segment 弱化态 */
+  --color-text-muted-3: #64694d;      /* figcaption / 弱化 */
+  --color-text-on-dark: #fff7d0;      /* 在暗背景上 */
+
+  /* -----------------------------------------------------------------
+     5. Borders (边框色)
+     ----------------------------------------------------------------- */
+  --color-border-soft: rgba(32, 42, 20, 0.13);
+  --color-border-soft-2: rgba(32, 42, 20, 0.14);
+  --color-border-soft-3: rgba(32, 42, 20, 0.15);
+  --color-border-soft-4: rgba(32, 42, 20, 0.16);
+  --color-border-soft-5: rgba(32, 42, 20, 0.18);
+  --color-border-charcoal-soft: rgba(23, 32, 14, 0.12);
+  --color-border-on-dark: rgba(255, 255, 255, 0.24);
+  --color-border-on-dark-2: rgba(255, 255, 255, 0.16);
+  --color-border-light-soft: rgba(0, 0, 0, 0.08);
+
+  /* -----------------------------------------------------------------
+     6. Status (状态色)
+     ----------------------------------------------------------------- */
+  --color-error-bg: #ffe6d8;
+  --color-error-text: #7e2512;
+  --color-overlay-bg: rgba(8, 11, 8, 0.85);
+  --color-glass-light: rgba(255, 255, 255, 0.1);
+  --color-glass-medium: rgba(255, 255, 255, 0.14);
+  --color-glass-strong: rgba(255, 255, 255, 0.35);
+  --color-glass-strong-2: rgba(255, 255, 255, 0.45);
+  --color-glass-text-soft: rgba(255, 255, 255, 0.7);
+  --color-glass-text: rgba(255, 255, 255, 0.85);
+  --color-avatar-border: rgba(255, 255, 255, 0.74);
+
+  /* -----------------------------------------------------------------
+     7. Glow / Ring / Decoration
+     ----------------------------------------------------------------- */
+  --color-ring-yellow: rgba(247, 206, 70, 0.32);
+  --color-ring-yellow-2: rgba(247, 206, 70, 0.25);
+  --color-ring-yellow-3: rgba(247, 206, 70, 0.2);
+  --color-ring-yellow-4: rgba(247, 206, 70, 0.4);
+  --color-ring-yellow-5: rgba(247, 206, 70, 0.08);
+  --color-ring-olive: rgba(142, 169, 63, 0.2);
+  --color-glow-warm-1: rgba(202, 219, 75, 0.2);
+  --color-glow-warm-2: rgba(247, 206, 70, 0.14);
+  --color-text-glow: rgba(0, 0, 0, 0.5);
+
+  /* -----------------------------------------------------------------
+     8. Typography
+     ----------------------------------------------------------------- */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: Menlo, Monaco, Consolas, Courier New, monospace;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 800;
+  --font-weight-black: 900;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 15px;
+  --font-size-xl: 25px;
+  --font-size-2xl: 28px;
+  --font-size-3xl: 34px;
+  --line-height-tight: 1.08;
+  --line-height-snug: 1.2;
+  --line-height-normal: 1.35;
+  --line-height-relaxed: 1.5;
+
+  /* -----------------------------------------------------------------
+     9. Spacing
+     ----------------------------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 7px;
+  --space-3: 9px;
+  --space-4: 11px;
+  --space-5: 12px;
+  --space-6: 14px;
+  --space-7: 18px;
+  --space-8: 22px;
+  --space-9: 30px;
+  --space-10: 36px;
+
+  /* -----------------------------------------------------------------
+     10. Radius
+     ----------------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 999px;
+
+  /* -----------------------------------------------------------------
+     11. Shadow
+     ----------------------------------------------------------------- */
+  --shadow-soft: 0 4px 12px rgba(23, 32, 14, 0.15);
+  --shadow-soft-2: 0 6px 16px rgba(23, 32, 14, 0.25);
+  --shadow-card: 0 18px 38px rgba(8, 11, 8, 0.3);
+  --shadow-dramatic: 0 24px 64px rgba(0, 0, 0, 0.6);
+  --shadow-inset: inset 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-inset-2: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --shadow-pane: 18px 0 42px rgba(7, 9, 6, 0.28);
+  --shadow-glow-yellow: 0 4px 12px rgba(247, 206, 70, 0.2);
+  --shadow-glow-yellow-2: 0 6px 16px rgba(247, 206, 70, 0.3);
+
+  /* -----------------------------------------------------------------
+     12. Easing & Duration
+     ----------------------------------------------------------------- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-dramatic: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 0.25s;
+  --duration-base: 0.4s;
+  --duration-slow: 0.6s;
+
+  /* -----------------------------------------------------------------
+     13. Layout
+     ----------------------------------------------------------------- */
+  --layout-pane-min: 320px;
+  --layout-pane-max: 390px;
+  --layout-pane-padding: 28px;
+  --layout-chat-min-height: 720px;
+  --layout-chat-padding: 30px;
+  --layout-message-max-width: 760px;
+  --layout-breakpoint-tablet: 920px;
+  --layout-breakpoint-mobile: 560px;
+
+  /* -----------------------------------------------------------------
+     14. Scene Overlays (P0-B 场景背景配套)
+     ----------------------------------------------------------------- */
+  --scene-overlay-fade: var(--duration-slow) var(--ease-dramatic);
+  --scene-overlay-tint: rgba(8, 11, 8, 0.35);
+  --scene-overlay-tint-2: rgba(8, 11, 8, 0.6);
+}

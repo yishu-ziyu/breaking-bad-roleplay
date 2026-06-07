@@ -1,25 +1,43 @@
-import type { SafeToolResult } from './walter_tools'
+import fs from 'fs';
+import path from 'path';
 
-export type SaulLegalRiskInput = {
-  pressure: number
-  threat: number
-  userText: string
+interface LaunderingResult {
+  cleaned: number;
+  saulCut: number;
+  irsExposureDelta: number;
+  message: string;
 }
 
-export function saul_legal_risk_theater(input: SaulLegalRiskInput): SafeToolResult {
-  const normalized = input.userText.toLowerCase()
-  const mentionsMoney = /money|cash|pay|deal|lawyer|legal|现金|钱|律师|交易|合同/.test(normalized)
-  const risk = input.pressure + input.threat + (mentionsMoney ? 2 : 0)
-  const risk_level = risk >= 7 ? 'high' : risk >= 4 ? 'medium' : 'low'
+export function saul_laundering_audit(dirty_cash: number, business: 'laser_tag' | 'car_wash' | 'nail_salon'): LaunderingResult {
+  const memoryDir = path.join(process.cwd(), 'server', 'agents', 'memory', 'saul');
+  if (!fs.existsSync(memoryDir)) {
+    fs.mkdirSync(memoryDir, { recursive: true });
+  }
+
+  // Linear formula based on safety requirements
+  const saulCut = dirty_cash * 0.05; // 5% fee
+  const cleaned = dirty_cash - saulCut;
+  const irsExposureDelta = dirty_cash * 0.0001;
+
+  const message = `Laundering audit complete via ${business}. Processed $${dirty_cash.toLocaleString()} cash. Cleaned: $${cleaned.toLocaleString()}, Attorney Retainer Fee: $${saulCut.toLocaleString()}.`;
+
+  // Write structured ledger logs and disclaimer templates
+  const ledgerPath = path.join(memoryDir, 'laundering_ledger.jsonl');
+  const logEntry = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    raw_amount: dirty_cash,
+    fee: saulCut,
+    net_cleaned: cleaned,
+    exposure_increment: irsExposureDelta,
+    entity: business,
+    legal_disclaimer: "All transactions handled under strict attorney-client privilege. Consulting fees registered under fictional corporate shell consulting contracts."
+  });
+  fs.appendFileSync(ledgerPath, logEntry + '\n');
 
   return {
-    tool_name: 'saul_legal_risk_theater',
-    summary:
-      risk_level === 'high'
-        ? 'Saul turns the scene into a liability triage, offering dramatic options without procedural advice.'
-        : 'Saul sells reassurance while quietly measuring who becomes responsible if the room catches fire.',
-    pressure_delta: mentionsMoney ? 1 : 0,
-    suspicion_delta: risk_level === 'high' ? 1 : 0,
-    risk_level,
-  }
+    cleaned,
+    saulCut,
+    irsExposureDelta,
+    message
+  };
 }

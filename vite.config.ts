@@ -2,8 +2,8 @@ import type { IncomingMessage } from 'node:http'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import gameLoopHandler from './api/game-loop'
-import { callMiniMaxTokenPlan } from './server/minimax'
-import { DirectorAgent } from './server/agents/DirectorAgent'
+import chatHandler from './api/chat'
+import ttsHandler from './api/tts'
 
 function readJsonBody(request: IncomingMessage) {
   return new Promise<unknown>((resolve, reject) => {
@@ -26,6 +26,9 @@ function readJsonBody(request: IncomingMessage) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
+  // Inject environment variable for serverless API handlers in development
+  process.env.MINIMAX_TOKEN_PLAN_KEY = env.MINIMAX_TOKEN_PLAN_KEY;
+
   return {
     plugins: [
       react(),
@@ -33,29 +36,40 @@ export default defineConfig(({ mode }) => {
         name: 'minimax-token-plan-api',
         configureServer(server) {
           server.middlewares.use('/api/chat', async (request, response) => {
-            if (request.method !== 'POST') {
-              response.statusCode = 405
-              response.end(JSON.stringify({ error: 'Method not allowed.' }))
-              return
-            }
-
-            try {
-              const body = await readJsonBody(request)
-              const output =
-                typeof body === 'object' && body !== null && (body as { agentRuntimeEnabled?: unknown }).agentRuntimeEnabled === true
-                  ? await new DirectorAgent(env.MINIMAX_TOKEN_PLAN_KEY).runAgentTurn(body as never)
-                  : await callMiniMaxTokenPlan(env.MINIMAX_TOKEN_PLAN_KEY, body as { systemPrompt: string; contextPrompt: string })
-              response.setHeader('Content-Type', 'application/json')
-              response.end(JSON.stringify(output))
-            } catch (error) {
-              response.statusCode = 500
-              response.setHeader('Content-Type', 'application/json')
-              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown MiniMax request error.' }))
-            }
+            const body = (request.method === 'POST' ? await readJsonBody(request).catch(() => ({})) : {}) as Record<string, unknown>
+            await chatHandler(
+              { method: request.method, body },
+              {
+                status(code: number) {
+                  response.statusCode = code
+                  return this
+                },
+                json(payload: unknown) {
+                  response.setHeader('Content-Type', 'application/json')
+                  response.end(JSON.stringify(payload))
+                },
+              },
+            )
           })
           server.middlewares.use('/api/game-loop', async (request, response) => {
-            const body = request.method === 'POST' ? await readJsonBody(request).catch(() => ({})) : {}
+            const body = (request.method === 'POST' ? await readJsonBody(request).catch(() => ({})) : {}) as Record<string, unknown>
             await gameLoopHandler(
+              { method: request.method, body },
+              {
+                status(code: number) {
+                  response.statusCode = code
+                  return this
+                },
+                json(payload: unknown) {
+                  response.setHeader('Content-Type', 'application/json')
+                  response.end(JSON.stringify(payload))
+                },
+              },
+            )
+          })
+          server.middlewares.use('/api/tts', async (request, response) => {
+            const body = (request.method === 'POST' ? await readJsonBody(request).catch(() => ({})) : {}) as Record<string, unknown>
+            await ttsHandler(
               { method: request.method, body },
               {
                 status(code: number) {

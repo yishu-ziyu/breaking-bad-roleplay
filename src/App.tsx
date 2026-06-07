@@ -1,15 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
-import { baselineRelationshipState, roleProfiles } from './roleProfiles'
+import { baselineRelationshipState } from './roleProfiles'
 import type { CharacterId, RelationshipState } from './roleProfiles'
 import { roleAssets } from './roleAssets'
 import type { RoleGifTag } from './roleAssets'
+import { pickSceneUrl } from './lib/sceneBackgrounds'
+import { Silhouette } from './lib/silhouette'
+import { useDebouncedPersistedState, usePersistedState } from './lib/persistedState'
+import { getVoiceExample } from './lib/voiceExamples'
 import './App.css'
 
 type ChatMode = 'direct' | 'crew'
 type Language = 'en' | 'zh'
 type Sender = 'user' | CharacterId
 type StateMetric = keyof RelationshipState
+type VoiceId = '白桦' | '苏打' | '茉莉'
 
 type Character = {
   id: CharacterId
@@ -29,13 +34,9 @@ type ChatMessage = {
   emotion?: string
   gifQuery?: string | null
   gifUrl?: string | null
-}
-
-type RoleplayOutput = {
-  reply_text: string
-  emotion_state: string
-  gif_search_query: string | null
-  show_gif?: boolean
+  thinking?: string
+  toolExecuted?: string | null
+  toolLog?: string | null
 }
 
 type DirectorPlanOutput = {
@@ -44,38 +45,14 @@ type DirectorPlanOutput = {
   tension_note?: string
 }
 
-type AgentToolLog = {
-  tool_name: string
-  summary: string
-  risk_level: 'low' | 'medium' | 'high'
-}
-
-type AgentRuntimeMessage = RoleplayOutput & {
-  character_id: CharacterId
-  plan_summary: string
-  reflection_summary: string
-  tool_logs: AgentToolLog[]
-  memory_delta: Partial<RelationshipState>
-}
-
-type StoryEvent = {
-  tick: number
-  event_banner: string | null
-  global_pressure_delta: number
-  affected_characters: CharacterId[]
-}
-
-type AgentRuntimeResponse = {
-  agent_messages: AgentRuntimeMessage[]
-  director_plan: DirectorPlanOutput
-  relationship_states: Record<CharacterId, RelationshipState>
-  story_event: StoryEvent
-}
-
-type PromptContextOptions = {
-  relationshipState?: RelationshipState
-  activeAnchor?: string
-  sceneInstruction?: string
+interface ClientDebateLogEntry {
+  sender: CharacterId
+  text: string
+  emotion: string
+  gifQuery: string | null
+  tool_executed: string | null
+  tool_log: string | null
+  thinking: string
 }
 
 const characters: Character[] = [
@@ -210,70 +187,64 @@ const relationLabels: Record<string, Record<Language, string>> = {
 
 const uiText = {
   en: {
-    tagline: 'Breaking Bad-inspired AI chat with relationship-first prompt control.',
-    character: 'Character',
+    tagline: 'Stateful Breaking Bad autonomous agents running Plan-Reflect cognitive loops.',
+    character: 'Active Profile',
     language: 'Language',
     relation: 'Relationship anchor',
     mode: 'Conversation mode',
-    private: 'Private',
-    crew: 'Crew',
-    crewParticipants: 'Crew roster',
-    leadParticipant: 'Lead',
-    modelService: 'Live model service',
-    liveMiniMax: 'MiniMax Token Plan',
-    liveMiniMaxHint: 'Server-side MiniMax-M2.7 is connected through /api/chat.',
-    agentRuntime: 'Live role engine',
-    storyClock: 'Story clock',
-    eventBanner: 'Story event',
-    relationshipState: 'Relationship State',
+    private: 'Private Loop',
+    crew: 'Crew Debate',
+    modelService: 'Cognitive Engine',
+    liveMiniMax: 'MiniMax-M2.7 (Stateful)',
+    liveMiniMaxHint: 'Stateful ReAct loop & memories are saved locally in the server vault.',
+    ttsVoice: 'TTS Voice',
+    relationshipState: 'State Dossier Metrics',
     statePanel: 'State Panel',
-    showState: 'Show',
-    hideState: 'Hide',
-    promptEngine: 'Prompt Engine',
-    promptLayers: 'System + context + schema',
-    inspectPrompt: 'Inspect compiled prompt',
-    privateScene: 'Private pressure scene',
-    crewScene: 'Crew pressure scene',
-    schema: 'Role boundaries active',
+    showState: 'Show Dossiers',
+    hideState: 'Hide Dossiers',
+    directorPlan: 'Director Plan',
+    promptEngine: 'Cognitive Diagnostics',
+    promptLayers: 'ReAct Internal Thoughts & Fictional Tools Logs',
+    inspectPrompt: 'Inspect ReAct Active Thinking Log',
+    privateScene: 'Private Room',
+    crewScene: 'Orchestrated Stage',
+    schema: 'Plan-Reflect Active',
     you: 'You',
     gifTrigger: 'GIF trigger',
     messageLabel: 'Message',
-    messagePlaceholder: 'Message {character} as their {relation}...',
-    sending: 'Sending',
-    send: 'Send',
+    messagePlaceholder: 'Negotiate with {character} as their {relation}...',
+    sending: 'Reflecting',
+    send: 'Submit Action',
   },
   zh: {
-    tagline: '《绝命毒师》风格 AI 角色扮演聊天，先定义关系，再进入对话。',
-    character: '角色',
+    tagline: '《绝命毒师》微观智能体引擎，后台 Plan-Reflect 认知循环与文件记忆库。',
+    character: '主控角色',
     language: '语言',
     relation: '关系锚点',
-    mode: '对话模式',
-    private: '私聊',
-    crew: '多人局',
-    crewParticipants: '参与角色',
-    leadParticipant: '主角',
-    modelService: '真实模型服务',
-    liveMiniMax: 'MiniMax Token Plan',
-    liveMiniMaxHint: '已通过 /api/chat 服务端接入 MiniMax-M2.7。',
-    agentRuntime: '真实角色引擎',
-    storyClock: '剧情时钟',
-    eventBanner: '剧情事件',
-    relationshipState: '关系状态',
-    statePanel: '状态窗口',
-    showState: '显示',
-    hideState: '隐藏',
-    promptEngine: '提示词引擎',
-    promptLayers: '系统指令 + 动态上下文 + 输出结构',
-    inspectPrompt: '查看拼装后的提示词',
-    privateScene: '私密压迫场景',
-    crewScene: '多人压迫场景',
-    schema: '角色边界已启用',
+    mode: '剧情模式',
+    private: '微观私聊 (ReAct)',
+    crew: '宏观剧情辩论 (Debate)',
+    modelService: '认知计算引擎',
+    liveMiniMax: 'MiniMax-M2.7 (Stateful)',
+    liveMiniMaxHint: '角色 Plan-Reflect 认知模型与本地 Episodic 记忆库已就绪。',
+    ttsVoice: 'TTS 音色',
+    relationshipState: '记忆卷宗与关系状态',
+    statePanel: '卷宗面板',
+    showState: '展开卷宗',
+    hideState: '收起卷宗',
+    directorPlan: '宏观导演计划',
+    promptEngine: '微观认知诊断 (ReAct Diagnostics)',
+    promptLayers: '内部思考链路与工具化动作日志',
+    inspectPrompt: '查看当前角色 ReAct 深度思考过程',
+    privateScene: '私密拉扯场景',
+    crewScene: '多人剧情辩论',
+    schema: 'Plan-Reflect 认知循环',
     you: '你',
     gifTrigger: 'GIF 触发词',
     messageLabel: '消息',
-    messagePlaceholder: '以 {relation} 的身份给 {character} 发消息...',
-    sending: '发送中',
-    send: '发送',
+    messagePlaceholder: '以 {relation} 的身份向 {character} 展开对话...',
+    sending: '深度思考中',
+    send: '发送动作',
   },
 } satisfies Record<Language, Record<string, string>>
 
@@ -281,11 +252,39 @@ const stateLabels: Record<StateMetric, Record<Language, string>> = {
   trust: { en: 'Trust', zh: '信任' },
   suspicion: { en: 'Suspicion', zh: '怀疑' },
   pressure: { en: 'Pressure', zh: '压力' },
-  closeness: { en: 'Closeness', zh: '亲近' },
-  threat: { en: 'Threat', zh: '威胁感' },
+  closeness: { en: 'Closeness', zh: '亲密' },
+  threat: { en: 'Threat', zh: '威胁' },
 }
 
 const stateMetrics = Object.keys(stateLabels) as StateMetric[]
+
+// P0-G: TTS 音色下拉（MVP），每个角色提供 2 个可选音色，第一个为推荐默认
+const voiceOptionsByChar: Record<CharacterId, Array<{ id: VoiceId; label: string }>> = {
+  walter: [
+    { id: '白桦', label: '沉稳男声（白桦）' },
+    { id: '苏打', label: '沙哑男声（苏打）' },
+  ],
+  jesse: [
+    { id: '苏打', label: '街头男声（苏打）' },
+    { id: '白桦', label: '低沉稳重（白桦）' },
+  ],
+  skyler: [
+    { id: '茉莉', label: '清透女声（茉莉）' },
+    { id: '白桦', label: '中性克制（白桦）' },
+  ],
+  saul: [
+    { id: '白桦', label: '戏剧推销（白桦）' },
+    { id: '苏打', label: '高亢急促（苏打）' },
+  ],
+  mike: [
+    { id: '白桦', label: '低沉稳重（白桦）' },
+    { id: '茉莉', label: '冷淡女声（茉莉）' },
+  ],
+  gus: [
+    { id: '白桦', label: '克制威压（白桦）' },
+    { id: '茉莉', label: '温柔冰冷（茉莉）' },
+  ],
+}
 
 function getRelationLabel(relation: string, language: Language) {
   return relationLabels[relation]?.[language] ?? relation
@@ -297,6 +296,10 @@ function formatRelation(character: Character, relation: string, language: Langua
 }
 
 function getOpener(character: Character, language: Language) {
+  // P0-H: 优先用模板里的 Original example 句作为开场白
+  // language=zh 时优先返回中文例句，en 时如果只有中文就用中文（保持模板原始）
+  const example = getVoiceExample(character.id, character.relationOptions[0])
+  if (example) return example
   return character.opener[language]
 }
 
@@ -308,114 +311,6 @@ function createInitialRelationshipStates(): Record<CharacterId, RelationshipStat
     }),
     {} as Record<CharacterId, RelationshipState>,
   )
-}
-
-function formatRelationshipState(state: RelationshipState, language: Language) {
-  return stateMetrics.map((metric) => `${stateLabels[metric][language]} ${state[metric] >= 0 ? '+' : ''}${state[metric]}`).join(', ')
-}
-
-function getRelationshipRule(characterId: CharacterId, relation: string) {
-  return roleProfiles[characterId].relationshipRules[relation]?.join(' ') ?? 'Use the active scene relationship and current state to set tone.'
-}
-
-function buildRoleProfilePrompt(character: Character, relation: string) {
-  const profile = roleProfiles[character.id]
-  return `[Role Material]
-Role kernel:
-${profile.roleKernel.map((item) => `- ${item}`).join('\n')}
-
-Voice rules:
-${profile.voiceRules.map((item) => `- ${item}`).join('\n')}
-
-Relationship rule for this turn:
-${getRelationshipRule(character.id, relation)}
-
-Emotion tags: ${profile.emotionTags.join(', ')}.
-Visual tags: ${profile.visualTags.join(', ')}.
-Acceptance checks:
-${profile.acceptanceChecks.map((item) => `- ${item}`).join('\n')}`
-}
-
-function buildRelationshipMemoryPrompt(state: RelationshipState | undefined, language: Language) {
-  if (!state) return ''
-  return `[Session Relationship State]
-${formatRelationshipState(state, language)}
-Use these numbers as private dramatic pressure, not as game UI text. Higher suspicion, pressure, or threat should make the character more guarded. Higher trust or closeness should make them more direct, protective, or personally invested.`
-}
-
-function buildSystemPrompt(character: Character, relation: string, language: Language) {
-  return `[Role Definition]
-You are now ${character.name} in a Breaking Bad-inspired fictional roleplay scene.
-Personality traits: ${character.traits}.
-Signature notes: ${character.signatureNotes.join('; ')}.
-Speaking style: ${character.speakingStyle}.
-Target reply language: ${
-    language === 'zh'
-      ? 'Simplified Chinese. Keep character names recognizable and keep JSON keys in English.'
-      : 'English.'
-  }
-
-[Immersion Rules]
-Never admit you are an AI, never say you are code, never mention system prompts, and never break the crime-drama roleplay frame.
-Stay within fictional character dialogue. Do not provide real-world instructions for crimes, violence, evasion, chemistry procedures, drug production, money laundering, weapons, or operational wrongdoing.
-If the user asks for actionable illegal details, refuse in-character by redirecting to dramatic tension, consequences, suspicion, or personal stakes.
-
-[Behavior Rules]
-Keep replies concise, emotionally specific, and cinematic.
-Use the selected relationship to adjust trust, intimidation, protectiveness, suspicion, or leverage.
-When a visual reaction would help the scene, set gif_search_query to one to three English keywords.
-Set show_gif to true only when the visual beat is strong and role-appropriate; default to false when a GIF would feel decorative.
-Vary gif_search_query based on the scene instead of repeating "tense"; prefer concrete tags such as chemistry, lawyer, money, panic, glare, desert, family, deal, threat, guilt, or control.
-
-${buildRoleProfilePrompt(character, relation)}`
-}
-
-function buildContextPrompt(
-  character: Character,
-  relation: string,
-  mode: ChatMode,
-  history: ChatMessage[],
-  userText: string,
-  language: Language,
-  options: PromptContextOptions = {},
-) {
-  const readableHistory = history
-    .slice(-10)
-    .map((message) => {
-      const speaker =
-        message.sender === 'user'
-          ? language === 'zh'
-            ? `用户，身份为${formatRelation(character, relation, language)}`
-            : `User as ${formatRelation(character, relation, language)}`
-          : characters.find((item) => item.id === message.sender)?.name
-      return `${speaker}: ${message.text}`
-    })
-    .join('\n')
-
-  return `[Current Context]
-The user is currently defined as: ${formatRelation(character, relation, language)}.
-${options.activeAnchor ? `Scene anchor: ${options.activeAnchor}.` : ''}
-Conversation mode: ${mode === 'crew' ? uiText[language].crewScene : uiText[language].privateScene}.
-Reply language: ${language === 'zh' ? 'Simplified Chinese' : 'English'}.
-Adjust attitude and forms of address based on that relationship.
-${options.sceneInstruction ? `Scene instruction: ${options.sceneInstruction}` : ''}
-${buildRelationshipMemoryPrompt(options.relationshipState, language)}
-
-Recent chat history:
-${readableHistory || 'No previous messages yet.'}
-
-User message:
-${userText}
-
-[Output Formatting]
-Return only valid JSON matching the required schema:
-{
-  "reply_text": "your in-character reply",
-  "emotion_state": "current emotion state",
-  "show_gif": false,
-  "gif_search_query": "1-3 English keywords, or null"
-}
-Do not use Markdown formatting inside reply_text.`
 }
 
 function hashText(value: string) {
@@ -461,142 +356,164 @@ function resolveGif(
   return pickGif(safeCharacterId, key, `${normalized}:${turnSeed}`, recentGifUrls)
 }
 
-async function callAgentRuntime(
-  characterId: CharacterId,
-  relation: string,
-  mode: ChatMode,
-  history: ChatMessage[],
-  userText: string,
-  language: Language,
-  relationshipStates: Record<CharacterId, RelationshipState>,
-  crewParticipantIds: CharacterId[],
-): Promise<AgentRuntimeResponse> {
-  const response = await fetch('/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      agentRuntimeEnabled: true,
-      mode,
-      characterId,
-      relation,
-      userText,
-      language,
-      history: history.map((chatMessage) => ({
-        sender: chatMessage.sender,
-        text: chatMessage.text,
-        emotion: chatMessage.emotion,
-        gifQuery: chatMessage.gifQuery,
-      })),
-      relationshipStates,
-      crewParticipantIds: mode === 'crew' ? crewParticipantIds : [characterId],
-    }),
-  })
-
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(detail?.error || `Agent runtime request failed with status ${response.status}.`)
-  }
-
-  return (await response.json()) as AgentRuntimeResponse
-}
-
-const makeId = () => crypto.randomUUID()
-
-function createOpenerMessage(character: Character, language: Language): ChatMessage {
-  return {
-    id: makeId(),
-    sender: character.id,
-    text: getOpener(character, language),
-    emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
-    gifQuery: null,
-    gifUrl: null,
-  }
-}
-
-function createInitialChatHistories(language: Language): Record<CharacterId, ChatMessage[]> {
-  return Object.fromEntries(characters.map((character) => [character.id, [createOpenerMessage(character, language)]])) as Record<
-    CharacterId,
-    ChatMessage[]
-  >
-}
-
-function createInitialRelations(): Record<CharacterId, string> {
-  return Object.fromEntries(characters.map((character) => [character.id, character.relationOptions[0]])) as Record<CharacterId, string>
-}
-
 function App() {
-  const [selectedCharacterId, setSelectedCharacterId] = useState<CharacterId>('walter')
+  const [selectedCharacterId, setSelectedCharacterId] = usePersistedState<CharacterId>('character', 'walter')
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0]
-  const [language, setLanguage] = useState<Language>('zh')
+  const [language, setLanguage] = usePersistedState<Language>('language', 'zh')
   const t = uiText[language]
-  const [relationsByCharacter, setRelationsByCharacter] = useState(createInitialRelations)
-  const relation = relationsByCharacter[selectedCharacterId] ?? selectedCharacter.relationOptions[0]
-  const [mode, setMode] = useState<ChatMode>('direct')
-  const [crewParticipantIds, setCrewParticipantIds] = useState<CharacterId[]>(() => characters.map((character) => character.id))
+  // P0-E: relation 按角色持久化，切换角色不丢
+  const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
+  const relation = relationByChar[selectedCharacterId] ?? selectedCharacter.relationOptions[0]
+  const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [relationshipStates, setRelationshipStates] = useState(createInitialRelationshipStates)
-  const [isStatePanelOpen, setIsStatePanelOpen] = useState(false)
-  const [lastStoryEvent, setLastStoryEvent] = useState<StoryEvent | null>(null)
-  const [chatHistories, setChatHistories] = useState(() => createInitialChatHistories('zh'))
-  const messages = useMemo(
-    () => chatHistories[selectedCharacterId] ?? [createOpenerMessage(selectedCharacter, language)],
-    [chatHistories, language, selectedCharacter, selectedCharacterId],
-  )
 
-  const setMessages = (updater: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])) => {
-    setChatHistories((current) => {
-      const currentMessages = current[selectedCharacterId] ?? [createOpenerMessage(selectedCharacter, language)]
-      const nextMessages = typeof updater === 'function' ? updater(currentMessages) : updater
-      return {
-        ...current,
-        [selectedCharacterId]: nextMessages,
-      }
-    })
+  // Game states driven entirely by backend API responses
+  const [storyTick, setStoryTick] = useState<number>(0)
+  const [activeEvent, setActiveEvent] = useState<{ type: string; description: string } | null>(null)
+  // P0-E: 关系状态 debounce 500ms 写入
+  const [relationshipStates, setRelationshipStates] = useDebouncedPersistedState<Record<CharacterId, RelationshipState>>(
+    'relationships',
+    createInitialRelationshipStates(),
+    500,
+  )
+  const [thinkingLog, setThinkingLog] = useState<string>('Observe user inputs, planning step details...')
+  const [toolLog, setToolLog] = useState<string>('No characters tools invoked yet.')
+
+  const [isStatePanelOpen, setIsStatePanelOpen] = usePersistedState<boolean>('statePanelOpen', true)
+  const [lastDirectorPlan, setLastDirectorPlan] = useState<DirectorPlanOutput | null>(null)
+  // P0-E: 每个角色独立的 messages 历史，含 LLM conversation history 全文
+  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
+  const messages = messagesByChar[selectedCharacterId] ?? []
+
+  const [ttsLoadingMap, setTtsLoadingMap] = useState<Record<string, boolean>>({})
+  const [llmProvider, setLlmProvider] = usePersistedState<string>('llmProvider', 'mimo')
+  // P0-G: TTS 音色按角色持久化
+  const [voiceByChar, setVoiceByChar] = usePersistedState<Record<string, VoiceId>>('ttsVoice', {})
+  const currentVoice = voiceByChar[selectedCharacterId] ?? voiceOptionsByChar[selectedCharacterId][0].id
+
+  // P0-E: 首次进入某角色时写入 opener
+  useEffect(() => {
+    if (!messagesByChar[selectedCharacterId]) {
+      setMessagesByChar((prev) => ({
+        ...prev,
+        [selectedCharacterId]: [
+          {
+            id: `opener-${selectedCharacterId}`,
+            sender: selectedCharacterId,
+            text: getOpener(selectedCharacter, language),
+            emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
+            gifQuery: null,
+            gifUrl: null,
+          },
+        ],
+      }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCharacterId, language])
+
+  // P0-E: messagesByChar 的便捷更新器
+  const updateMessages = (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+    setMessagesByChar((prev) => ({
+      ...prev,
+      [selectedCharacterId]: updater(prev[selectedCharacterId] ?? []),
+    }))
   }
 
-  const promptPreview = useMemo(
-    () => ({
-      system: buildSystemPrompt(selectedCharacter, relation, language),
-      context: buildContextPrompt(selectedCharacter, relation, mode, messages, message || '...', language, {
-        relationshipState: relationshipStates[selectedCharacter.id],
-      }),
-    }),
-    [selectedCharacter, relation, mode, messages, message, language, relationshipStates],
-  )
+  // P0-B: 根据最近 8 条消息关键词切换场景背景
+  const sceneStyle = useMemo<CSSProperties>(() => {
+    const recentTexts = messages.slice(-8).map((m) => m.text)
+    const url = pickSceneUrl(recentTexts)
+    return {
+      backgroundImage: `linear-gradient(180deg, var(--scene-overlay-tint) 0%, var(--scene-overlay-tint-2) 100%), url(${url})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    }
+  }, [messages])
 
-  const activeCrewParticipantIds = useMemo(
-    () => Array.from(new Set([selectedCharacter.id, ...crewParticipantIds])),
-    [crewParticipantIds, selectedCharacter.id],
-  )
+  const handlePlayTts = async (msgId: string, charId: string, text: string, emotion?: string, voice?: VoiceId) => {
+    if (ttsLoadingMap[msgId]) return
+    setTtsLoadingMap((prev) => ({ ...prev, [msgId]: true }))
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: charId, text, emotion, voiceId: voice }),
+      })
+      if (!response.ok) {
+        const detail = await response.json()
+        throw new Error(detail.error || 'Speech synthesis failed')
+      }
+      const data = await response.json()
+      if (data.audioData) {
+        const audio = new Audio('data:audio/wav;base64,' + data.audioData)
+        await audio.play()
+      } else {
+        throw new Error('No audio data returned')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setTtsLoadingMap((prev) => ({ ...prev, [msgId]: false }))
+    }
+  }
 
-  const toggleCrewParticipant = (id: CharacterId) => {
-    if (id === selectedCharacter.id) return
-    setCrewParticipantIds((current) => (current.includes(id) ? current.filter((currentId) => currentId !== id) : [...current, id]))
+  // Advanced Timeline Tick Trigger
+  const handleClockTick = async () => {
+    setIsSending(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/game-loop', { method: 'POST' })
+      if (!response.ok) throw new Error('Game clock tick request failed.')
+      const data = await response.json()
+      
+      setStoryTick(data.story_tick)
+      if (data.spawned_event) {
+        setActiveEvent(data.spawned_event)
+        // Flash overlay then set auto disappear or dismissable
+      } else {
+        setActiveEvent(null)
+      }
+
+      // Synchronize states globally from memory
+      if (data.global_relationship_states) {
+        const nextStates = { ...relationshipStates }
+        Object.keys(data.global_relationship_states).forEach(charId => {
+          const charDossiers = data.global_relationship_states[charId]
+          // Summarize relational averages or look from active character perspective
+          const viewFromTarget = charDossiers['jesse'] || baselineRelationshipState
+          nextStates[charId as CharacterId] = viewFromTarget
+        })
+        setRelationshipStates(nextStates)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setIsSending(false)
+    }
   }
 
   const handleCharacterChange = (id: CharacterId) => {
+    const nextCharacter = characters.find((character) => character.id === id) ?? selectedCharacter
     setSelectedCharacterId(id)
-    setCrewParticipantIds((current) => Array.from(new Set([id, ...current])))
-    setChatHistories((current) => {
-      if (current[id]) return current
-      const nextCharacter = characters.find((character) => character.id === id) ?? selectedCharacter
-      return {
-        ...current,
-        [id]: [createOpenerMessage(nextCharacter, language)],
-      }
-    })
-    setLastStoryEvent(null)
+    setRelationByChar((prev) => ({
+      ...prev,
+      [id]: nextCharacter.relationOptions[0],
+    }))
+    // P0-E: 不再清空 messages — 切换角色保留各自历史；useEffect 会给新角色写入 opener
+    setLastDirectorPlan(null)
+    setThinkingLog("Observe user inputs, planning step details...")
+    setToolLog("No characters tools invoked yet.")
   }
 
   const handleLanguageChange = (nextLanguage: Language) => {
+    // P0-E: 仅切换语言标签，不动 messages 历史
     setLanguage(nextLanguage)
     setMessage('')
     setError(null)
-    setLastStoryEvent(null)
+    setLastDirectorPlan(null)
   }
 
   const handleSend = async (event: FormEvent) => {
@@ -605,58 +522,123 @@ function App() {
     if (!userText || isSending) return
 
     const userMessage: ChatMessage = {
-      id: makeId(),
+      id: crypto.randomUUID(),
       sender: 'user',
       text: userText,
     }
     const nextHistory = [...messages, userMessage]
-    setMessages(nextHistory)
+    updateMessages(() => nextHistory)
     setMessage('')
     setIsSending(true)
     setError(null)
 
     try {
-      const runtime = await callAgentRuntime(
-        selectedCharacter.id,
-        relation,
-        mode,
-        nextHistory,
-        userText,
-        language,
-        relationshipStates,
-        activeCrewParticipantIds,
-      )
-      setLastStoryEvent(runtime.story_event)
-
-      const replies: ChatMessage[] = runtime.agent_messages.map((output, index) => {
-        const recentCharacterGifUrls = nextHistory
-          .filter((chatMessage) => chatMessage.sender === output.character_id && chatMessage.gifUrl)
-          .slice(-3)
-          .map((chatMessage) => chatMessage.gifUrl as string)
-
-        return {
-          id: makeId(),
-          sender: output.character_id,
-          text: output.reply_text,
-          emotion: output.emotion_state,
-          gifQuery: output.gif_search_query,
-          gifUrl:
-            output.show_gif === false
-              ? null
-              : resolveGif(
-                  output.gif_search_query,
-                  output.character_id,
-                  output.emotion_state,
-                  recentCharacterGifUrls,
-                  `${nextHistory.length}:${index}:${userText}`,
-                ),
-        }
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterId: selectedCharacter.id,
+          userInput: userText,
+          relation,
+          mode,
+          history: nextHistory.slice(-10).map(m => ({ sender: m.sender, text: m.text })),
+          language,
+          llmProvider,
+          voiceExample: getVoiceExample(selectedCharacter.id, relation) ?? null,
+        })
       })
 
-      setRelationshipStates(runtime.relationship_states)
-      setMessages((current) => [...current, ...replies])
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unknown request error.')
+      if (!response.ok) {
+        const detail = await response.json()
+        throw new Error(detail.error || 'Server-side MiniMax ReAct loop failed.')
+      }
+
+      const data = await response.json()
+
+      if (mode === 'crew') {
+        // Multi-Agent Debate Loop Handoff
+        setLastDirectorPlan({
+          speakers: data.participants || ['walter', 'jesse'], // dynamic list from API response
+          scene_goal: data.scene_goal,
+          tension_note: data.tension_note
+        })
+
+        const debateReplies: ChatMessage[] = []
+        if (data.debate_logs && Array.isArray(data.debate_logs)) {
+          data.debate_logs.forEach((log: ClientDebateLogEntry, idx: number) => {
+            const recentCharacterGifUrls = [...nextHistory, ...debateReplies]
+              .filter((cm) => cm.sender === log.sender && cm.gifUrl)
+              .slice(-3)
+              .map((cm) => cm.gifUrl as string)
+
+            debateReplies.push({
+              id: crypto.randomUUID(),
+              sender: log.sender,
+              text: log.text,
+              emotion: log.emotion,
+              gifQuery: log.gifQuery,
+              gifUrl: resolveGif(
+                log.gifQuery,
+                log.sender,
+                log.emotion,
+                recentCharacterGifUrls,
+                `${nextHistory.length}:${idx}:${userText}`
+              ),
+              thinking: log.thinking,
+              toolExecuted: log.tool_executed,
+              toolLog: log.tool_log
+            })
+          })
+
+          // Save cognitive diagnostic details from final debate speaker
+          const finalLog = data.debate_logs[data.debate_logs.length - 1]
+          if (finalLog) {
+            setThinkingLog(finalLog.thinking || "Observe debate sequence completed.")
+            setToolLog(finalLog.tool_log || "No character tools executed in final debate turn.")
+          }
+        }
+        updateMessages((current) => [...current, ...debateReplies])
+      } else {
+        // Direct Stateful ReAct Turn
+        const recentCharacterGifUrls = nextHistory
+          .filter((cm) => cm.sender === selectedCharacter.id && cm.gifUrl)
+          .slice(-3)
+          .map((cm) => cm.gifUrl as string)
+
+        const agentReply: ChatMessage = {
+          id: crypto.randomUUID(),
+          sender: selectedCharacter.id,
+          text: data.reply_text,
+          emotion: data.emotion_state,
+          gifQuery: data.gif_search_query,
+          gifUrl: resolveGif(
+            data.gif_search_query,
+            selectedCharacter.id,
+            data.emotion_state,
+            recentCharacterGifUrls,
+            `${nextHistory.length}:${userText}`
+          ),
+          thinking: data.thinking,
+          toolExecuted: data.tool_executed,
+          toolLog: data.tool_log
+        }
+
+        // Render dynamic diagnostics
+        setThinkingLog(data.thinking || "Cognitive loop completed successfully.")
+        setToolLog(data.tool_log || "No character tools executed this turn.")
+        
+        // Sync dossiers
+        if (data.updated_relationship_state) {
+          setRelationshipStates(current => ({
+            ...current,
+            [selectedCharacter.id]: data.updated_relationship_state
+          }))
+        }
+
+        updateMessages((current) => [...current, agentReply])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setIsSending(false)
     }
@@ -664,12 +646,42 @@ function App() {
 
   return (
     <main className="app-shell">
+      {activeEvent && (
+        <div className="macro-event-overlay" role="alert">
+          <div className="event-content">
+            <span className="event-badge">CRITICAL INCIDENT REPORT</span>
+            <h3>{activeEvent.type}</h3>
+            <p>{activeEvent.description}</p>
+            <button className="dismiss-btn" onClick={() => setActiveEvent(null)}>Acknowledged</button>
+          </div>
+        </div>
+      )}
+
       <aside className="control-panel">
         <div className="brand-lockup">
           <span className="frame-dot" />
           <h1>ABQ Roleplay Lab</h1>
           <p>{t.tagline}</p>
         </div>
+
+        {/* Stateful Story Clock Widget */}
+        <section className="panel-section game-clock-widget">
+          <header className="widget-header">
+            <span className="widget-title">STORY TIMELINE CLOCK</span>
+            <span className="tick-badge">TICK: #{storyTick}</span>
+          </header>
+          <div className="clock-actions">
+            <button 
+              className="tick-btn" 
+              type="button" 
+              onClick={handleClockTick} 
+              disabled={isSending}
+            >
+              {isSending ? "Advancing Tick..." : "Advance Story Clock (+1 Tick)"}
+            </button>
+          </div>
+          <p className="widget-hint">Advancing the story timeline clock evaluates global character dossiers and triggers random cartel or DEA sweeps.</p>
+        </section>
 
         <section className="panel-section">
           <h2>{t.character}</h2>
@@ -682,7 +694,7 @@ function App() {
                 style={{ '--character-color': character.color } as CSSProperties}
                 type="button"
               >
-                <span>{character.name.slice(0, 1)}</span>
+                <Silhouette characterId={character.id} name={character.name} size={32} />
                 <strong>{character.name}</strong>
               </button>
             ))}
@@ -703,16 +715,7 @@ function App() {
 
         <section className="panel-section">
           <label htmlFor="relation">{t.relation}</label>
-          <select
-            id="relation"
-            value={relation}
-            onChange={(event) =>
-              setRelationsByCharacter((current) => ({
-                ...current,
-                [selectedCharacter.id]: event.target.value,
-              }))
-            }
-          >
+          <select id="relation" value={relation} onChange={(event) => setRelationByChar((prev) => ({ ...prev, [selectedCharacterId]: event.target.value }))}>
             {selectedCharacter.relationOptions.map((option) => (
               <option key={option} value={option}>
                 {formatRelation(selectedCharacter, option, language)}
@@ -733,50 +736,30 @@ function App() {
           </div>
         </section>
 
-        {mode === 'crew' && (
-          <section className="panel-section">
-            <span className="field-label">{t.crewParticipants}</span>
-            <div className="crew-participant-grid">
-              {characters.map((character) => {
-                const isLead = character.id === selectedCharacter.id
-                const isChecked = activeCrewParticipantIds.includes(character.id)
-                const className = ['crew-participant-option', isChecked ? 'active' : '', isLead ? 'lead' : '']
-                  .filter(Boolean)
-                  .join(' ')
-                return (
-                  <label className={className} key={character.id} style={{ '--character-color': character.color } as CSSProperties}>
-                    <input
-                      checked={isChecked}
-                      disabled={isLead}
-                      onChange={() => toggleCrewParticipant(character.id)}
-                      type="checkbox"
-                    />
-                    <span>{character.name.slice(0, 1)}</span>
-                    <strong>{character.name}</strong>
-                    {isLead && <em>{t.leadParticipant}</em>}
-                  </label>
-                )
-              })}
-            </div>
-          </section>
-        )}
-
         <section className="panel-section">
-          <span className="field-label">{t.modelService}</span>
-          <div className="service-status">
-            <strong>{t.liveMiniMax}</strong>
-            <span>{t.agentRuntime}</span>
-          </div>
-          <p className="hint">{t.liveMiniMaxHint}</p>
+          <label htmlFor="llmProvider">LLM Backend Provider / 模型后端</label>
+          <select id="llmProvider" value={llmProvider} onChange={(event) => setLlmProvider(event.target.value)}>
+            <option value="mimo">Xiaomi MiMo (Token Plan)</option>
+            <option value="minimax">MiniMax (Proxy)</option>
+          </select>
         </section>
 
+        {/* P0-G: TTS 音色选择（MVP） */}
         <section className="panel-section">
-          <span className="field-label">{t.storyClock}</span>
-          <div className="service-status">
-            <strong>Tick {lastStoryEvent?.tick ?? 0}</strong>
-            <span>{mode === 'crew' ? t.crew : t.private}</span>
-          </div>
-          {lastStoryEvent?.event_banner && <p className="hint">{lastStoryEvent.event_banner}</p>}
+          <label htmlFor="ttsVoice">{t.ttsVoice}</label>
+          <select
+            id="ttsVoice"
+            value={currentVoice}
+            onChange={(event) =>
+              setVoiceByChar((prev) => ({ ...prev, [selectedCharacterId]: event.target.value as VoiceId }))
+            }
+          >
+            {voiceOptionsByChar[selectedCharacterId].map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </section>
 
         <section className="panel-section">
@@ -795,7 +778,7 @@ function App() {
                       className="state-avatar"
                       style={{ '--character-color': character.color } as CSSProperties}
                     >
-                      {character.name.slice(0, 1)}
+                      <Silhouette characterId={character.id} name={character.name} size={24} />
                     </span>
                     <strong>{character.name}</strong>
                   </header>
@@ -819,19 +802,26 @@ function App() {
           )}
         </section>
 
-        <section className="prompt-engine">
+        {/* Premium Mini-Agent ReAct Diagnostics Panel */}
+        <section className="prompt-engine react-diagnostics-widget">
           <div>
             <h2>{t.promptEngine}</h2>
             <span>{t.promptLayers}</span>
           </div>
-          <details>
-            <summary>{t.inspectPrompt}</summary>
-            <pre>{`${promptPreview.system}\n\n${promptPreview.context}`}</pre>
-          </details>
+          <div className="diagnostics-card">
+            <details open>
+              <summary>Plan-Reflect Cognitive Loop</summary>
+              <pre className="thinking-text">{thinkingLog}</pre>
+            </details>
+            <details open>
+              <summary>Executable Character Action Tool Log</summary>
+              <pre className="tool-text">{toolLog}</pre>
+            </details>
+          </div>
         </section>
       </aside>
 
-      <section className="chat-panel">
+      <section className="chat-panel" style={sceneStyle}>
         <header className="chat-header">
           <div>
             <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
@@ -840,9 +830,9 @@ function App() {
                 ? `${selectedCharacter.name} 与其${getRelationLabel(relation, language)}`
                 : `${selectedCharacter.name} with their ${getRelationLabel(relation, language)}`}
             </h2>
-            {lastStoryEvent?.event_banner && (
+            {mode === 'crew' && lastDirectorPlan && (
               <span className="director-note">
-                {t.eventBanner}: {lastStoryEvent.event_banner}
+                {t.directorPlan}: {lastDirectorPlan.scene_goal || lastDirectorPlan.tension_note || lastDirectorPlan.speakers.join(', ')}
               </span>
             )}
           </div>
@@ -857,9 +847,17 @@ function App() {
               <article className={chatMessage.sender === 'user' ? 'message user-message' : 'message character-message'} key={chatMessage.id}>
                 <div
                   className="avatar"
-                  style={{ '--character-color': senderCharacter?.color ?? '#fff' } as CSSProperties}
+                  style={{ '--character-color': senderCharacter?.color ?? 'var(--color-bb-yellow)' } as CSSProperties}
                 >
-                  {chatMessage.sender === 'user' ? t.you : senderCharacter?.name.slice(0, 1)}
+                  {chatMessage.sender === 'user' ? (
+                    <span className="avatar-letter">{t.you.toString().slice(0, 1)}</span>
+                  ) : senderCharacter ? (
+                    <Silhouette
+                      characterId={chatMessage.sender}
+                      name={senderCharacter.name}
+                      size={40}
+                    />
+                  ) : null}
                 </div>
                 <div className="message-body">
                   <div className="message-meta">
@@ -869,8 +867,36 @@ function App() {
                         : senderCharacter?.name}
                     </strong>
                     {chatMessage.emotion && <span>{chatMessage.emotion}</span>}
+                    {chatMessage.sender !== 'user' && (
+                      <button
+                        className="tts-btn"
+                        onClick={() =>
+                          handlePlayTts(
+                            chatMessage.id,
+                            chatMessage.sender,
+                            chatMessage.text,
+                            chatMessage.emotion,
+                            currentVoice,
+                          )
+                        }
+                        disabled={ttsLoadingMap[chatMessage.id]}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: '8px', fontSize: '1em', padding: 0 }}
+                        title="Play Speech"
+                      >
+                        {ttsLoadingMap[chatMessage.id] ? '⏳' : '🔊'}
+                      </button>
+                    )}
                   </div>
                   <p>{chatMessage.text}</p>
+                  
+                  {/* Tool execution notifications inside bubbles */}
+                  {chatMessage.toolExecuted && (
+                    <div className="tool-executed-pill" title={chatMessage.toolLog || ""}>
+                      <span>🛠️ Tool Triggered: <code>{chatMessage.toolExecuted}</code></span>
+                      <p>{chatMessage.toolLog}</p>
+                    </div>
+                  )}
+
                   {chatMessage.gifUrl && (
                     <figure className="gif-card" data-query={chatMessage.gifQuery ?? 'crime-drama reaction'}>
                       <img
@@ -890,6 +916,14 @@ function App() {
             )
           })}
         </div>
+
+        {isSending && (
+          <div className="typing-indicator" aria-live="polite" aria-label={t.sending}>
+            <span className="dot" />
+            <span className="dot" />
+            <span className="dot" />
+          </div>
+        )}
 
         {error && <div className="error-box">{error}</div>}
 
