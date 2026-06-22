@@ -1,22 +1,5 @@
-"""
-ABQ Roleplay Lab — Director Agent
-
-Orchestrates a Breaking Bad roleplay session as an async event stream.
-
-For each session the Director:
-  1. Generates a dramatic outline from the user task.
-  2. For each beat in the outline:
-     a. Decides the scene transition (if any) → scene_change
-     b. Determines which characters act/think/speak → agent_act/think/speak
-     c. Calls character sub-agents for authentic dialogue → agent_speak
-     d. Computes what world facts changed → world_state_delta
-     e. Updates character dossiers in Postgres
-     f. Signals beat completion → beat_ready
-  3. Waits for player action, then continues.
-"""
-
 from __future__ import annotations
-
+import asyncio
 import json
 import re
 from typing import Any, AsyncIterator
@@ -32,12 +15,9 @@ from agents.characters import (
 )
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
-
-
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
 # ---------------------------------------------------------------------------
-
 FRONTEND_TO_BACKEND_ID: dict[str, str] = {
     "walter": "Walter White",
     "jesse": "Jesse Pinkman",
@@ -46,22 +26,15 @@ FRONTEND_TO_BACKEND_ID: dict[str, str] = {
     "mike": "Mike Ehrmantraut",
     "gus": "Gus Fring",
 }
-
 BACKEND_TO_FRONTEND_ID: dict[str, str] = {v: k for k, v in FRONTEND_TO_BACKEND_ID.items()}
-
-
 # ---------------------------------------------------------------------------
 # Crew-mode chat message handler
 # ---------------------------------------------------------------------------
-
 CREW_CHAT_SYSTEM_PROMPT = """\
 You are the **Director** managing a multi-character Breaking Bad chat scene.
-
 Your task is to produce a natural dialogue exchange between 2-3 characters
 responding to a user message.
-
 EMIT A SINGLE JSON ARRAY — one object per character turn in order:
-
 [
   {
     "character_id": "Walter White" | "Jesse Pinkman" | "Skyler White" | "Saul Goodman" | "Mike Ehrmantraut" | "Gus Fring",
@@ -73,7 +46,6 @@ EMIT A SINGLE JSON ARRAY — one object per character turn in order:
     "tool_log": "<tool result or null>"
   }
 ]
-
 RULES:
 - Each object is one character's full response (dialogue + metadata).
 - Include 2-3 turns total (not counting the user's message).
@@ -85,60 +57,44 @@ RULES:
 - Do NOT include any fields outside this schema.
 - Do NOT include the user's message in the array.
 """
-
 DIRECTOR_SYSTEM_PROMPT = """\
 You are the **Director** of a Breaking Bad interactive roleplay.
-
 Known characters: Walter White, Jesse Pinkman, Skyler White, Saul Goodman,
 Mike Ehrmantraut, Gus Fring.
-
 Your job is NOT to write prose.  Your job is to orchestrate character agents
 and emit structured events for the client.  For every narrative beat you must:
-
 BEAT PLANNING
 1. Decide which characters are present and what each one does.
 2. Decide if the location changes (emit a scene_change event).
 3. Decide what emotional beat this moment carries.
 4. Choose the model for this scene (always "stepfun/step-3.7-flash").
-
 THINKING
 - Have characters think before they act — emit agent_think events to reveal
   their inner conflict and motivation.  Breaking Bad tension lives in what
   characters hide.
-
 SPEAKING
 - Emit agent_speak events with the character's actual dialogue.
 - Include the character's current emotion_state and a gif_search_query that
   captures their emotional state visually (e.g. "walter white angry determined",
   "jesse pinkman scared nervous").
-
 ACTING
 - Emit agent_act events for physical actions: entering, leaving, handing over
   an object, cooking, driving, etc.
-
 WORLD STATE
 - After the beat is complete, list every fact that changed as a world_state_delta
   event.  Examples: Walt now knows X, the location is now Y, trust between
   characters shifted.
-
 OUTPUT FORMAT — emit a single JSON array of event objects.  Each event object
 has a "type" field and a "data" field matching one of these shapes:
-
   scene_change:     { "from_scene": "<current location>", "to_scene": "<new location>", "description": "<why the transition happens>" }
   agent_act:        { "character_id": "<character name>", "action": "<physical action>", "target": "<optional target>" }
   agent_think:      { "character_id": "<character name>", "thought_content": "<inner monologue>" }
   agent_speak:      { "character_id": "<character name>", "content": "<spoken dialogue>", "emotion_state": "<emotion tag>", "gif_search_query": "<visual emotion search phrase>" }
   world_state_delta:{ "deltas": [ { "target": "<character or location>", "field": "<what changed>", "old_value": "<before>", "new_value": "<after>" } ] }
-
 NOTE: This JSON event format is for BEAT events only. When asked for an outline
 (overall plot structure), output a plain text numbered list instead:
-
-  1. Scene title — brief description
-  2. Scene title — brief description
-
 IMPORTANT: Every beat event object MUST include a "recommended_model" field
 set to "stepfun/step-3.7-flash".
-
 Example output:
 [
   { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "stepfun/step-3.7-flash" },
@@ -147,7 +103,6 @@ Example output:
   { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "stepfun/step-3.7-flash" },
   { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "stepfun/step-3.7-flash" }
 ]
-
 RULES:
 - Always emit at least one agent_think or agent_speak per character per beat.
 - Emotion states: calm, tense, angry, fearful, manipulative, guilty, resigned, desperate.
@@ -158,12 +113,9 @@ RULES:
   "Saul Goodman", "Mike Ehrmantraut", or "Gus Fring" — no variations.
 - recommended_model must be "stepfun/step-3.7-flash" on every event.
 """
-
-
 # ---------------------------------------------------------------------------
 # Director agent
 # ---------------------------------------------------------------------------
-
 CHARACTER_AGENTS: dict[str, Any] = {
     "Walter White": WalterWhite,
     "Jesse Pinkman": JessePinkman,
@@ -172,12 +124,9 @@ CHARACTER_AGENTS: dict[str, Any] = {
     "Mike Ehrmantraut": MikeEhrmantraut,
     "Gus Fring": GusFring,
 }
-
-
 class DirectorAgent:
     """
     Orchestrates a Breaking Bad roleplay session as an async event stream.
-
     For each session the Director:
       1. Generates a dramatic outline from the user task.
       2. For each scene in the outline, calls _generate_beat() which:
@@ -188,7 +137,6 @@ class DirectorAgent:
          e. Updates dossiers in Postgres
          e. Signals beat completion → beat_ready
     """
-
     def __init__(
         self,
         provider: ProviderFacade,
@@ -198,17 +146,16 @@ class DirectorAgent:
         self.provider = provider
         self.model_route = model_route
         self.system_prompt = system_prompt
-
     async def process(
         self,
         task: str,
         db: Any = None,
         session_id: str | None = None,
+        action_queue: Any = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         Main entry point.  Consumes a task description and yields
         AgentEvent objects until the roleplay outline is fully rendered.
-
         Event types emitted:
           status, outline, scene_change, agent_act, agent_think,
           agent_speak, world_state_delta, beat_ready, complete, error
@@ -216,7 +163,6 @@ class DirectorAgent:
         yield AgentEvent(
             type="status", data={"message": "Director is analysing the task…"}
         )
-
         # ---- Step 1: generate the outline -----------------------------------
         outline_text = await self._generate_outline(task)
         if outline_text is None:
@@ -225,9 +171,7 @@ class DirectorAgent:
                 data={"message": "Outline generation failed — could not reach the model."},
             )
             return
-
         yield AgentEvent(type="outline", data={"content": outline_text})
-
         scenes = self._parse_outline(outline_text)
         yield AgentEvent(
             type="status",
@@ -235,12 +179,10 @@ class DirectorAgent:
                 "message": f"Director outlined {len(scenes)} beat(s). Beginning roleplay…"
             },
         )
-
-        # ---- Step 2: render each beat ---------------------------------------
+        # ---- Step 2: render each beat (beat-by-beat with pause) ----------
         previous_scene = ""
         for idx, scene_desc in enumerate(scenes):
             current_scene = self._short_scene_name(scene_desc)
-
             async for event in self._generate_beat(
                 task=task,
                 outline=outline_text,
@@ -250,18 +192,34 @@ class DirectorAgent:
                 session_id=session_id,
             ):
                 yield event
-
+            # Wait for player to continue (unless this is the last beat)
+            if idx < len(scenes) - 1 and action_queue is not None:
+                yield AgentEvent(
+                    type="status",
+                    data={"message": "Waiting for player to continue…"},
+                )
+                try:
+                    # Wait up to 5 minutes for player action
+                    action = await asyncio.wait_for(action_queue.get(), timeout=300)
+                    if action == "stop":
+                        yield AgentEvent(
+                            type="status",
+                            data={"message": "Session paused by player."},
+                        )
+                        return
+                except asyncio.TimeoutError:
+                    yield AgentEvent(
+                        type="status",
+                        data={"message": "No action received — continuing automatically."},
+                    )
             previous_scene = current_scene
-
         yield AgentEvent(
             type="complete",
             data={"message": "All beats rendered. Roleplay outline complete."},
         )
-
     # ------------------------------------------------------------------
     # Outline generation
     # ------------------------------------------------------------------
-
     async def _generate_outline(self, task: str) -> str | None:
         """Call the LLM to produce a numbered Breaking Bad scene outline."""
         messages = [
@@ -288,7 +246,6 @@ class DirectorAgent:
             return raw
         except Exception:
             return None
-
     @staticmethod
     def _extract_text_from_json_outline(raw: str) -> str:
         """Extract readable scene descriptions from a JSON array the LLM
@@ -310,18 +267,15 @@ class DirectorAgent:
         except (json.JSONDecodeError, TypeError):
             pass
         return raw
-
     @staticmethod
     def _short_scene_name(scene_desc: str) -> str:
         """Extract the short scene name from a full scene description.
         Handles both em-dash (U+2014) and en-dash (U+2013) separators."""
         name = re.split(r"[–—]", scene_desc)[0]
         return name.split(":")[0].strip()
-
     @staticmethod
     def _parse_outline(text: str) -> list[str]:
         """Parse an LLM-generated outline into a list of scene descriptions.
-
         Handles both plain-text numbered lists and JSON arrays (B1 fallback).
         """
         # B1 fix: if the text is a JSON array, extract readable descriptions first
@@ -330,11 +284,9 @@ class DirectorAgent:
             extracted = DirectorAgent._extract_text_from_json_outline(stripped)
             if extracted != stripped:
                 text = extracted
-
         scenes: list[str] = []
         current: list[str] = []
         list_item_re = re.compile(r"^[\s]*(\d+[\.\)]\s+|[-\*]\s+)")
-
         for raw_line in text.splitlines():
             stripped_line = raw_line.strip()
             if not stripped_line:
@@ -347,16 +299,12 @@ class DirectorAgent:
                 current.append(content)
             elif current:
                 current.append(stripped_line)
-
         if current:
             scenes.append(" ".join(current).strip())
-
         return scenes if scenes else [text.strip()]
-
     # ------------------------------------------------------------------
     # Beat generation
     # ------------------------------------------------------------------
-
     @staticmethod
     def _extract_model_route(event_dict: dict[str, Any]) -> str | None:
         """Pull recommended_model from a raw event dict emitted by the LLM."""
@@ -364,7 +312,6 @@ class DirectorAgent:
         if raw and isinstance(raw, str) and raw.startswith(("minimax/", "stepfun/")):
             return raw
         return None
-
     async def _generate_beat(
         self,
         task: str,
@@ -376,7 +323,6 @@ class DirectorAgent:
     ) -> AsyncIterator[AgentEvent]:
         """
         Generate a single narrative beat with fine-grained events.
-
         Steps:
           1. Ask the LLM to produce a JSON array of events for this beat
           2. Parse recommended_model from each event to determine per-beat routing
@@ -389,7 +335,6 @@ class DirectorAgent:
         current_scene = self._short_scene_name(scene_desc)
         previous_scene = context.get("previous_scene", "")
         characters_in_scene: list[str] = list(CHARACTER_AGENTS.keys())
-
         # Emit scene transition if location changed
         if current_scene and current_scene != previous_scene:
             yield AgentEvent(
@@ -400,7 +345,6 @@ class DirectorAgent:
                     "description": f"Transitioning to: {scene_desc}",
                 },
             )
-
         # Ask Director LLM to plan this beat's events
         beat_prompt = (
             f"Task: {task}\n\n"
@@ -413,12 +357,10 @@ class DirectorAgent:
             "Every event object must include a 'recommended_model' field set to "
             "'stepfun/step-3.7-flash'."
         )
-
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": beat_prompt},
         ]
-
         try:
             llm_response = await self.provider.call_model(messages, self.model_route)
         except Exception as exc:
@@ -428,7 +370,6 @@ class DirectorAgent:
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
             return
-
         # Parse the LLM response as event array
         events = self._parse_beat_events(llm_response)
         if not events:
@@ -438,7 +379,6 @@ class DirectorAgent:
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback).")
             return
-
         # Resolve per-beat model route: prefer LLM-suggested, fall back to rule-based
         llm_suggested: str | None = None
         for evt in events:
@@ -446,7 +386,6 @@ class DirectorAgent:
             if candidate:
                 llm_suggested = candidate
                 break
-
         if llm_suggested:
             beat_model_route = llm_suggested
         else:
@@ -454,13 +393,11 @@ class DirectorAgent:
                 scene_context=scene_desc,
                 characters=characters_in_scene,
             )
-
         # Process each event — substitute real character responses for agent_speak
         beat_events_for_dossier: list[dict[str, Any]] = []
         for evt in events:
             evt_type = evt.get("type", "")
             evt_data = evt.get("data", {})
-
             if evt_type == "agent_speak":
                 # Call the actual character agent for authentic dialogue
                 character_id = evt_data.get("character_id", "")
@@ -479,14 +416,12 @@ class DirectorAgent:
                         evt_data = {**evt_data, "content": real_reply}
                     except Exception:
                         pass  # Keep the LLM-generated dialogue as fallback
-
             yield AgentEvent(
                 type=evt_type,
                 data=evt_data,
                 model_route=beat_model_route,
             )
             beat_events_for_dossier.append(evt)
-
         # Update dossiers after the beat
         if db is not None and session_id is not None:
             try:
@@ -505,21 +440,17 @@ class DirectorAgent:
                     )
             except Exception:
                 pass  # Dossier update failure shouldn't break the beat
-
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
-
     @staticmethod
     def _beat_ready_event(beat_index: int, summary: str) -> AgentEvent:
         return AgentEvent(
             type="beat_ready",
             data={"beat_id": f"beat_{beat_index + 1}", "beat_summary": summary},
         )
-
     @staticmethod
     def _parse_beat_events(text: str) -> list[dict[str, Any]]:
         """Parse the LLM response as a JSON array of event objects.
-
         Tries in order:
         1. Fenced JSON (```json [...] ```)
         2. Raw JSON array ([...]) anywhere in text
@@ -552,11 +483,9 @@ class DirectorAgent:
             except json.JSONDecodeError:
                 pass
         return []
-
     # ------------------------------------------------------------------
     # Chat-mode handlers (direct + crew)
     # ------------------------------------------------------------------
-
     async def handle_chat_message(
         self,
         character_id: str,
@@ -565,14 +494,12 @@ class DirectorAgent:
     ) -> dict[str, Any]:
         """
         Handle a single user message in chat mode.
-
         Args:
             character_id: Frontend character id (e.g. "walter", "jesse").
             user_message: The user's latest message text.
             context: Dict with keys: relation (str), history (list[dict]),
                      language (str), llmProvider (str), mode (str),
                      voiceExample (str|None).
-
         Returns:
             For direct mode:
               { reply_text, emotion_state, gif_search_query, thinking,
@@ -584,11 +511,9 @@ class DirectorAgent:
         history: list[dict] = context.get("history", [])
         language: str = context.get("language", "en")
         relation: str = context.get("relation", "partner")
-
         if mode == "crew":
             return await self._handle_crew_chat(character_id, user_message, context)
         return await self._handle_direct_chat(character_id, user_message, context)
-
     async def _handle_direct_chat(
         self,
         character_id: str,
@@ -600,23 +525,19 @@ class DirectorAgent:
         character_cls = CHARACTER_AGENTS.get(backend_id)
         if character_cls is None:
             character_cls = CHARACTER_AGENTS["Walter White"]
-
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
         llm_provider: str = context.get("llmProvider", "stepfun")
-
         # Resolve model route
         scene_context = f"{backend_id} {relation} {user_message}".lower()
         model_route = self.provider.resolve_model_route(
             scene_context=scene_context,
             characters=list(CHARACTER_AGENTS.keys()),
         )
-
         # Override provider prefix from frontend selection
         provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
         _, model_name = model_route.split("/", 1)
         model_route = f"{provider_prefix}/{model_name}"
-
         # Build context messages from history
         history: list[dict] = context.get("history", [])
         ctx_messages: list[dict] = []
@@ -626,14 +547,12 @@ class DirectorAgent:
                 ctx_messages.append({"role": "user", "content": turn.get("text", "")})
             else:
                 ctx_messages.append({"role": "assistant", "content": turn.get("text", "")})
-
         # Build relationship context string for the prompt
         rel_label = relation
         voice_example: str | None = context.get("voiceExample")
         user_msg_with_context = user_message
         if voice_example:
             user_msg_with_context += f"\n\n[Reference speaking style: {voice_example}]"
-
         # Instantiate character and call structured respond
         agent = character_cls(self.provider)
         result = await agent.respond_structured(
@@ -641,7 +560,6 @@ class DirectorAgent:
             user_message=user_msg_with_context,
             model_route=model_route,
         )
-
         # Compute updated relationship state (lightweight — no DB round-trip
         # for chat mode; frontend holds the local state).
         updated_relationship_state = None
@@ -654,7 +572,6 @@ class DirectorAgent:
             "tool_log": result["tool_log"],
             "updated_relationship_state": updated_relationship_state,
         }
-
     async def _handle_crew_chat(
         self,
         character_id: str,
@@ -664,12 +581,10 @@ class DirectorAgent:
         """Crew mode: generate a multi-character debate turn."""
         llm_provider: str = context.get("llmProvider", "stepfun")
         provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
-
         # Determine participants — start with the active character, then add
         # characters that are contextually relevant.
         backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
         participants_backend: list[str] = [backend_primary]
-
         text_lower = user_message.lower()
         for keyword, backend_name in [
             ("saul", "Saul Goodman"),
@@ -680,19 +595,16 @@ class DirectorAgent:
         ]:
             if keyword in text_lower and backend_name not in participants_backend:
                 participants_backend.append(backend_name)
-
         # Cap at 3 participants
         participants_backend = participants_backend[:3]
         participants_frontend = [
             BACKEND_TO_FRONTEND_ID.get(name, name.lower().split()[0])
             for name in participants_backend
         ]
-
         # Build the multi-turn prompt
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
         history: list[dict] = context.get("history", [])
-
         history_summary = ""
         if history:
             recent = history[-6:]
@@ -701,7 +613,6 @@ class DirectorAgent:
                 sender = turn.get("sender", "unknown")
                 lines.append(f"{sender}: {turn.get('text', '')}")
             history_summary = "\n".join(lines)
-
         crew_prompt = (
             f"User message: {user_message}\n"
             f"Relation to primary character ({backend_primary}): {relation}\n"
@@ -714,12 +625,10 @@ class DirectorAgent:
             f"{', '.join(participants_backend)}. "
             f"Emit the JSON array as specified."
         )
-
         messages = [
             {"role": "system", "content": CREW_CHAT_SYSTEM_PROMPT},
             {"role": "user", "content": crew_prompt},
         ]
-
         # Use the primary character's preferred model route
         primary_context = f"{backend_primary} {user_message}".lower()
         model_route = self.provider.resolve_model_route(
@@ -728,7 +637,6 @@ class DirectorAgent:
         )
         _, model_name = model_route.split("/", 1)
         model_route = f"{provider_prefix}/{model_name}"
-
         try:
             raw = await self.provider.call_model(messages, model_route)
         except Exception as exc:
@@ -743,22 +651,18 @@ class DirectorAgent:
                 "tool_log": None,
             }])
             raw = fallback_reply
-
         # Parse the debate logs
         debate_logs = self._parse_crew_debate_logs(raw, participants_backend)
-
         # Map back to frontend IDs
         for log in debate_logs:
             char_id = log.pop("character_id", log.get("sender", "walter"))
             log["sender"] = BACKEND_TO_FRONTEND_ID.get(char_id, char_id.lower().split()[0])
-
         return {
             "participants": participants_frontend,
             "scene_goal": f"Crew debate: {user_message[:80]}",
             "tension_note": f"{', '.join(participants_frontend)} debating.",
             "debate_logs": debate_logs,
         }
-
     @staticmethod
     def _parse_crew_debate_logs(
         raw: str,
@@ -769,17 +673,14 @@ class DirectorAgent:
         # Try fenced JSON first
         fenced = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", trimmed, re.DOTALL)
         raw_json = fenced.group(1) if fenced else trimmed
-
         start = raw_json.find("[")
         end = raw_json.rfind("]")
         if start < 0 or end <= start:
             return []
-
         try:
             entries = json.loads(raw_json[start : end + 1])
         except (json.JSONDecodeError, TypeError):
             return []
-
         logs: list[dict[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, dict):
