@@ -98,37 +98,123 @@ export class SseClient {
     if (this.destroyed) {
       throw new Error('SseClient has been destroyed — create a new instance.');
     }
-    if (this.es && this.es.readyState !== EventSource.CLOSED) return;
+    if (this.es) return;
 
     this.manualClose = false;
     this.emit({ type: 'reconnecting', data: { attempt: this.reconnectAttempts } });
 
-    this.es = new EventSource(this.url);
+    // Use fetch + ReadableStream so we can parse named SSE events
+    // (event: status, event: outline, etc.) instead of relying on
+    // EventSource which only dispatches named events to matching
+    // addEventListener calls.
+    this.readStream();
+  }
 
-    this.es.addEventListener('open', () => {
+  private async readStream(): Promise<void> {
+    try {
+      const response = await fetch(this.url, {
+        headers: { Accept: 'text/event-stream' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
+      }
+
       this.reconnectAttempts = 0;
       this.reconnectDelay = DEFAULT_RECONNECT_DELAY;
       this.startHeartbeat();
       this.emit({ type: 'connected', data: { url: this.url } });
-    });
 
-    // Catch-all for any event not handled by a named listener.
-    this.es.addEventListener('message', (raw: MessageEvent) => {
-      this.onData(raw);
-    });
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
 
-    this.es.addEventListener('error', (_raw: Event) => {
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        this.lastDataAt = Date.now();
+
+        // Parse complete SSE events from buffer
+        const lines = buffer.split('\n');
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+        let currentData = '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+
+          // Skip empty lines — they signal end of an event
+          if (trimmed === '') {
+            if (currentData || currentEvent) {
+              this.emitParsedEvent(currentEvent || 'message', currentData.trim());
+            }
+            currentEvent = '';
+            currentData = '';
+            continue;
+          }
+
+          // Skip SSE comments
+          if (trimmed.startsWith(':')) continue;
+
+          // Parse field: value
+          const colonIdx = trimmed.indexOf(':');
+          if (colonIdx === -1) continue;
+
+          const field = trimmed.slice(0, colonIdx).trim();
+          const value = trimmed.slice(colonIdx + 1).trim();
+          // Remove leading space after colon (SSE spec: colon-space prefix)
+          const cleanValue = value.startsWith(' ') ? value.slice(1) : value;
+
+          if (field === 'event') {
+            currentEvent = cleanValue;
+          } else if (field === 'data') {
+            currentData += (currentData ? '\n' : '') + cleanValue;
+          }
+        }
+      }
+
+      // Flush any remaining event
+      if (currentData || currentEvent) {
+        this.emitParsedEvent(currentEvent || 'message', currentData.trim());
+      }
+    } catch (err) {
       this.stopHeartbeat();
-      const wasOpen = this.es?.readyState !== EventSource.CLOSED;
-      // EventSource fires "error" once on failure and again when it gives up
-      // reconnecting (readyState === CLOSED). We handle both here.
-      if (wasOpen) {
-        this.emit({ type: 'disconnected', data: { willReconnect: !this.manualClose } });
+      const wasManual = this.manualClose;
+      if (!wasManual) {
+        this.emit({ type: 'disconnected', data: { willReconnect: !this.destroyed } });
+        if (!this.destroyed) {
+          this.scheduleReconnect();
+        }
       }
-      if (!this.manualClose && !this.destroyed) {
-        this.scheduleReconnect();
-      }
-    });
+    }
+  }
+
+  private emitParsedEvent(eventType: string, rawData: string): void {
+    this.lastDataAt = Date.now();
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawData);
+    } catch {
+      // Non-JSON data — skip silently
+      return;
+    }
+
+    const evt: SseEvent = {
+      type: eventType as SseEventType,
+      data: parsed,
+      raw: rawData,
+    };
+
+    this.emit(evt);
   }
 
   /**
@@ -207,34 +293,7 @@ export class SseClient {
   // Internal helpers
   // ------------------------------------------------------------------
 
-  private onData(raw: MessageEvent): void {
-    this.lastDataAt = Date.now();
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.data);
-    } catch {
-      // Non-JSON comment or stray line — ignore silently.
-      return;
-    }
-
-    // Resolve event type from the SSE "event" field (sent by server
-    // as `event: <type>` lines). If absent, the MessageEvent typeName
-    // is used as a fallback.
-    const eventType: SseEventType =
-      (raw as MessageEvent & { type?: string }).type === 'message'
-        ? 'beat_ready'  // unknown type — let caller inspect `data`
-        : ((raw as MessageEvent & { type?: string }).type as SseEventType) ?? 'beat_ready';
-
-    const evt: SseEvent = {
-      type: eventType,
-      data: parsed,
-      raw: raw.data,
-      id: raw.lastEventId || undefined,
-    };
-
-    this.emit(evt);
-  }
 
   private emit(event: SseEvent): void {
     for (const listener of this.listeners) {
