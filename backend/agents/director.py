@@ -239,7 +239,7 @@ class DirectorAgent:
         # ---- Step 2: render each beat ---------------------------------------
         previous_scene = ""
         for idx, scene_desc in enumerate(scenes):
-            current_scene = scene_desc.split("–")[0].split(":")[0].strip()
+            current_scene = self._short_scene_name(scene_desc)
 
             async for event in self._generate_beat(
                 task=task,
@@ -312,6 +312,13 @@ class DirectorAgent:
         return raw
 
     @staticmethod
+    def _short_scene_name(scene_desc: str) -> str:
+        """Extract the short scene name from a full scene description.
+        Handles both em-dash (U+2014) and en-dash (U+2013) separators."""
+        name = re.split(r"[–—]", scene_desc)[0]
+        return name.split(":")[0].strip()
+
+    @staticmethod
     def _parse_outline(text: str) -> list[str]:
         """Parse an LLM-generated outline into a list of scene descriptions.
 
@@ -379,7 +386,7 @@ class DirectorAgent:
           6. Emit beat_ready
         """
         scene_desc = self._parse_outline(outline)[beat_index]
-        current_scene = scene_desc.split("–")[0].split(":")[0].strip()
+        current_scene = self._short_scene_name(scene_desc)
         previous_scene = context.get("previous_scene", "")
         characters_in_scene: list[str] = list(CHARACTER_AGENTS.keys())
 
