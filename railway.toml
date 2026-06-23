@@ -3,5 +3,5 @@ builder = "RAILPACK"
 buildCommand = "npm install && npm run build && cd backend && /usr/bin/python3 -m ensurepip && /usr/bin/python3 -m pip install -r requirements.txt"
 
 [deploy]
-startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+startCommand = "sh -c 'uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}'"
 healthcheckPath = "/api/health"
