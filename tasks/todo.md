@@ -283,3 +283,19 @@
 - 每个角色的关系锚点也独立保存，避免切回时语境下拉被重置。
 - 浏览器验收：给 Walter 发送“历史测试：这句话切换回来以后还应该在。”后切到 Jesse，再切回 Walter，原用户消息和 Walter 回复仍然保留。
 - 验证命令：`npm run lint` 通过；`npm run build` 通过；浏览器 `/api/chat` 200，控制台无 error/warn。
+
+## 计划 - 2026-06-22 长期记忆跨 Session 闭环
+
+- [x] 审计 Python 后端 `update_dossiers` 的 session/world 两层记忆写入路径。
+- [x] 修复世界层 dossier 没有随 beat delta 累积更新的问题。
+- [x] 修复世界层 dossier 上下文无法 JSON 序列化的问题。
+- [x] 补充后端测试，覆盖新关系双写和已有世界记忆累积。
+- [x] 运行后端测试和 Python 编译检查。
+
+## Review - 2026-06-22 长期记忆跨 Session 闭环
+
+- 修改范围：`backend/agents/memory.py`、`backend/tests/test_memory_persistence.py`。
+- 关键修正：同一批关系 delta 现在会同时写入当前 session dossier 和 world-level dossier；新 session 读取 world-level dossier 时可以继承前序剧情关系变化。
+- 兼容修正：世界层 dossier 传给模型前使用 `owner->subject` 字符串 key，避免 tuple key 导致 `json.dumps` 失败。
+- 验证命令：`cd backend && uv run pytest` 通过，10 个测试全部通过；`cd backend && uv run python -m compileall agents tests` 通过。
+- 已知遗留：仓库根目录 `npm test` 当前失败，因为旧测试 `test/tool-safety.test.js` 仍读取已删除的 `server/agents/AgentContainer.ts`。本轮未修改该迁移遗留测试，避免扩大范围。

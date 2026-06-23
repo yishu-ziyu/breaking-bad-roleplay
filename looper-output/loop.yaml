@@ -1,0 +1,133 @@
+version: 1
+meta:
+  name: breaking-bad-roleplay-deploy
+  description: Fix build errors, configure deployment, and ship ABQ Roleplay Lab to a public URL.
+  author: yishuziyu
+  created: 2026-06-24
+
+goal:
+  statement: >
+    Ship the Breaking Bad roleplay app to a public, accessible URL where a user
+    can open the page, select a character, send a message, and receive an
+    in-character reply with GIF reaction — fully functional end-to-end.
+  context_sources:
+    - file: ./README.md
+    - file: ./backend/HACKATHON_PLAYBOOK.md
+    - cmd: ["npm", "run", "build"]
+    - cmd: ["cd", "backend", "&&", "uv", "run", "pytest"]
+  definition_of_done: >
+    A public URL serves the app, all 6 characters load, chat produces
+    in-character replies, GIF reactions appear, SSE events stream, and
+    Chinese/English UI toggle works. npm run build exits 0.
+
+  verification:
+    - id: build-passes
+      type: programmatic
+      check: ["npm", "run", "build"]
+      expect: exit_zero
+    - id: backend-tests-pass
+      type: programmatic
+      check: ["bash", "-c", "cd backend && uv run pytest"]
+      expect: exit_zero
+    - id: all-characters-load
+      type: judge
+      rubric: >
+        Opening the app shows all 6 characters (Walter, Jesse, Skyler, Saul,
+        Mike, Gus) selectable. No character card is broken or missing.
+    - id: chat-flow-works
+      type: judge
+      rubric: >
+        Selecting a character, entering a message, and receiving a reply works
+        end-to-end. The reply is in-character (matches the selected role's
+        personality and speech style). A GIF reaction card appears.
+    - id: sse-streams
+      type: judge
+      rubric: >
+        After sending a message, SSE events stream in sequence (scene_change,
+        agent_think, agent_speak, world_state_delta). Events arrive within
+        5 seconds and update the UI without manual refresh.
+    - id: i18n-toggle
+      type: judge
+      rubric: >
+        Switching between English and Chinese updates all visible UI copy,
+        relationship labels, and the prompt language control. No untranslated
+        strings remain.
+    - id: deploy-reachable
+      type: human
+      prompt: "Open the deployed URL. Select a character, send a message, confirm a reply arrives within 10 seconds."
+
+host:
+  cli: claude
+  model: default
+  invoke: ["claude", "-p"]
+  timeout_sec: 600
+
+council:
+  - id: reviewer-1
+    role: judge
+    cli: codex
+    model: gpt-5.5-xhigh
+    invoke: ["codex", "exec", "--model", "gpt-5.5-xhigh"]
+    timeout_sec: 600
+    scope: [plan, delivery]
+    local: false
+
+gates:
+  plan_gate:
+    when: after_plan
+    members: [reviewer-1]
+    verdict_policy: revise_until_clean
+    verdict_source: reviewer-1
+    criteria: [all-characters-load, chat-flow-works, sse-streams, i18n-toggle]
+    max_revisions: 3
+  delivery_gate:
+    when: after_each_delivery
+    members: [reviewer-1]
+    verdict_policy: revise_until_clean
+    verdict_source: reviewer-1
+    criteria: [build-passes, backend-tests-pass, chat-flow-works]
+    max_revisions: 3
+
+loop_control:
+  max_iterations: 12
+  budget:
+    usd: 8.0
+    tokens: 4_000_000
+    wall_clock_min: 60
+  no_progress:
+    max_stalled_iterations: 2
+    signals:
+      - same build error repeats after fix
+      - delivery artifact has no material change from previous
+      - judge verdict is unchanged despite revisions
+    action: stop
+  human_checkpoints: [after_phase1, after_phase3]
+  stop_conditions:
+    - all phases pass their delivery gate clean
+    - max_iterations reached
+    - same blocker repeats for 2 iterations
+    - any budget cap exceeded
+    - human stops at checkpoint
+
+execution:
+  mode: in_session
+  isolation: current_workspace
+  side_effects:
+    requires_approval: true
+    duplicate_action_check: true
+
+observability:
+  state_file: state.json
+  run_log: run-log.md
+  checkpoint_granularity: gate
+
+privacy:
+  egress:
+    - to: reviewer-1
+      sends: [plan, deliveries]
+      redact: [".env", ".env.local", "secrets/**", "**/*.key"]
+      consent: required
+
+workspace:
+  dir: ./loop-workspace
+  layout: [plan.md, "delivery-{n}.md", "review-{n}.md", state.json, run-log.md]

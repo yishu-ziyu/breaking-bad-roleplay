@@ -43,33 +43,62 @@ Because this topic involves crime-drama characters, the system prompt explicitly
 
 ## Run Locally
 
+### Prerequisites
+
+- Node.js 18+
+- Python 3.10+
+- PostgreSQL (local or remote)
+- [uv](https://docs.astral.sh/uv/) for Python dependency management
+
+### Frontend
+
 ```bash
 npm install
 npm run dev
 ```
 
-Production build:
+The frontend runs on `http://localhost:5173`.
+
+### Backend
 
 ```bash
-npm run build
+cd backend
+uv sync
+uvicorn main:app --reload --port 8001
 ```
+
+The FastAPI backend runs on `http://localhost:8001`.
+
+Make sure `.env` is configured in `backend/` with the required API keys (`MINIMAX_API_KEY`, `STEPFUN_API_KEY`, `DATABASE_URL`).
+
+## API
+
+The Python backend exposes the following endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/chat` | POST | Send a chat message (legacy compatibility) |
+| `/api/session` | POST | Create a new roleplay session |
+| `/api/session/{id}/action` | POST | Send player decision (continue / stop / redirect / switch_perspective) |
+| `/api/events/{session_id}` | GET | SSE event stream for real-time story events |
+
+Event types streamed via SSE: `scene_change`, `agent_act`, `agent_speak`, `agent_think`, `world_state_delta`, `beat_ready`.
 
 ## MiniMax Token Plan
 
-The app calls MiniMax through a server-side proxy so the Token Plan Key is not exposed in the browser.
+The app calls MiniMax through the Python backend proxy so API keys are never exposed in the browser.
 
 Local setup:
 
 ```bash
 cp .env.example .env.local
 # set MINIMAX_TOKEN_PLAN_KEY to your real Token Plan Key
-npm run dev
 ```
 
-- Browser API: `/api/chat`
+- Backend proxy: `POST /api/chat` (Python FastAPI)
 - Upstream endpoint: `https://api.minimaxi.com/anthropic/v1/messages`
-- Model: `MiniMax-M2.7`
-- Key location: `MINIMAX_TOKEN_PLAN_KEY` in `.env.local` locally or Vercel environment variables in deployment.
+- Model: `MiniMax-M3`
+- Key location: `.env` in `backend/` locally or environment variables in deployment.
 
 ## Material Library
 

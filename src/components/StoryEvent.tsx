@@ -131,10 +131,6 @@ function extractCharacterId(event: SseEvent): string | null {
 // ------------------------------------------------------------------
 
 // ----- status -----
-interface StatusData {
-  message?: string;
-}
-
 function StatusBody({ data }: { data: unknown }) {
   const inner = (data as Record<string, unknown>).data as Record<string, unknown>;
   const msg = (inner.message as string | undefined) ?? '';
@@ -147,14 +143,11 @@ function StatusBody({ data }: { data: unknown }) {
 }
 
 // ----- outline -----
-interface OutlineData {
-  content?: string;
-}
-
 function OutlineBody({ data }: { data: unknown }) {
   const inner = (data as Record<string, unknown>).data as Record<string, unknown>;
   const content = (inner.content as string | undefined) ?? '';
-  const lines = content.split('\n').filter(Boolean);
+  const lines = content.split('\n').map((l) => l.trim()).filter(Boolean);
+
   return (
     <>
       <span className={styles.sceneTag}>OUTLINE</span>
