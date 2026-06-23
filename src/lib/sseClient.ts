@@ -12,6 +12,9 @@ export type SseEventType =
   | 'agent_think'
   | 'world_state_delta'
   | 'beat_ready'
+  | 'status'
+  | 'outline'
+  | 'complete'
   | 'error'
   | 'connected'
   | 'disconnected'
@@ -132,6 +135,8 @@ export class SseClient {
 
       const decoder = new TextDecoder();
       let buffer = '';
+      let currentEvent = '';
+      let currentData = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -144,9 +149,6 @@ export class SseClient {
         const lines = buffer.split('\n');
         // Keep the last incomplete line in the buffer
         buffer = lines.pop() || '';
-
-        let currentEvent = '';
-        let currentData = '';
 
         for (const line of lines) {
           const trimmed = line.trim();

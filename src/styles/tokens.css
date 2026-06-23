@@ -178,6 +178,6 @@
      14. Scene Overlays (P0-B 场景背景配套)
      ----------------------------------------------------------------- */
   --scene-overlay-fade: var(--duration-slow) var(--ease-dramatic);
-  --scene-overlay-tint: rgba(8, 11, 8, 0.35);
-  --scene-overlay-tint-2: rgba(8, 11, 8, 0.6);
+  --scene-overlay-tint: rgba(8, 11, 8, 0.12);
+  --scene-overlay-tint-2: rgba(8, 11, 8, 0.25);
 }

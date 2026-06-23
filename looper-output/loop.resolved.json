@@ -1,0 +1,284 @@
+{
+  "$schema": "https://github.com/ksimback/looper/schema/loop.resolved.v1.json",
+  "compiled_at": "2026-06-23T19:35:04+00:00",
+  "council": [
+    {
+      "cli": "codex",
+      "id": "reviewer-1",
+      "invoke": [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.5-xhigh"
+      ],
+      "local": false,
+      "model": "gpt-5.5-xhigh",
+      "role": "judge",
+      "scope": [
+        "plan",
+        "delivery"
+      ],
+      "timeout_sec": 600
+    }
+  ],
+  "council_by_id": {
+    "reviewer-1": {
+      "cli": "codex",
+      "id": "reviewer-1",
+      "invoke": [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.5-xhigh"
+      ],
+      "local": false,
+      "model": "gpt-5.5-xhigh",
+      "role": "judge",
+      "scope": [
+        "plan",
+        "delivery"
+      ],
+      "timeout_sec": 600
+    }
+  },
+  "criteria_by_id": {
+    "all-characters-load": {
+      "id": "all-characters-load",
+      "rubric": "Opening the app shows all 6 characters (Walter, Jesse, Skyler, Saul, Mike, Gus) selectable. No character card is broken or missing.\n",
+      "type": "judge"
+    },
+    "backend-tests-pass": {
+      "check": [
+        "bash",
+        "-c",
+        "cd backend && uv run pytest"
+      ],
+      "expect": "exit_zero",
+      "id": "backend-tests-pass",
+      "type": "programmatic"
+    },
+    "build-passes": {
+      "check": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "expect": "exit_zero",
+      "id": "build-passes",
+      "type": "programmatic"
+    },
+    "chat-flow-works": {
+      "id": "chat-flow-works",
+      "rubric": "Selecting a character, entering a message, and receiving a reply works end-to-end. The reply is in-character (matches the selected role's personality and speech style). A GIF reaction card appears.\n",
+      "type": "judge"
+    },
+    "deploy-reachable": {
+      "id": "deploy-reachable",
+      "prompt": "Open the deployed URL. Select a character, send a message, confirm a reply arrives within 10 seconds.",
+      "type": "human"
+    },
+    "i18n-toggle": {
+      "id": "i18n-toggle",
+      "rubric": "Switching between English and Chinese updates all visible UI copy, relationship labels, and the prompt language control. No untranslated strings remain.\n",
+      "type": "judge"
+    },
+    "sse-streams": {
+      "id": "sse-streams",
+      "rubric": "After sending a message, SSE events stream in sequence (scene_change, agent_think, agent_speak, world_state_delta). Events arrive within 5 seconds and update the UI without manual refresh.\n",
+      "type": "judge"
+    }
+  },
+  "execution": {
+    "isolation": "current_workspace",
+    "mode": "in_session",
+    "side_effects": {
+      "duplicate_action_check": true,
+      "requires_approval": true
+    }
+  },
+  "gates": {
+    "delivery_gate": {
+      "criteria": [
+        "build-passes",
+        "backend-tests-pass",
+        "chat-flow-works"
+      ],
+      "max_revisions": 3,
+      "members": [
+        "reviewer-1"
+      ],
+      "verdict_policy": "revise_until_clean",
+      "verdict_source": "reviewer-1",
+      "when": "after_each_delivery"
+    },
+    "plan_gate": {
+      "criteria": [
+        "all-characters-load",
+        "chat-flow-works",
+        "sse-streams",
+        "i18n-toggle"
+      ],
+      "max_revisions": 3,
+      "members": [
+        "reviewer-1"
+      ],
+      "verdict_policy": "revise_until_clean",
+      "verdict_source": "reviewer-1",
+      "when": "after_plan"
+    }
+  },
+  "goal": {
+    "context_sources": [
+      {
+        "file": "./README.md"
+      },
+      {
+        "file": "./backend/HACKATHON_PLAYBOOK.md"
+      },
+      {
+        "cmd": [
+          "npm",
+          "run",
+          "build"
+        ]
+      },
+      {
+        "cmd": [
+          "cd",
+          "backend",
+          "&&",
+          "uv",
+          "run",
+          "pytest"
+        ]
+      }
+    ],
+    "definition_of_done": "A public URL serves the app, all 6 characters load, chat produces in-character replies, GIF reactions appear, SSE events stream, and Chinese/English UI toggle works. npm run build exits 0.\n",
+    "statement": "Ship the Breaking Bad roleplay app to a public, accessible URL where a user can open the page, select a character, send a message, and receive an in-character reply with GIF reaction \u2014 fully functional end-to-end.\n",
+    "verification": [
+      {
+        "check": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "expect": "exit_zero",
+        "id": "build-passes",
+        "type": "programmatic"
+      },
+      {
+        "check": [
+          "bash",
+          "-c",
+          "cd backend && uv run pytest"
+        ],
+        "expect": "exit_zero",
+        "id": "backend-tests-pass",
+        "type": "programmatic"
+      },
+      {
+        "id": "all-characters-load",
+        "rubric": "Opening the app shows all 6 characters (Walter, Jesse, Skyler, Saul, Mike, Gus) selectable. No character card is broken or missing.\n",
+        "type": "judge"
+      },
+      {
+        "id": "chat-flow-works",
+        "rubric": "Selecting a character, entering a message, and receiving a reply works end-to-end. The reply is in-character (matches the selected role's personality and speech style). A GIF reaction card appears.\n",
+        "type": "judge"
+      },
+      {
+        "id": "sse-streams",
+        "rubric": "After sending a message, SSE events stream in sequence (scene_change, agent_think, agent_speak, world_state_delta). Events arrive within 5 seconds and update the UI without manual refresh.\n",
+        "type": "judge"
+      },
+      {
+        "id": "i18n-toggle",
+        "rubric": "Switching between English and Chinese updates all visible UI copy, relationship labels, and the prompt language control. No untranslated strings remain.\n",
+        "type": "judge"
+      },
+      {
+        "id": "deploy-reachable",
+        "prompt": "Open the deployed URL. Select a character, send a message, confirm a reply arrives within 10 seconds.",
+        "type": "human"
+      }
+    ]
+  },
+  "host": {
+    "cli": "claude",
+    "invoke": [
+      "claude",
+      "-p"
+    ],
+    "model": "default",
+    "timeout_sec": 600
+  },
+  "loop_control": {
+    "budget": {
+      "tokens": 4000000,
+      "usd": 8.0,
+      "wall_clock_min": 60
+    },
+    "human_checkpoints": [
+      "after_phase1",
+      "after_phase3"
+    ],
+    "max_iterations": 12,
+    "no_progress": {
+      "action": "stop",
+      "max_stalled_iterations": 2,
+      "signals": [
+        "same build error repeats after fix",
+        "delivery artifact has no material change from previous",
+        "judge verdict is unchanged despite revisions"
+      ]
+    },
+    "stop_conditions": [
+      "all phases pass their delivery gate clean",
+      "max_iterations reached",
+      "same blocker repeats for 2 iterations",
+      "any budget cap exceeded",
+      "human stops at checkpoint"
+    ]
+  },
+  "meta": {
+    "author": "yishuziyu",
+    "created": "2026-06-24",
+    "description": "Fix build errors, configure deployment, and ship ABQ Roleplay Lab to a public URL.",
+    "name": "breaking-bad-roleplay-deploy"
+  },
+  "observability": {
+    "checkpoint_granularity": "gate",
+    "run_log": "run-log.md",
+    "state_file": "state.json"
+  },
+  "privacy": {
+    "egress": [
+      {
+        "consent": "required",
+        "redact": [
+          ".env",
+          ".env.local",
+          "secrets/**",
+          "**/*.key"
+        ],
+        "sends": [
+          "plan",
+          "deliveries"
+        ],
+        "to": "reviewer-1"
+      }
+    ]
+  },
+  "source": "/Users/mahaoxuan/Desktop/\u9ed1\u5ba2\u677e/breaking-bad-roleplay/looper-output/loop.yaml",
+  "version": 1,
+  "workspace": {
+    "dir": "./loop-workspace",
+    "layout": [
+      "plan.md",
+      "delivery-{n}.md",
+      "review-{n}.md",
+      "state.json",
+      "run-log.md"
+    ]
+  }
+}

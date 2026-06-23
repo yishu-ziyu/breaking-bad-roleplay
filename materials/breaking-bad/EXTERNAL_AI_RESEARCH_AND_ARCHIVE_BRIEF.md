@@ -12,7 +12,7 @@
 
 - 六个可选角色：Walter、Jesse、Skyler、Saul、Mike、Gus。
 - 单聊与多人局。
-- MiniMax-M2.7 真实模型服务。
+- MiniMax-M3 真实模型服务。
 - 角色 profile 与关系状态。
 - 角色级 GIF registry：`src/roleAssets.ts`。
 - 素材库文档：`materials/breaking-bad/`。
