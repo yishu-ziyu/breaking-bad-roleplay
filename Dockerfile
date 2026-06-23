@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Copy backend code
 COPY backend/ backend/
-RUN find backend -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
 
 # Build frontend
 COPY package.json package-lock.json* ./
@@ -22,4 +21,4 @@ COPY . .
 RUN npm run build
 
 EXPOSE 8080
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
