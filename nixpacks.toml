@@ -1,0 +1,6 @@
+providers:
+  - name: python
+    apt_packages:
+      - nodejs
+      - npm
+  - name: node

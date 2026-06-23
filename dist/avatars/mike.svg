@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <clipPath id="mikeClip">
+      <circle cx="100" cy="100" r="100"/>
+    </clipPath>
+  </defs>
+  <circle cx="100" cy="100" r="100" fill="#777f6c"/>
+  <g clip-path="url(#mikeClip)" fill="#b9c0a5">
+    <!-- Suit jacket with collar and V lapels -->
+    <path d="M 30 200 L 30 168 Q 35 146 62 138 L 85 132 L 100 148 L 115 132 L 138 138 Q 165 146 170 168 L 170 200 Z"/>
+    <!-- Neck (under collar) -->
+    <rect x="90" y="115" width="20" height="18"/>
+    <!-- Head -->
+    <ellipse cx="100" cy="85" rx="30" ry="32"/>
+    <!-- Small goatee (less prominent than Walter's) -->
+    <ellipse cx="100" cy="118" rx="9" ry="4"/>
+    <!-- Fedora brim (wide, all around) -->
+    <ellipse cx="100" cy="55" rx="48" ry="6"/>
+    <!-- Fedora crown (rounded with pinch at top center) -->
+    <path d="M 76 55 Q 76 28 92 23 L 100 27 L 108 23 Q 124 28 124 55 Z"/>
+  </g>
+</svg>
