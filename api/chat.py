@@ -122,6 +122,17 @@ def get_llm_config(provider: str, api_key: str):
     return url, model, headers
 
 
+def format_memory_context(memory_summary: str, key_facts: list) -> str:
+    """Build memory section for system prompt."""
+    parts = []
+    if memory_summary:
+        parts.append(f"EARLIER CONVERSATION SUMMARY (events you may not remember):\n{memory_summary}")
+    if key_facts:
+        facts_lines = "\n".join(f"- [{f.get('category', 'event')}] {f.get('fact', '')}" for f in key_facts)
+        parts.append(f"KEY FACTS:\n{facts_lines}")
+    return "\n\n".join(parts)
+
+
 def call_llm(messages: list[dict], api_key: str, provider: str = "agnes") -> str:
     url, model, headers = get_llm_config(provider, api_key)
     req = Request(
@@ -194,6 +205,8 @@ class handler(BaseHTTPRequestHandler):
         history = body.get("history", [])
         language = body.get("language", "en")
         llm_provider = body.get("llmProvider", "agnes")
+        memory_summary = body.get("memorySummary", "")
+        key_facts = body.get("keyFacts", [])
 
         if not user_input:
             self._json_response(400, {"error": "userInput is required"})
@@ -212,6 +225,9 @@ class handler(BaseHTTPRequestHandler):
 
     def _handle_direct(self, character_id, user_input, relation, history, language, api_key, llm_provider="agnes"):
         system_prompt = CHARACTER_PROMPTS.get(character_id, CHARACTER_PROMPTS["walter"])
+        memory_context = format_memory_context(memory_summary, key_facts)
+        if memory_context:
+            system_prompt += f"\n\n{memory_context}\nStay consistent with the above context."
         system_prompt += STRUCTURED_OUTPUT_INSTRUCTION
         system_prompt += f"\nThe user is your '{relation}'. Reply in {'Chinese' if language == 'zh' else 'English'}."
 

@@ -4,6 +4,7 @@ import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream } from './hooks/useStoryStream'
+import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMemory'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import './App.css'
 
@@ -223,9 +224,14 @@ function App() {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Story state (Supabase Realtime)
+  // Story state
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
+
+  // Character memory (per character, sliding window)
+  const charMemory = useCharacterMemory()
+  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('abq_memory', {})
+  const currentMemory = memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] }
 
   /* ---- First-visit opener ---- */
   useEffect(() => {
@@ -292,6 +298,9 @@ function App() {
     setIsSending(true)
     setError(null)
 
+    // Update memory with user turn
+    const updatedAfterUser = charMemory.addTurn('user', userText, currentMemory)
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -305,6 +314,8 @@ function App() {
           language,
           llmProvider,
           voiceExample: getVoiceExample(selectedCharId, relation) ?? null,
+          memorySummary: updatedAfterUser.summary || undefined,
+          keyFacts: updatedAfterUser.keyFacts.length > 0 ? updatedAfterUser.keyFacts : undefined,
         }),
       })
       if (!res.ok) {
@@ -344,6 +355,10 @@ function App() {
           toolLog: data.tool_log,
         }
         updateMessages(current => [...current, reply])
+
+        // Update memory with character reply
+        const finalMemory = charMemory.addTurn(selectedCharId, reply.text, updatedAfterUser)
+        setMemoryByChar(prev => ({ ...prev, [selectedCharId]: finalMemory }))
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
