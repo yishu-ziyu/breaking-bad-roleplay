@@ -234,6 +234,212 @@ textarea {
 }
 
 /* ==========================================
+   Story Outline Confirmation (Phase 2)
+   ========================================== */
+.story-outline-confirm {
+  width: 100%;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 18px 20px;
+  border: 1px solid var(--color-border-on-dark-2);
+  border-radius: 10px;
+  background: var(--color-glass-medium);
+  backdrop-filter: blur(18px);
+  color: var(--color-surface-yellow-soft);
+  font: 500 14px/1.65 var(--font-sans);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.story-outline-confirm::-webkit-scrollbar { width: 4px; }
+.story-outline-confirm::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 2px;
+}
+
+/* Story controls (confirm / discard buttons) */
+.story-controls {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.story-controls button {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 8px;
+  font: 900 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.story-controls button:first-child {
+  background: var(--color-bb-yellow);
+  color: var(--color-bb-ink);
+}
+
+.story-controls button:last-child {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-on-dark-2);
+}
+
+.story-controls button:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.story-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   Story Stream (Phase 3 — beat replay)
+   ========================================== */
+.story-stream {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 28px 32px;
+  gap: 16px;
+}
+
+.story-stream > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.story-stream > header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--color-bb-yellow);
+}
+
+/* Beat progress bar */
+.story-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.story-progress span {
+  font: 800 12px/1 var(--font-sans);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Event feed container */
+.story-events {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.story-events::-webkit-scrollbar { width: 4px; }
+.story-events::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+
+/* Individual event card */
+.story-event {
+  padding: 16px 18px;
+  border: 1px solid var(--color-border-on-dark-2);
+  border-radius: 10px;
+  background: var(--color-glass-medium);
+  backdrop-filter: blur(18px);
+  animation: fadeSlideIn 0.35s ease-out;
+}
+
+.story-event strong {
+  display: inline-block;
+  margin-bottom: 6px;
+  font: 800 10px/1 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-bb-olive);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(215, 227, 111, 0.12);
+}
+
+.story-event p {
+  margin: 0;
+  color: var(--color-surface-yellow-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.story-event em {
+  color: var(--color-bb-yellow);
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* Event type color accents */
+.story-event--agent_speak { border-left: 3px solid var(--color-bb-yellow); }
+.story-event--agent_think  { border-left: 3px solid var(--color-bb-olive); }
+.story-event--scene_change { border-left: 3px solid var(--color-bb-violet); }
+.story-event--agent_act    { border-left: 3px solid var(--color-text-muted); }
+
+/* Beat decision controls (Continue / Stop) */
+.beat-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.beat-controls p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.beat-controls button {
+  padding: 8px 20px;
+  border: 1px solid var(--color-border-on-dark-2);
+  border-radius: 8px;
+  background: var(--color-glass-medium);
+  color: var(--color-surface-yellow-soft);
+  font: 800 12px/1 var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.beat-controls button:hover:not(:disabled) {
+  background: var(--color-bb-yellow);
+  color: var(--color-bb-ink);
+  border-color: var(--color-bb-yellow);
+}
+
+.beat-controls button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================
    Chat Panel (right side, chat view)
    ========================================== */
 .chat-panel {

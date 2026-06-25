@@ -1,7 +1,7 @@
 /* =================================================================
-   ABQ Roleplay Lab — useStoryStream (local replay)
-   Single API call returns all beats; frontend replays locally.
-   No database needed.
+   ABQ Roleplay Lab — useStoryStream (outline-confirm + local replay)
+   Phase 1: API returns all data, frontend shows outline only
+   Phase 2: User confirms → beats replay one at a time
    ================================================================= */
 
 import { useCallback, useRef, useState } from 'react'
@@ -14,15 +14,15 @@ export interface StoryEvent {
 
 export interface UseStoryStreamReturn {
   events: StoryEvent[]
-  isConnected: boolean
-  currentBeat: (StoryEvent & { type: 'beat_ready' }) | null
-  startStory: (taskPrompt: string, characterId?: string, llmProvider?: string) => Promise<string>
-  sendAction: (action: 'continue' | 'stop' | 'redirect', extra?: Record<string, unknown>) => Promise<void>
-  isGenerating: boolean
-  sessionId: string | null
   outline: string | null
   beatIndex: number
   totalBeats: number
+  confirmed: boolean
+  isGenerating: boolean
+  sessionId: string | null
+  startStory: (taskPrompt: string, characterId?: string, llmProvider?: string) => Promise<void>
+  confirmStory: () => void
+  sendAction: (action: 'continue' | 'stop') => void
 }
 
 interface Beat {
@@ -33,25 +33,24 @@ interface Beat {
 
 export function useStoryStream(): UseStoryStreamReturn {
   const [events, setEvents] = useState<StoryEvent[]>([])
-  const [isConnected, setIsConnected] = useState(false)
-  const [currentBeat, setCurrentBeat] = useState<UseStoryStreamReturn['currentBeat']>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
   const [outline, setOutline] = useState<string | null>(null)
   const [beatIndex, setBeatIndex] = useState(0)
   const [totalBeats, setTotalBeats] = useState(0)
+  const [confirmed, setConfirmed] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   const beatsRef = useRef<Beat[]>([])
 
-  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', llmProvider = 'agnes'): Promise<string> => {
+  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', llmProvider = 'agnes'): Promise<void> => {
     setEvents([])
-    setCurrentBeat(null)
     setOutline(null)
     setBeatIndex(0)
     setTotalBeats(0)
+    setConfirmed(false)
     beatsRef.current = []
     setIsGenerating(true)
-    setIsConnected(false)
+    setSessionId(null)
 
     try {
       const res = await fetch('/api/story', {
@@ -65,16 +64,21 @@ export function useStoryStream(): UseStoryStreamReturn {
       }
       const data = await res.json()
 
-      const id = crypto.randomUUID()
-      setSessionId(id)
-      setOutline(Array.isArray(data.outline) ? data.outline.join('\n') : (data.outline || ''))
+      setSessionId(crypto.randomUUID())
 
-      // Normalize and store beats locally
+      // Format outline — only scene titles, NO details
+      const outlineRaw = data.outline
+      if (Array.isArray(outlineRaw)) {
+        setOutline(outlineRaw.join('\n'))
+      } else if (typeof outlineRaw === 'string') {
+        setOutline(outlineRaw)
+      }
+
+      // Store all beats locally (NOT shown yet)
       const rawBeats = (data.beats || []) as Array<Record<string, unknown>>
       const beats: Beat[] = rawBeats.map((b) => {
         const scene = typeof b.scene === 'string' ? b.scene : ''
         const rawEvents = Array.isArray(b.events) ? b.events : []
-        const directorNote = typeof b.director_note === 'string' ? b.director_note : ''
         const events: StoryEvent[] = rawEvents.map((e) => {
           const evt = e as Record<string, unknown>
           return {
@@ -83,45 +87,46 @@ export function useStoryStream(): UseStoryStreamReturn {
             beat_index: beatsRef.current.length,
           }
         })
-        return { scene, events, director_note: directorNote }
+        return { scene, events, director_note: typeof b.director_note === 'string' ? b.director_note : '' }
       })
 
-      // If no structured beats, create one from outline
-      if (beats.length === 0 && data.outline) {
+      // Fallback: create one beat from outline if no structured beats
+      if (beats.length === 0 && outlineRaw) {
+        const outlineText = Array.isArray(outlineRaw) ? outlineRaw.join('\n') : outlineRaw
         beats.push({
-          scene: data.outline.split('\n')[0] || 'The story begins',
-          events: [{ type: 'scene_change', data: { description: data.outline }, beat_index: 0 }],
+          scene: outlineText.split('\n')[0] || 'The story begins',
+          events: [{ type: 'scene_change', data: { description: outlineText }, beat_index: 0 }],
           director_note: '',
         })
       }
 
       beatsRef.current = beats
       setTotalBeats(beats.length)
-
-      // Play first beat immediately
-      if (beats.length > 0) {
-        setEvents(beats[0].events)
-        setBeatIndex(0)
-        setCurrentBeat({ type: 'beat_ready', data: { scene: beats[0].scene, director_note: beats[0].director_note }, beat_index: 0 })
-      }
-
-      setIsConnected(true)
-      return id
+    } catch (e) {
+      throw e
     } finally {
       setIsGenerating(false)
     }
   }, [])
 
-  const sendAction = useCallback(async (action: 'continue' | 'stop' | 'redirect') => {
+  const confirmStory = useCallback(() => {
+    setConfirmed(true)
+    const beats = beatsRef.current
+    if (beats.length > 0) {
+      setEvents(beats[0].events)
+      setBeatIndex(0)
+    }
+  }, [])
+
+  const sendAction = useCallback((action: 'continue' | 'stop') => {
     if (action === 'stop') {
       setEvents([])
-      setCurrentBeat(null)
-      setSessionId(null)
       setOutline(null)
       setBeatIndex(0)
       setTotalBeats(0)
+      setConfirmed(false)
       beatsRef.current = []
-      setIsConnected(false)
+      setSessionId(null)
       return
     }
 
@@ -129,32 +134,27 @@ export function useStoryStream(): UseStoryStreamReturn {
       const nextIndex = beatIndex + 1
       if (nextIndex >= beatsRef.current.length) {
         setEvents((prev) => [...prev, { type: 'complete', data: { message: 'All beats rendered.' }, beat_index: nextIndex }])
-        setCurrentBeat(null)
         return
       }
 
       setIsGenerating(true)
-      // Simulate LLM latency for UX
-      await new Promise((r) => setTimeout(r, 600))
-
       const beat = beatsRef.current[nextIndex]
       setBeatIndex(nextIndex)
       setEvents((prev) => [...prev, ...beat.events])
-      setCurrentBeat({ type: 'beat_ready', data: { scene: beat.scene, director_note: beat.director_note }, beat_index: nextIndex })
       setIsGenerating(false)
     }
   }, [beatIndex])
 
   return {
     events,
-    isConnected,
-    currentBeat,
-    startStory,
-    sendAction,
-    isGenerating,
-    sessionId,
     outline,
     beatIndex,
     totalBeats,
+    confirmed,
+    isGenerating,
+    sessionId,
+    startStory,
+    confirmStory,
+    sendAction,
   }
 }

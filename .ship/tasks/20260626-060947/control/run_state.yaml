@@ -1,0 +1,22 @@
+phase: plan
+task_id: 20260626-060947
+created: 2026-06-26T06:09:47+08:00
+waves:
+  - name: "Wave 1: Story outline + beat replay"
+    status: pending
+    files:
+      - api/story.py
+      - src/hooks/useStoryStream.ts
+      - src/App.tsx
+  - name: "Wave 2: Character memory sliding window"
+    status: pending
+    files:
+      - api/chat.py
+      - src/App.tsx
+  - name: "Wave 3: Supabase Auth + persistence"
+    status: pending
+    files:
+      - src/lib/supabaseClient.ts
+      - api/auth.ts
+      - src/hooks/useAuth.ts
+      - src/App.tsx

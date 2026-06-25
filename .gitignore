@@ -28,3 +28,5 @@ playwright-report
 *.sw?
 __pycache__/
 .vercel
+
+.ship/
