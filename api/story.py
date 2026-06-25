@@ -34,10 +34,19 @@ Rules:
 """
 
 
-def call_llm(messages, api_key):
+def call_llm(messages, api_key, provider="agnes"):
+    providers = {
+        "agnes":   ("https://apihub.agnes-ai.com/v1/chat/completions", "agnes-2.0-flash"),
+        "stepfun": ("https://api.stepfun.com/v1/chat/completions",     "step-3.7-flash"),
+        "deepseek":("https://api.deepseek.com/chat/completions",        "deepseek-chat"),
+        "minimax": ("https://api.minimaxi.com/v1/chat/completions",     "minimax/MiniMax-M1-80k"),
+    }
+    url, model = providers.get(provider, providers["agnes"])
+    url = os.environ.get("LLM_URL", url)
+    model = os.environ.get("LLM_MODEL", model)
     req = Request(
-        LLM_URL,
-        data=json.dumps({"model": LLM_MODEL, "messages": messages}).encode(),
+        url,
+        data=json.dumps({"model": model, "messages": messages}).encode(),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         method="POST",
     )
@@ -73,6 +82,7 @@ class handler(BaseHTTPRequestHandler):
 
         task = body.get("task_prompt", "").strip()
         character_id = body.get("active_character_id", "walter")
+        llm_provider = body.get("llmProvider", "agnes")
         if not task:
             self._json(400, {"error": "task_prompt required"})
             return
@@ -82,7 +92,7 @@ class handler(BaseHTTPRequestHandler):
                 {"role": "system", "content": DIRECTOR_SYSTEM},
                 {"role": "user", "content": f"Task: {task}\nActive character focus: {character_id}"},
             ]
-            raw = call_llm(messages, api_key)
+            raw = call_llm(messages, api_key, llm_provider)
             result = extract_json(raw)
 
             # Ensure structure

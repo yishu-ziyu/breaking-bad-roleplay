@@ -80,8 +80,28 @@ RULES: 2-3 turns total. Characters react to each other, not just user. First cha
 # Helpers
 # ---------------------------------------------------------------------------
 
-LLM_URL = os.environ.get("LLM_URL", "https://apihub.agnes-ai.com/v1/chat/completions")
-LLM_MODEL = os.environ.get("LLM_MODEL", "agnes-2.0-flash")
+LLM_PROVIDERS = {
+    "agnes": {
+        "url": "https://apihub.agnes-ai.com/v1/chat/completions",
+        "model": "agnes-2.0-flash",
+        "auth": "bearer",
+    },
+    "stepfun": {
+        "url": "https://api.stepfun.com/v1/chat/completions",
+        "model": "step-3.7-flash",
+        "auth": "bearer",
+    },
+    "deepseek": {
+        "url": "https://api.deepseek.com/chat/completions",
+        "model": "deepseek-chat",
+        "auth": "bearer",
+    },
+    "minimax": {
+        "url": "https://api.minimaxi.com/v1/chat/completions",
+        "model": "minimax/MiniMax-M1-80k",
+        "auth": "bearer",
+    },
+}
 
 FRONTEND_TO_BACKEND = {
     "walter": "Walter White", "jesse": "Jesse Pinkman",
@@ -91,19 +111,32 @@ FRONTEND_TO_BACKEND = {
 BACKEND_TO_FRONTEND = {v: k for k, v in FRONTEND_TO_BACKEND.items()}
 
 
-def call_llm(messages: list[dict], api_key: str) -> str:
+def get_llm_config(provider: str, api_key: str):
+    cfg = LLM_PROVIDERS.get(provider, LLM_PROVIDERS["agnes"])
+    url = os.environ.get("LLM_URL", cfg["url"])
+    model = os.environ.get("LLM_MODEL", cfg["model"])
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    return url, model, headers
+
+
+def call_llm(messages: list[dict], api_key: str, provider: str = "agnes") -> str:
+    url, model, headers = get_llm_config(provider, api_key)
     req = Request(
-        LLM_URL,
-        data=json.dumps({"model": LLM_MODEL, "messages": messages}).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        url,
+        data=json.dumps({"model": model, "messages": messages}).encode(),
+        headers=headers,
         method="POST",
     )
-    with urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read())
-    return data["choices"][0]["message"]["content"]
+    try:
+        with urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+        return data["choices"][0]["message"]["content"]
+    except HTTPError as e:
+        body = e.read().decode()
+        raise RuntimeError(f"LLM API error {e.code}: {body[:200]}")
 
 
 def extract_json(text: str) -> dict | list | None:
@@ -160,6 +193,7 @@ class handler(BaseHTTPRequestHandler):
         mode = body.get("mode", "direct")
         history = body.get("history", [])
         language = body.get("language", "en")
+        llm_provider = body.get("llmProvider", "agnes")
 
         if not user_input:
             self._json_response(400, {"error": "userInput is required"})
@@ -167,16 +201,16 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             if mode == "crew":
-                result = self._handle_crew(character_id, user_input, relation, history, language, api_key)
+                result = self._handle_crew(character_id, user_input, relation, history, language, api_key, llm_provider)
             else:
-                result = self._handle_direct(character_id, user_input, relation, history, language, api_key)
+                result = self._handle_direct(character_id, user_input, relation, history, language, api_key, llm_provider)
             self._json_response(200, result)
         except HTTPError as e:
             self._json_response(502, {"error": f"LLM API error: {e.code}"})
         except Exception as e:
             self._json_response(500, {"error": str(e)})
 
-    def _handle_direct(self, character_id, user_input, relation, history, language, api_key):
+    def _handle_direct(self, character_id, user_input, relation, history, language, api_key, llm_provider="agnes"):
         system_prompt = CHARACTER_PROMPTS.get(character_id, CHARACTER_PROMPTS["walter"])
         system_prompt += STRUCTURED_OUTPUT_INSTRUCTION
         system_prompt += f"\nThe user is your '{relation}'. Reply in {'Chinese' if language == 'zh' else 'English'}."
@@ -187,7 +221,7 @@ class handler(BaseHTTPRequestHandler):
             messages.append({"role": role, "content": turn.get("text", "")})
         messages.append({"role": "user", "content": user_input})
 
-        raw = call_llm(messages, api_key)
+        raw = call_llm(messages, api_key, llm_provider)
         parsed = extract_json(raw)
 
         if isinstance(parsed, dict):
@@ -202,7 +236,7 @@ class handler(BaseHTTPRequestHandler):
             }
         return fallback_response(character_id, raw)
 
-    def _handle_crew(self, character_id, user_input, relation, history, language, api_key):
+    def _handle_crew(self, character_id, user_input, relation, history, language, api_key, llm_provider="agnes"):
         backend_primary = FRONTEND_TO_BACKEND.get(character_id, "Walter White")
 
         participants = [backend_primary]
@@ -230,7 +264,7 @@ class handler(BaseHTTPRequestHandler):
             {"role": "system", "content": CREW_SYSTEM_PROMPT},
             {"role": "user", "content": crew_prompt},
         ]
-        raw = call_llm(messages, api_key)
+        raw = call_llm(messages, api_key, llm_provider)
         parsed = extract_json(raw)
 
         debate_logs = []
