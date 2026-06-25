@@ -1,7 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/story/start", "destination": "/api/story_start" },
-    { "source": "/api/story/next", "destination": "/api/story_next" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
