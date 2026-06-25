@@ -5,7 +5,6 @@ import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream } from './hooks/useStoryStream'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
-import StoryPanel from './components/StoryPanel'
 import './App.css'
 
 /* ------------------------------------------------------------------ */
@@ -224,10 +223,9 @@ function App() {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Story state
-  const [storySessionId, setStorySessionId] = useState<string | null>(null)
+  // Story state (Supabase Realtime)
+  const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
 
   /* ---- First-visit opener ---- */
   useEffect(() => {
@@ -258,38 +256,17 @@ function App() {
     }
   }, [messages])
 
-  /* ---- Story stream hook ---- */
-  const streamUrl = storySessionId ? `/api/session/${storySessionId}/stream` : ''
-  const storyStream = useStoryStream({ url: streamUrl })
-
-  /* ---- Session creation ---- */
-  const handleCreateSession = useCallback(async () => {
-    if (!storyTask.trim() || isCreating) return
-    setIsCreating(true)
+  /* ---- Story start ---- */
+  const handleStartStory = useCallback(async () => {
+    if (!storyTask.trim() || story.isGenerating) return
     setError(null)
     try {
-      const res = await fetch('/api/session/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: storyTask.slice(0, 60),
-          task_prompt: storyTask,
-          active_character_id: selectedCharId,
-        }),
-      })
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({ error: 'Failed' }))
-        throw new Error(detail.error || detail.detail || 'Session creation failed')
-      }
-      const data = await res.json()
-      setStorySessionId(data.session_id)
+      await story.startStory(storyTask, selectedCharId)
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setIsCreating(false)
     }
-  }, [storyTask, isCreating, selectedCharId])
+  }, [storyTask, story, selectedCharId])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -424,8 +401,7 @@ function App() {
           </div>
         </section>
 
-        {/* View toggle — Story mode disabled on Vercel (needs SSE backend) */}
-        {/*
+        {/* View toggle */}
         <section>
           <span className="field-label">{t.view}</span>
           <div className="seg-control">
@@ -433,7 +409,6 @@ function App() {
             <button className={view === 'story' ? 'active' : ''} onClick={() => setView('story')}>{t.story}</button>
           </div>
         </section>
-        */}
 
         {/* Perspective (story only) */}
         {view === 'story' && (
@@ -481,9 +456,9 @@ function App() {
 
       {/* ===================== MAIN PANEL ===================== */}
       {view === 'story' ? (
-        /* ---------- Story View ---------- */
+        /* ---------- Story View (Supabase Realtime) ---------- */
         <section className="story-panel">
-          {!storySessionId ? (
+          {!story.sessionId ? (
             <div className="story-setup">
               <h2>{t.setStage}</h2>
               <p>{t.setStageHint}</p>
@@ -494,24 +469,65 @@ function App() {
               />
               <button
                 type="button"
-                onClick={handleCreateSession}
-                disabled={!storyTask.trim() || isCreating}
+                onClick={handleStartStory}
+                disabled={!storyTask.trim() || story.isGenerating}
               >
-                {isCreating ? t.directing : t.startStory}
+                {story.isGenerating ? t.directing : t.startStory}
               </button>
               {error && <div className="error-box">{error}</div>}
             </div>
           ) : (
-            <StoryPanel
-              view="story"
-              stream={storyStream}
-              onSwitchToChat={() => setView('chat')}
-              title={t.narrativeStream}
-              subtitle={t.eventFeed}
-              beatPrompt={t.directorDecision}
-              chatBtnLabel={t.switchToChat}
-              language={language}
-            />
+            <div className="story-stream">
+              <header>
+                <h2>{t.narrativeStream}</h2>
+                <span className="schema-pill">{story.isConnected ? t.connected : t.connecting}</span>
+                <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
+              </header>
+
+              {story.outline && (
+                <div className="story-outline">
+                  <pre>{story.outline}</pre>
+                </div>
+              )}
+
+              <div className="story-events">
+                {story.events.filter(e => e.type !== 'outline').map((evt, i) => (
+                  <div key={i} className={`story-event story-event--${evt.type}`}>
+                    <strong>{evt.type}</strong>
+                    {evt.type === 'agent_speak' && (
+                      <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
+                    )}
+                    {evt.type === 'agent_think' && (
+                      <p><em>{evt.data.character_id as string} thinks:</em> {evt.data.thought_content as string}</p>
+                    )}
+                    {evt.type === 'scene_change' && (
+                      <p>{evt.data.description as string}</p>
+                    )}
+                    {evt.type === 'agent_act' && (
+                      <p><em>{evt.data.character_id as string}</em> {evt.data.action as string}</p>
+                    )}
+                    {evt.type === 'beat_ready' && (
+                      <div className="beat-controls">
+                        <p>{t.directorDecision}</p>
+                        <button onClick={() => story.sendAction('continue')} disabled={story.isGenerating}>
+                          {story.isGenerating ? '...' : '▶ ' + (language === 'zh' ? '继续' : 'Continue')}
+                        </button>
+                        <button onClick={() => story.sendAction('stop')} disabled={story.isGenerating}>
+                          {language === 'zh' ? '停止' : 'Stop'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {story.isGenerating && (
+                <div className="typing" aria-live="polite">
+                  <span className="dot" /><span className="dot" /><span className="dot" />
+                </div>
+              )}
+              {error && <div className="error-box">{error}</div>}
+            </div>
           )}
         </section>
       ) : (
