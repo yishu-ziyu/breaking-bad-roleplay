@@ -1,8 +1,0 @@
-task_id: get-breaking-bad-roleplay-running-end-to-end-fix-minimax-401
-source_type: user_request
-source_ref: conversation
-received_at: "2026-06-22T11:36:41Z"
-input_artifacts:
-  - path: input/requirement.md
-    type: markdown
-    role: raw_requirement
