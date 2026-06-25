@@ -459,8 +459,9 @@ function App() {
 
       {/* ===================== MAIN PANEL ===================== */}
       {view === 'story' ? (
-        /* ---------- Story View (Supabase Realtime) ---------- */
+        /* ---------- Story View ---------- */
         <section className="story-panel">
+          {/* Phase 1: Input */}
           {!story.sessionId ? (
             <div className="story-setup">
               <h2>{t.setStage}</h2>
@@ -479,17 +480,35 @@ function App() {
               </button>
               {error && <div className="error-box">{error}</div>}
             </div>
+          ) : story.outline && !story.confirmed ? (
+            /* Phase 2: Outline confirmation (no details) */
+            <div className="story-setup">
+              <h2>{language === 'zh' ? '剧情大纲' : 'Story Outline'}</h2>
+              <p>{language === 'zh' ? 'Director 已经构思好了故事走向。确认后开始播放。' : 'The Director has planned the story. Confirm to begin.'}</p>
+              <div className="story-outline-confirm">
+                <pre>{story.outline}</pre>
+              </div>
+              <div className="story-controls">
+                <button type="button" onClick={() => story.confirmStory()} disabled={story.isGenerating}>
+                  {language === 'zh' ? '确认并开始' : 'Confirm & Start'}
+                </button>
+                <button type="button" onClick={() => story.sendAction('stop')}>
+                  {language === 'zh' ? '放弃' : 'Discard'}
+                </button>
+              </div>
+            </div>
           ) : (
+            /* Phase 3: Beat replay */
             <div className="story-stream">
               <header>
                 <h2>{t.narrativeStream}</h2>
-                <span className="schema-pill">{story.isConnected ? t.connected : t.connecting}</span>
+                <span className="schema-pill">{language === 'zh' ? '播放中' : 'Playing'}</span>
                 <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
               </header>
 
-              {story.outline && (
-                <div className="story-outline">
-                  <pre>{story.outline}</pre>
+              {story.outline && story.confirmed && (
+                <div className="story-progress">
+                  <span>{language === 'zh' ? 'Beat' : 'Beat'} {story.beatIndex + 1}/{story.totalBeats}</span>
                 </div>
               )}
 
