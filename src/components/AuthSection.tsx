@@ -29,6 +29,17 @@ export function AuthSection({ auth, language, syncStatus }: AuthSectionProps) {
     )
   }
 
+  if (auth.error === 'not_configured') {
+    return (
+      <section>
+        <span className="field-label">{zh ? '账户' : 'Account'}</span>
+        <p className="hint" style={{ color: 'var(--color-error-text)' }}>
+          {zh ? 'Supabase 未配置' : 'Supabase not configured'}
+        </p>
+      </section>
+    )
+  }
+
   if (auth.user) {
     return (
       <section>
@@ -63,11 +74,12 @@ export function AuthSection({ auth, language, syncStatus }: AuthSectionProps) {
   }
 
   return (
-    <section>
+    <section className="auth-section">
       <span className="field-label">{zh ? '账户' : 'Account'}</span>
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 8 }}>
+      <form onSubmit={handleSubmit} className="auth-form">
         <input
           type="email"
+          className="auth-input"
           placeholder={zh ? '邮箱' : 'Email'}
           value={email}
           onChange={e => setEmail(e.target.value)}
@@ -75,19 +87,20 @@ export function AuthSection({ auth, language, syncStatus }: AuthSectionProps) {
         />
         <input
           type="password"
+          className="auth-input"
           placeholder={zh ? '密码' : 'Password'}
           value={password}
           onChange={e => setPassword(e.target.value)}
           required
           minLength={6}
         />
-        <button type="submit" className="panel-toggle" style={{ width: '100%', padding: '10px' }}>
+        <button type="submit" className="auth-btn-primary">
           {mode === 'signin' ? (zh ? '登录' : 'Sign in') : (zh ? '注册' : 'Sign up')}
         </button>
-        {formError && <p style={{ color: 'var(--color-error-text)', fontSize: 12 }}>{formError}</p>}
+        {formError && <p className="auth-error">{formError}</p>}
         <button
           type="button"
-          className="panel-toggle"
+          className="auth-btn-secondary"
           onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setFormError(null) }}
         >
           {mode === 'signin'
