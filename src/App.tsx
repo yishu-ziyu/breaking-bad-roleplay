@@ -424,7 +424,8 @@ function App() {
           </div>
         </section>
 
-        {/* View toggle */}
+        {/* View toggle — Story mode disabled on Vercel (needs SSE backend) */}
+        {/*
         <section>
           <span className="field-label">{t.view}</span>
           <div className="seg-control">
@@ -432,6 +433,7 @@ function App() {
             <button className={view === 'story' ? 'active' : ''} onClick={() => setView('story')}>{t.story}</button>
           </div>
         </section>
+        */}
 
         {/* Perspective (story only) */}
         {view === 'story' && (
