@@ -1,10 +1,10 @@
 /* =================================================================
-   ABQ Roleplay Lab — useStoryStream (Supabase Realtime)
-   Replaces the old SSE-based hook.
+   ABQ Roleplay Lab — useStoryStream (local replay)
+   Single API call returns all beats; frontend replays locally.
+   No database needed.
    ================================================================= */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { useCallback, useRef, useState } from 'react'
 
 export interface StoryEvent {
   type: string
@@ -21,6 +21,14 @@ export interface UseStoryStreamReturn {
   isGenerating: boolean
   sessionId: string | null
   outline: string | null
+  beatIndex: number
+  totalBeats: number
+}
+
+interface Beat {
+  scene: string
+  events: StoryEvent[]
+  director_note: string
 }
 
 export function useStoryStream(): UseStoryStreamReturn {
@@ -30,59 +38,23 @@ export function useStoryStream(): UseStoryStreamReturn {
   const [isGenerating, setIsGenerating] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [outline, setOutline] = useState<string | null>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const [beatIndex, setBeatIndex] = useState(0)
+  const [totalBeats, setTotalBeats] = useState(0)
 
-  // Subscribe to Realtime when sessionId changes
-  useEffect(() => {
-    if (!sessionId) return
-
-    const channel = supabase
-      .channel(`story:${sessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'story_events',
-          filter: `session_id=eq.${sessionId}`,
-        },
-        (payload) => {
-          const row = payload.new as {
-            event_type: string
-            event_data: Record<string, unknown>
-            beat_index: number
-          }
-          const evt: StoryEvent = {
-            type: row.event_type,
-            data: row.event_data,
-            beat_index: row.beat_index,
-          }
-          setEvents((prev) => [...prev, evt])
-          if (evt.type === 'beat_ready') {
-            setCurrentBeat(evt as StoryEvent & { type: 'beat_ready' })
-          }
-        },
-      )
-      .subscribe((status) => {
-        setIsConnected(status === 'SUBSCRIBED')
-      })
-
-    channelRef.current = channel
-
-    return () => {
-      channel.unsubscribe()
-      channelRef.current = null
-    }
-  }, [sessionId])
+  const beatsRef = useRef<Beat[]>([])
 
   const startStory = useCallback(async (taskPrompt: string, characterId = 'walter'): Promise<string> => {
     setEvents([])
     setCurrentBeat(null)
     setOutline(null)
+    setBeatIndex(0)
+    setTotalBeats(0)
+    beatsRef.current = []
     setIsGenerating(true)
+    setIsConnected(false)
 
     try {
-      const res = await fetch('/api/story/start', {
+      const res = await fetch('/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_prompt: taskPrompt, active_character_id: characterId }),
@@ -92,33 +64,86 @@ export function useStoryStream(): UseStoryStreamReturn {
         throw new Error(err.error || 'Story start failed')
       }
       const data = await res.json()
-      setSessionId(data.session_id)
-      setOutline(data.outline)
-      return data.session_id
+
+      const id = crypto.randomUUID()
+      setSessionId(id)
+      setOutline(data.outline || '')
+
+      // Normalize and store beats locally
+      const rawBeats = (data.beats || []) as Array<Record<string, unknown>>
+      const beats: Beat[] = rawBeats.map((b) => {
+        const scene = typeof b.scene === 'string' ? b.scene : ''
+        const rawEvents = Array.isArray(b.events) ? b.events : []
+        const directorNote = typeof b.director_note === 'string' ? b.director_note : ''
+        const events: StoryEvent[] = rawEvents.map((e) => {
+          const evt = e as Record<string, unknown>
+          return {
+            type: typeof evt.type === 'string' ? evt.type : 'unknown',
+            data: (evt.data as Record<string, unknown>) || {},
+            beat_index: beatsRef.current.length,
+          }
+        })
+        return { scene, events, director_note: directorNote }
+      })
+
+      // If no structured beats, create one from outline
+      if (beats.length === 0 && data.outline) {
+        beats.push({
+          scene: data.outline.split('\n')[0] || 'The story begins',
+          events: [{ type: 'scene_change', data: { description: data.outline }, beat_index: 0 }],
+          director_note: '',
+        })
+      }
+
+      beatsRef.current = beats
+      setTotalBeats(beats.length)
+
+      // Play first beat immediately
+      if (beats.length > 0) {
+        setEvents(beats[0].events)
+        setBeatIndex(0)
+        setCurrentBeat({ type: 'beat_ready', data: { scene: beats[0].scene, director_note: beats[0].director_note }, beat_index: 0 })
+      }
+
+      setIsConnected(true)
+      return id
     } finally {
       setIsGenerating(false)
     }
   }, [])
 
-  const sendAction = useCallback(async (action: 'continue' | 'stop' | 'redirect', extra?: Record<string, unknown>) => {
-    if (!sessionId) throw new Error('No active session')
-    setIsGenerating(true)
+  const sendAction = useCallback(async (action: 'continue' | 'stop' | 'redirect') => {
+    if (action === 'stop') {
+      setEvents([])
+      setCurrentBeat(null)
+      setSessionId(null)
+      setOutline(null)
+      setBeatIndex(0)
+      setTotalBeats(0)
+      beatsRef.current = []
+      setIsConnected(false)
+      return
+    }
 
-    try {
-      const res = await fetch('/api/story/next', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, action, ...extra }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Failed' }))
-        throw new Error(err.error || 'Story next failed')
+    if (action === 'continue') {
+      const nextIndex = beatIndex + 1
+      if (nextIndex >= beatsRef.current.length) {
+        setEvents((prev) => [...prev, { type: 'complete', data: { message: 'All beats rendered.' }, beat_index: nextIndex }])
+        setCurrentBeat(null)
+        return
       }
-      // Events arrive via Realtime subscription
-    } finally {
+
+      setIsGenerating(true)
+      // Simulate LLM latency for UX
+      await new Promise((r) => setTimeout(r, 600))
+
+      const beat = beatsRef.current[nextIndex]
+      setBeatIndex(nextIndex)
+      setEvents((prev) => [...prev, ...beat.events])
+      setCurrentBeat({ type: 'beat_ready', data: { scene: beat.scene, director_note: beat.director_note }, beat_index: nextIndex })
       setIsGenerating(false)
     }
-  }, [sessionId])
+  }, [beatIndex])
 
   return {
     events,
@@ -129,5 +154,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     isGenerating,
     sessionId,
     outline,
+    beatIndex,
+    totalBeats,
   }
 }
