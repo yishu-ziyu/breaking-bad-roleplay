@@ -1,5 +1,35 @@
 # Breaking Bad Roleplay — 开发日志
 
+## 2026-06-26 Vercel 部署成功 ✅
+
+### 最终部署方案
+- **平台**: Vercel（免费 Hobby 计划，不要信用卡）
+- **URL**: https://breaking-bad-roleplay.vercel.app
+- **前端**: React 19 + Vite 8（静态文件）
+- **后端**: Vercel Serverless Function（`api/chat.py`，Python）
+- **LLM**: Agnes AI `agnes-2.0-flash`（免费公测期）
+- **模式**: Chat（Direct + Crew），Story 模式暂不可用（需要 SSE）
+
+### 技术细节
+- `api/chat.py` 是自包含的 Vercel Python serverless function，不依赖 FastAPI
+- 直接调用 Agnes AI OpenAI-compatible API
+- 6 个角色 system prompt 全部内嵌
+- 结构化输出（reply_text, emotion_state, gif_search_query, thinking, tool_executed, tool_log）
+- 支持 Direct 和 Crew 两种模式
+
+### 部署过程中解决的问题
+1. lint 9 errors → 全部修复（0 errors, 7 warnings）
+2. tool-safety.test.js 引用不存在文件 → 更新为检查 Python 后端
+3. Render 免费时长用完 → 切到 Vercel
+4. StepFun/MiniMax API key 失效 → 切到 Agnes AI（免费）
+5. Vercel 项目框架被设为 "services" → 通过 API 改回 "vite"
+6. vercel.json experimentalServices 冲突 → 简化配置
+
+### 已知限制
+- Story 模式（Director 自主演绎）不可用，需要 SSE 长连接
+- Agnes AI 免费公测期，之后可能需要切换 LLM 提供商
+- 无数据库（消息存在浏览器 localStorage）
+
 ## 2026-06-24 部署调研（未完成）
 
 ### 背景
