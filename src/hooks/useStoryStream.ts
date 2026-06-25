@@ -16,7 +16,7 @@ export interface UseStoryStreamReturn {
   events: StoryEvent[]
   isConnected: boolean
   currentBeat: (StoryEvent & { type: 'beat_ready' }) | null
-  startStory: (taskPrompt: string, characterId?: string) => Promise<string>
+  startStory: (taskPrompt: string, characterId?: string, llmProvider?: string) => Promise<string>
   sendAction: (action: 'continue' | 'stop' | 'redirect', extra?: Record<string, unknown>) => Promise<void>
   isGenerating: boolean
   sessionId: string | null
@@ -43,7 +43,7 @@ export function useStoryStream(): UseStoryStreamReturn {
 
   const beatsRef = useRef<Beat[]>([])
 
-  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter'): Promise<string> => {
+  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', llmProvider = 'agnes'): Promise<string> => {
     setEvents([])
     setCurrentBeat(null)
     setOutline(null)
@@ -57,7 +57,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       const res = await fetch('/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_prompt: taskPrompt, active_character_id: characterId }),
+        body: JSON.stringify({ task_prompt: taskPrompt, active_character_id: characterId, llmProvider }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed' }))

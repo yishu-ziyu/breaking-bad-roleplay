@@ -261,7 +261,7 @@ function App() {
     if (!storyTask.trim() || story.isGenerating) return
     setError(null)
     try {
-      await story.startStory(storyTask, selectedCharId)
+      await story.startStory(storyTask, selectedCharId, llmProvider)
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -449,7 +449,10 @@ function App() {
         <section>
           <label htmlFor="llmProvider">{t.model}</label>
           <select id="llmProvider" value={llmProvider} onChange={e => setLlmProvider(e.target.value)}>
+            <option value="agnes">Agnes AI (free)</option>
             <option value="stepfun">StepFun step-3.7-flash</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="minimax">MiniMax</option>
           </select>
         </section>
       </aside>
