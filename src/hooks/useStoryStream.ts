@@ -67,7 +67,7 @@ export function useStoryStream(): UseStoryStreamReturn {
 
       const id = crypto.randomUUID()
       setSessionId(id)
-      setOutline(data.outline || '')
+      setOutline(Array.isArray(data.outline) ? data.outline.join('\n') : (data.outline || ''))
 
       // Normalize and store beats locally
       const rawBeats = (data.beats || []) as Array<Record<string, unknown>>
