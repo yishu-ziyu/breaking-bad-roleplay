@@ -1,0 +1,27 @@
+databases:
+  - name: abq-roleplay-db
+    plan: free
+    databaseName: abq_roleplay_db
+    ipAllowList: []
+
+services:
+  - type: web
+    name: abq-roleplay-lab
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: MINIMAX_API_KEY
+        sync: false
+      - key: STEPFUN_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: abq-roleplay-db
+          property: connectionString
+    healthCheckPath: /api/health

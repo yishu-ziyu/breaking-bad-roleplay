@@ -438,8 +438,7 @@ function App() {
           <section>
             <span className="field-label">{t.perspective}</span>
             <div className="seg-control">
-              <button className={true ? 'active' : ''} onClick={() => {/* global — no-op for now */}}>{t.global}</button>
-              <button className={false ? 'active' : ''}>{t.inCharacter}</button>
+              <button className="active">{t.global}</button>
             </div>
           </section>
         )}
