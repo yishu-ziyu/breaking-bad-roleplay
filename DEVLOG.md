@@ -26,8 +26,38 @@
 6. vercel.json experimentalServices 冲突 → 简化配置
 
 ### 已知限制
-- Story 模式（Director 自主演绎）不可用，需要 SSE 长连接
-- Agnes AI 免费公测期，之后可能需要切换 LLM 提供商
+- Story 模式（Director 自主演绎）已通过本地回放实现（Wave 1）
+
+---
+
+## 2026-06-26 Wave 1: Story 渐进式生成 ✅
+
+### 改动
+- `src/App.tsx` — 3-phase Story UI：输入 → 大纲确认 → Beat 逐条回放
+- `src/hooks/useStoryStream.ts` — outline-confirm + local replay 模式
+- `src/App.css` — 新增 ~200 行 story UI 样式
+- `api/story.py` — 单次返回 `{outline, beats}` 全量响应
+- `api/chat.py` — 多 LLM provider 支持（agnes/stepfun/deepseek/minimax）
+
+### 核心决策
+- 单次 LLM 调用（~10s）返回全部 beats，前端本地回放
+- 大纲只显示标题（无细节），确认后才展示 beat 内容
+- 保留惊喜感
+
+---
+
+## 2026-06-26 Wave 2: 角色记忆滑动窗口 ✅
+
+### 改动
+- `src/hooks/useCharacterMemory.ts` — 新建，8-turn 滑动窗口 + 摘要 + 关键事实提取
+- `api/chat.py` — `memorySummary` + `keyFacts` 注入 system prompt
+- `src/App.tsx` — 接入 memory hook，per-character 持久化
+
+### 机制
+- 最近 8 轮：完整上下文（前端 history 已传）
+- 更早轮次：压缩为摘要（500 字符 cap）
+- 关键事实：5 类关键词提取（person/location/secret/relationship/event）
+- 按角色持久化到 localStorage
 - 无数据库（消息存在浏览器 localStorage）
 
 ## 2026-06-24 部署调研（未完成）
