@@ -80,7 +80,8 @@ RULES: 2-3 turns total. Characters react to each other, not just user. First cha
 # Helpers
 # ---------------------------------------------------------------------------
 
-STEPFUN_URL = "https://api.stepfun.com/v1/chat/completions"
+LLM_URL = os.environ.get("LLM_URL", "https://apihub.agnes-ai.com/v1/chat/completions")
+LLM_MODEL = os.environ.get("LLM_MODEL", "agnes-2.0-flash")
 
 FRONTEND_TO_BACKEND = {
     "walter": "Walter White", "jesse": "Jesse Pinkman",
@@ -90,10 +91,10 @@ FRONTEND_TO_BACKEND = {
 BACKEND_TO_FRONTEND = {v: k for k, v in FRONTEND_TO_BACKEND.items()}
 
 
-def call_stepfun(messages: list[dict], api_key: str) -> str:
+def call_llm(messages: list[dict], api_key: str) -> str:
     req = Request(
-        STEPFUN_URL,
-        data=json.dumps({"model": "step-3.7-flash", "messages": messages}).encode(),
+        LLM_URL,
+        data=json.dumps({"model": LLM_MODEL, "messages": messages}).encode(),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -142,9 +143,9 @@ def fallback_response(character_id: str, text: str) -> dict:
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        api_key = os.environ.get("STEPFUN_API_KEY", "")
+        api_key = os.environ.get("LLM_API_KEY", "")
         if not api_key:
-            self._json_response(500, {"error": "STEPFUN_API_KEY not configured"})
+            self._json_response(500, {"error": "LLM_API_KEY not configured"})
             return
 
         try:
@@ -186,7 +187,7 @@ class handler(BaseHTTPRequestHandler):
             messages.append({"role": role, "content": turn.get("text", "")})
         messages.append({"role": "user", "content": user_input})
 
-        raw = call_stepfun(messages, api_key)
+        raw = call_llm(messages, api_key)
         parsed = extract_json(raw)
 
         if isinstance(parsed, dict):
@@ -229,7 +230,7 @@ class handler(BaseHTTPRequestHandler):
             {"role": "system", "content": CREW_SYSTEM_PROMPT},
             {"role": "user", "content": crew_prompt},
         ]
-        raw = call_stepfun(messages, api_key)
+        raw = call_llm(messages, api_key)
         parsed = extract_json(raw)
 
         debate_logs = []
