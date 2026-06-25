@@ -27,6 +27,7 @@
 
 ### 已知限制
 - Story 模式（Director 自主演绎）已通过本地回放实现（Wave 1）
+- Supabase 表需手动在 Dashboard 跑 SQL（CLI 本机 TLS 不通）
 
 ---
 
@@ -58,7 +59,20 @@
 - 更早轮次：压缩为摘要（500 字符 cap）
 - 关键事实：5 类关键词提取（person/location/secret/relationship/event）
 - 按角色持久化到 localStorage
-- 无数据库（消息存在浏览器 localStorage）
+- 登录后自动同步到 Supabase cloud
+
+---
+
+## 2026-06-26 Wave 3: Supabase Auth + persistence ✅
+
+### 改动
+- `src/lib/supabaseClient.ts` — Vite SPA browser client (`@supabase/ssr`)
+- `src/hooks/useAuth.ts` — email/password sign-in/sign-up/sign-out
+- `src/lib/supabasePersistence.ts` — load + persist chat messages + memory to Supabase
+- `src/components/AuthSection.tsx` — sidebar auth UI (sign in / sign up toggle)
+- `src/App.tsx` — cloud sync on login, persist on each reply
+- `supabase/migrations/20260626120000_create_tables.sql` — chat_messages / character_memory / story_sessions
+- `.env.local` — VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY
 
 ## 2026-06-24 部署调研（未完成）
 
