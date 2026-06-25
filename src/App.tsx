@@ -5,6 +5,9 @@ import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream } from './hooks/useStoryStream'
 import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMemory'
+import { useAuth } from './hooks/useAuth'
+import { loadChatMessages, loadCharacterMemory, persistChatMessage, persistCharacterMemory } from './lib/supabasePersistence'
+import { AuthSection } from './components/AuthSection'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import './App.css'
 
@@ -224,6 +227,9 @@ function App() {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Auth state
+  const auth = useAuth()
+
   // Story state
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
@@ -232,6 +238,34 @@ function App() {
   const charMemory = useCharacterMemory()
   const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('abq_memory', {})
   const currentMemory = memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] }
+
+  // Cloud sync: persist to Supabase when authenticated
+  const [syncStatus, setSyncStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!auth.user) {
+      setSyncStatus(null)
+      return
+    }
+    // Load cloud messages + memory on login
+    ;(async () => {
+      try {
+        const [msgs, mem] = await Promise.all([
+          loadChatMessages(auth.user!.id, selectedCharId),
+          loadCharacterMemory(auth.user!.id, selectedCharId),
+        ])
+        if (msgs.length > 0) {
+          setMessagesByChar(prev => ({ ...prev, [selectedCharId]: msgs as ChatMessage[] }))
+        }
+        if (mem) {
+          setMemoryByChar(prev => ({ ...prev, [selectedCharId]: mem as unknown as CharacterMemory }))
+        }
+        setSyncStatus('synced')
+      } catch (e) {
+        setSyncStatus('sync-failed')
+      }
+    })()
+  }, [auth.user, selectedCharId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- First-visit opener ---- */
   useEffect(() => {
@@ -359,6 +393,21 @@ function App() {
         // Update memory with character reply
         const finalMemory = charMemory.addTurn(selectedCharId, reply.text, updatedAfterUser)
         setMemoryByChar(prev => ({ ...prev, [selectedCharId]: finalMemory }))
+
+        // Persist to Supabase if authenticated
+        if (auth.user) {
+          persistChatMessage(auth.user.id, {
+            character_id: selectedCharId,
+            message: reply.text,
+            sender: selectedCharId,
+            emotion: reply.emotion ?? null,
+          }).catch(() => {})
+          persistCharacterMemory(auth.user.id, {
+            character_id: selectedCharId,
+            summary: finalMemory.summary,
+            key_facts: finalMemory.keyFacts as unknown as Array<Record<string, unknown>>,
+          }).catch(() => {})
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -388,6 +437,9 @@ function App() {
             <p>{t.tagline}</p>
           </div>
         </div>
+
+        {/* Auth section */}
+        <AuthSection auth={auth} language={language} syncStatus={syncStatus} />
 
         {/* Character grid */}
         <section>
