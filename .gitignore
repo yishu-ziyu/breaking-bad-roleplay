@@ -3,9 +3,8 @@ logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+pnpm-debug.log
+lerna-debug.log
 
 node_modules
 dist-ssr
@@ -29,4 +28,6 @@ playwright-report
 __pycache__/
 .vercel
 
+# Work artifacts (local only)
 .ship/
+dist/
