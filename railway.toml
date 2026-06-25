@@ -1,7 +1,7 @@
 [build]
-builder = "RAILPACK"
-buildCommand = "cd backend && /usr/bin/python3 -m ensurepip && /usr/bin/python3 -m pip install -r requirements.txt"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "cd backend && python3 -c \"import os; from main import app; import uvicorn; uvicorn.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', '8080')))\""
+startCommand = ""
 healthcheckPath = "/api/health"

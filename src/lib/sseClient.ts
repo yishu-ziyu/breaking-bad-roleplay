@@ -187,7 +187,7 @@ export class SseClient {
       if (currentData || currentEvent) {
         this.emitParsedEvent(currentEvent || 'message', currentData.trim());
       }
-    } catch (err) {
+    } catch {
       this.stopHeartbeat();
       const wasManual = this.manualClose;
       if (!wasManual) {

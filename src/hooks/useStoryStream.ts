@@ -53,7 +53,6 @@ export function useStoryStream(options: UseStoryStreamOptions = {}): UseStoryStr
   const { url = DEFAULT_SSE_URL, maxEvents } = options;
 
   const [events, setEvents] = useState<SseEvent[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<UseStoryStreamReturn['connectionState']>('disconnected');
   const [currentBeat, setCurrentBeat] = useState<UseStoryStreamReturn['currentBeat']>(null);
 
@@ -128,10 +127,7 @@ export function useStoryStream(options: UseStoryStreamOptions = {}): UseStoryStr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
-  // Mirror connection state into isConnected for convenience.
-  useEffect(() => {
-    setIsConnected(connectionState === 'connected');
-  }, [connectionState]);
+  const isConnected = connectionState === 'connected';
 
   // Auto-reconnect: if the connection drops unexpectedly, open a new
   // SseClient fresh.  This avoids accumulating stale state inside a
