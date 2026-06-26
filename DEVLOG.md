@@ -74,6 +74,26 @@
 - `supabase/migrations/20260626120000_create_tables.sql` — chat_messages / character_memory / story_sessions
 - `.env.local` — VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY
 
+### 表结构
+- `chat_messages` — 每条消息一行（user / 6 角色），RLS 限制仅本人可读写
+- `character_memory` — per-user per-character 唯一约束，summary + key_facts JSONB
+- `story_sessions` — 故事任务 + 大纲 + beats JSONB（Wave 1 用过本地回放，云端持久化留待 P2）
+
+### Vercel 环境变量
+- 通过 `vercel env add VITE_SUPABASE_URL production` / `vercel env add VITE_SUPABASE_PUBLISHABLE_KEY production` 设置
+- 触发 `git commit --allow-empty` 重新部署，环境变量在构建时注入前端 bundle
+- `.env.local` 是本地开发用，不进 git（已在 `.gitignore`）
+
+### Supabase 自动化调研
+- Supabase CLI（`supabase db push`）本机 TLS 握手失败：`failed to connect ... tls error (EOF)`，`db.uacopbotolzdhoidrhjn.supabase.co` DNS 解析到 `198.18.0.225`（假 IP，本机网络封禁）
+- 退而求其次：手动在 SQL Editor 跑 5 段 SQL（pgcrypto 扩展 → 3 张表 → 索引 + RLS）
+- 后续：等网络环境修复后可改用 `supabase db push` 自动化
+
+### UI 调整
+- Auth 表单初始用了 `panel-toggle` + inline style，跟设计系统脱节
+- 改用专用类：`auth-input` / `auth-btn-primary`（黄底黑字）/ `auth-btn-secondary`（透明边框）
+- 新 CSS 块加入 `src/App.css`，与已有 char-card / seg-control 风格统一
+
 ## 2026-06-24 部署调研（未完成）
 
 ### 背景
