@@ -477,6 +477,11 @@ textarea {
 .story-event--scene_change { border-left: 3px solid var(--color-bb-violet); }
 .story-event--agent_act    { border-left: 3px solid var(--color-text-muted); }
 
+.story-event__content {
+  display: grid;
+  gap: 10px;
+}
+
 /* Beat decision controls (Continue / Stop) */
 .beat-controls {
   display: flex;

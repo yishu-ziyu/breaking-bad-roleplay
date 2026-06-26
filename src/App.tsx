@@ -3,7 +3,7 @@ import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
-import { useStoryStream } from './hooks/useStoryStream'
+import { useStoryStream, type StoryEvent } from './hooks/useStoryStream'
 import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMemory'
 import { useAuth } from './hooks/useAuth'
 import { loadChatMessages, loadCharacterMemory, persistChatMessage, persistCharacterMemory } from './lib/supabasePersistence'
@@ -23,6 +23,26 @@ type Language = 'en' | 'zh'
 type View = 'chat' | 'story'
 
 type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
+
+const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
+  'Walter White': 'walter', 'Walter': 'walter',
+  'Jesse Pinkman': 'jesse', 'Jesse': 'jesse',
+  'Skyler White': 'skyler', 'Skyler': 'skyler',
+  'Saul Goodman': 'saul', 'Saul': 'saul',
+  'Mike Ehrmantraut': 'mike', 'Mike': 'mike',
+  'Gus Fring': 'gus', 'Gus': 'gus',
+}
+
+function resolveStoryEventGif(evt: StoryEvent): string | null {
+  if (evt.type !== 'agent_speak') return null
+  const charId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
+  if (!charId) return null
+  return resolveGifUrl(
+    charId,
+    (evt.data.emotion_state as string) ?? null,
+    (evt.data.gif_search_query as string) ?? null,
+  )
+}
 
 type ChatMessage = {
   id: string
@@ -590,10 +610,13 @@ function App() {
 
               <div className="story-events">
                 {story.events.filter(e => e.type !== 'outline').map((evt, i) => (
-                  <div key={i} className={`story-event story-event--${evt.type}`}>
+                  <div key={`${evt.beat_index ?? i}-${evt.type}`} className={`story-event story-event--${evt.type}`}>
                     <strong>{evt.type}</strong>
                     {evt.type === 'agent_speak' && (
-                      <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
+                      <div className="story-event__content">
+                        <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
+                        <GifCard src={resolveStoryEventGif(evt)} alt={evt.data.gif_search_query as string} />
+                      </div>
                     )}
                     {evt.type === 'agent_think' && (
                       <p><em>{evt.data.character_id as string} thinks:</em> {evt.data.thought_content as string}</p>
