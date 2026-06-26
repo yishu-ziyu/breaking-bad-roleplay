@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
@@ -8,7 +8,10 @@ import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMe
 import { useAuth } from './hooks/useAuth'
 import { loadChatMessages, loadCharacterMemory, persistChatMessage, persistCharacterMemory } from './lib/supabasePersistence'
 import { AuthSection } from './components/AuthSection'
+import { GifCard } from './components/GifCard'
+import { VoicePlayer } from './components/VoicePlayer'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
+import { resolveGifUrl } from './lib/gifResolver'
 import './App.css'
 
 /* ------------------------------------------------------------------ */
@@ -271,6 +274,7 @@ function App() {
   useEffect(() => {
     if (!messagesByChar[selectedCharId]) {
       const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
+      const openerGif = resolveGifUrl(selectedCharId, 'opening pressure', null)
       setMessagesByChar(prev => ({
         ...prev,
         [selectedCharId]: [{
@@ -279,22 +283,26 @@ function App() {
           text: opener,
           emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
           gifQuery: null,
-          gifUrl: null,
+          gifUrl: openerGif,
         }],
       }))
     }
   }, [selectedCharId, language]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ---- Scene background (chat view) ---- */
-  const sceneStyle = useMemo<CSSProperties>(() => {
-    const recentTexts = messages.slice(-8).map(m => m.text)
-    return {
-      backgroundImage: `url(${pickSceneUrl(recentTexts)})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundRepeat: 'no-repeat',
+  /* ---- Scene background cross-fade (chat view) ---- */
+  const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
+  const [prevSceneUrl, setPrevSceneUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
+    if (next !== currentSceneUrl) {
+      setPrevSceneUrl(currentSceneUrl)
+      setCurrentSceneUrl(next)
     }
-  }, [messages])
+  }, [messages, currentSceneUrl])
+
+  const userTurnCount = messages.filter(m => m.sender === 'user').length
+  const showSavePrompt = !auth.user && userTurnCount >= 3
 
   /* ---- Story start ---- */
   const handleStartStory = useCallback(async () => {
@@ -362,13 +370,14 @@ function App() {
         const debateReplies: ChatMessage[] = []
         if (Array.isArray(data.debate_logs)) {
           data.debate_logs.forEach((log: Record<string, unknown>) => {
+            const sender = log.sender as CharacterId
             debateReplies.push({
               id: crypto.randomUUID(),
-              sender: log.sender as CharacterId,
+              sender,
               text: log.text as string,
               emotion: log.emotion as string | undefined,
               gifQuery: log.gifQuery as string | null,
-              gifUrl: null,
+              gifUrl: resolveGifUrl(sender, log.emotion as string | null, log.gifQuery as string | null),
               thinking: log.thinking as string | undefined,
               toolExecuted: log.tool_executed as string | null,
               toolLog: log.tool_log as string | null,
@@ -383,7 +392,7 @@ function App() {
           text: data.reply_text,
           emotion: data.emotion_state,
           gifQuery: data.gif_search_query,
-          gifUrl: null,
+          gifUrl: resolveGifUrl(selectedCharId, data.emotion_state, data.gif_search_query),
           thinking: data.thinking,
           toolExecuted: data.tool_executed,
           toolLog: data.tool_log,
@@ -621,7 +630,9 @@ function App() {
         </section>
       ) : (
         /* ---------- Chat View ---------- */
-        <section className="chat-panel" style={sceneStyle}>
+        <section className="chat-panel">
+          <div className="scene-layer scene-layer--prev" style={{ backgroundImage: prevSceneUrl ? `url(${prevSceneUrl})` : 'none' } as CSSProperties} />
+          <div className="scene-layer scene-layer--current" style={{ backgroundImage: `url(${currentSceneUrl})` } as CSSProperties} />
           <header className="chat-header">
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
@@ -630,6 +641,13 @@ function App() {
                   ? `${selectedChar.name} 与其${getRelationLabel(relation, language)}`
                   : `${selectedChar.name} with their ${getRelationLabel(relation, language)}`}
               </h2>
+              {showSavePrompt && (
+                <div className="save-prompt">
+                  {language === 'zh'
+                    ? '登录以保存这段对话到云端。'
+                    : 'Sign in to save this conversation to the cloud.'}
+                </div>
+              )}
             </div>
             <span className="schema-pill">{t.schema}</span>
           </header>
@@ -654,12 +672,10 @@ function App() {
                         {msg.toolLog && <p>{msg.toolLog}</p>}
                       </div>
                     )}
-                    {msg.gifUrl && (
-                      <figure className="gif-card">
-                        <img src={msg.gifUrl} alt={msg.gifQuery ?? ''} onError={e => e.currentTarget.closest('figure')?.setAttribute('hidden', 'true')} />
-                        <figcaption>{t.gifTrigger}: {msg.gifQuery}</figcaption>
-                      </figure>
+                    {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
+                      <VoicePlayer characterId={msg.sender as CharacterId} relation={relation} />
                     )}
+                    <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={`${t.gifTrigger}: ${msg.gifQuery}`} />
                   </div>
                 </article>
               )

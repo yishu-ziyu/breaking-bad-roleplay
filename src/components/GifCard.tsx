@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 export interface GifCardProps {
-  src: string
+  src: string | null | undefined
   alt?: string
   caption?: ReactNode
 }

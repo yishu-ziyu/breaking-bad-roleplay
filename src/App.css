@@ -535,10 +535,34 @@ textarea {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 16px;
+  background: none;
+  overflow: hidden;
+}
+
+.scene-layer {
+  position: absolute;
+  inset: 0;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  transition: background-image 0.8s ease;
+  z-index: 0;
+  transition: opacity 800ms ease;
+}
+
+.scene-layer--prev {
+  opacity: 1;
+}
+
+.scene-layer--current {
+  opacity: 0;
+}
+
+.chat-panel:has(.scene-layer--current) .scene-layer--current {
+  opacity: 1;
+}
+
+.chat-panel:has(.scene-layer--current) .scene-layer--prev {
+  opacity: 0;
 }
 
 .chat-panel::before {
@@ -546,13 +570,13 @@ textarea {
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(8,11,8,0.18) 0%, rgba(8,11,8,0.45) 100%);
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
-.chat-panel > * {
+.chat-panel > *:not(.scene-layer) {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 /* Chat header */
@@ -807,31 +831,6 @@ textarea {
   color: var(--color-error-text);
   font-size: 12px;
   line-height: 1.35;
-}
-
-/* ==========================================
-   Scene Background
-   ========================================== */
-.chat-panel {
-  position: relative;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  transition: background-image 0.8s ease;
-}
-
-.chat-panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(8,11,8,0.18) 0%, rgba(8,11,8,0.45) 100%);
-  z-index: 0;
-  pointer-events: none;
-}
-
-.chat-panel > * {
-  position: relative;
-  z-index: 1;
 }
 
 /* ==========================================
