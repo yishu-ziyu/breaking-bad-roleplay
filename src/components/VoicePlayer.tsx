@@ -1,17 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
+import { buildUrls, relationSlug } from '../lib/voiceUrls'
 
-export function relationSlug(relation: string): string {
-  return relation.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-}
-
-export function buildUrls(characterId: CharacterId, relation?: string): string[] {
-  const base = `/voice/${characterId}`
-  if (relation) {
-    return [`${base}-${relationSlug(relation)}.mp3`, `${base}.mp3`]
-  }
-  return [`${base}.mp3`]
-}
+export { buildUrls, relationSlug }
 
 export interface VoicePlayerProps {
   characterId: CharacterId
