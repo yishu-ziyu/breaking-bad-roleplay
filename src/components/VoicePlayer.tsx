@@ -19,7 +19,7 @@ export interface VoicePlayerProps {
   label?: string
 }
 
-export default function VoicePlayer({ characterId, relation, label }: VoicePlayerProps) {
+export function VoicePlayer({ characterId, relation, label }: VoicePlayerProps) {
   const [exists, setExists] = useState<boolean | null>(null)
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
