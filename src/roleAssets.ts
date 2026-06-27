@@ -196,12 +196,12 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
       {
         id: 'skyler-protective-fear',
         source: 'giphy',
-        url: 'https://media.giphy.com/media/10RCqM2nZpdqOQ/giphy.gif',
+        url: 'https://media.giphy.com/media/c4rNN6FOS8l6o/giphy.gif',
         tags: ['family', 'panic', 'confrontation'],
-        usageNotes: 'Family under threat; protective, strained tension. Reuses confrontation GIF until a vetted protective-fear-specific fan-made GIF is sourced.',
+        usageNotes: 'Family under threat; protective, strained tension. Skyler\'s terror in the Crawl Space realization scene.',
         safetyNotes: fictionalRoleSafetyNote,
         copyrightNotes:
-          'TODO: temporarily reuses the confrontation GIF (Reddit r/reactiongifs fan-made); replace with a vetted protective-fear-specific fan-made reaction GIF before production. ' +
+          'Surfaced via Giphy @breakingbad channel; Crawl Space scene featuring Skyler White (Anna Gunn). Verify fan-made status and attribution before production. ' +
           platformCopyrightNote,
       },
     ],
