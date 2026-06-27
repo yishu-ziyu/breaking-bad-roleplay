@@ -402,3 +402,73 @@ test('TC-SSE-5: error event transitions to error state and shows error message',
     page.locator('.story-error button', { hasText: /Reconnect/ }),
   ).toBeVisible()
 })
+
+/* ------------------------------------------------------------------ */
+/*  TC-SSE-6: switch_perspective sends target_character and next beat  */
+/*            first agent_speak matches target                        */
+/* ------------------------------------------------------------------ */
+/* Revision per drill BLOCKED 4: use driveToBeatPaused (sid='smoke-sid')
+ * which encapsulates installMockEventSource + mockSessionCreate +
+ * mockActionEndpoint + seedStorage + Start Story click + emit sequence.
+ * All emitSSE calls MUST wrap payload in { data: { ... } } because
+ * useStoryStream.ts:73 expects payload.data?.content. Manual setup
+ * without Start Story click leaves (window).__mockSSE null → emitSSE
+ * silently no-ops. */
+
+test('TC-SSE-6: switch_perspective sends target_character and next beat first agent_speak matches', async ({ page }) => {
+  // driveToBeatPaused seeds walter/en/story view, clicks Start Story,
+  // instantiates MockEventSource, emits status→outline→scene_change→
+  // agent_speak→world_state_delta→beat_ready, waits for .beat-controls.
+  // Default sid is 'smoke-sid' (sse-story.spec.ts:132).
+  const actionLog = await driveToBeatPaused(page, {
+    outline: '1. RV — cook\n2. White house — talk',
+  })
+
+  // Simulate player switch_perspective to jesse via the mocked action
+  // endpoint (mockActionEndpoint glob matches **/api/session/*/action).
+  await page.evaluate(() => {
+    fetch('/api/session/smoke-sid/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'switch_perspective', target_character: 'jesse' }),
+    })
+  })
+
+  // Assert action endpoint received switch_perspective with target_character='jesse'
+  await expect.poll(() =>
+    actionLog.some(
+      (e) => e.action === 'switch_perspective' && e.target_character === 'jesse',
+    ),
+  ).toBe(true)
+
+  // Manually emit second beat events (simulating backend prompt injection +
+  // filter: first agent_speak is Jesse Pinkman). All payloads wrapped in
+  // { data: { ... } } to match useStoryStream.ts listener expectations.
+  await emitSSE(page, 'scene_change', {
+    data: { from_scene: 'RV', to_scene: "Jesse's house", description: "Jesse's house." },
+  })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Jesse Pinkman',  // ← first agent_speak is jesse (filter worked)
+      content: 'Yo, Mr. White, what now?',
+      emotion_state: 'anxious',
+      gif_search_query: 'jesse pinkman nervous',
+    },
+  })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Walter White',
+      content: 'We wait.',
+      emotion_state: 'tense',
+      gif_search_query: 'walter white tense',
+    },
+  })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2', beat_summary: "Jesse's house" } })
+
+  // Assert first agent_speak of beat 2 is Jesse Pinkman.
+  // driveToBeatPaused already emitted 1 Walter White agent_speak in beat 1,
+  // so beat 2's first agent_speak is the 2nd .story-event--agent_speak in DOM.
+  // Using .nth(1) (not .first()) to target beat 2's first speak.
+  const beat2FirstSpeak = page.locator('.story-event--agent_speak').nth(1)
+  await expect(beat2FirstSpeak).toContainText('Jesse Pinkman')
+})

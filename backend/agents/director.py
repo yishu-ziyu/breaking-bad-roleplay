@@ -182,6 +182,7 @@ class DirectorAgent:
         # ---- Step 2: render each beat (beat-by-beat with pause) ----------
         previous_scene = ""
         idx = 0
+        active_character_id: str | None = None  # backend full-name form, e.g. "Jesse Pinkman"
         while idx < len(scenes):
             scene_desc = scenes[idx]
             current_scene = self._short_scene_name(scene_desc)
@@ -192,6 +193,7 @@ class DirectorAgent:
                 context={"previous_scene": previous_scene, "current_scene": current_scene},
                 db=db,
                 session_id=session_id,
+                active_character_id=active_character_id,
             ):
                 yield event
             # Wait for player to continue (unless this is the last beat)
@@ -226,7 +228,30 @@ class DirectorAgent:
                             previous_scene = ""
                             continue  # skip trailing idx+=1 / previous_scene overwrite
                     elif act_type == "switch_perspective":
-                        pass  # only clears the deadlock; perspective semantics deferred to Cycle 4
+                        # Resolve target from signal first (routes.py:151 pushes
+                        # {"target": ...}), fall back to db for session-resume.
+                        target_raw = signal.get("target") if isinstance(signal, dict) else None
+                        if not target_raw and db is not None and session_id is not None:
+                            try:
+                                from sqlalchemy import select
+                                # models.py:9 class is `Session`, routes.py:12
+                                # imports `Session as SessionModel`. Use the
+                                # alias form to match existing convention.
+                                from db.models import Session as SessionModel
+                                row = await db.execute(
+                                    select(SessionModel.active_character_id).where(
+                                        SessionModel.id == session_id
+                                    )
+                                )
+                                target_raw = row.scalar_one_or_none()
+                            except Exception:
+                                target_raw = None
+                        # Map frontend short id -> backend full name (F3 fix).
+                        if target_raw:
+                            active_character_id = FRONTEND_TO_BACKEND_ID.get(
+                                target_raw, target_raw
+                            )
+                        # Fall through to idx += 1 (same as old `pass`).
                     # "continue": fall through to next beat
                 except asyncio.TimeoutError:
                     yield AgentEvent(
@@ -342,6 +367,7 @@ class DirectorAgent:
         context: dict[str, str],
         db: Any = None,
         session_id: str | None = None,
+        active_character_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         Generate a single narrative beat with fine-grained events.
@@ -372,6 +398,16 @@ class DirectorAgent:
             f"Task: {task}\n\n"
             f"Outline:\n{outline}\n\n"
             f"Current scene (beat {beat_index + 1}): {scene_desc}\n\n"
+        )
+        if active_character_id:
+            beat_prompt += (
+                f"Active perspective character: {active_character_id}\n"
+                f"IMPORTANT: The FIRST agent_speak event in this beat MUST have "
+                f"character_id exactly equal to \"{active_character_id}\". "
+                f"Other characters may speak afterwards, but the opening voice must be "
+                f"{active_character_id}.\n\n"
+            )
+        beat_prompt += (
             "Generate the events for this beat as a JSON array. "
             "Include at least one agent_think or agent_speak per character present. "
             "Include agent_act for physical actions. "
@@ -401,6 +437,25 @@ class DirectorAgent:
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback).")
             return
+
+        # Filter fallback: if active_character_id set, hoist its first agent_speak
+        # to be the first agent_speak in yield order. Other events keep relative order.
+        if active_character_id:
+            target_name = active_character_id
+            idx_first_speak = None
+            idx_target_speak = None
+            for i, evt in enumerate(events):
+                if evt.get("type") == "agent_speak" and idx_first_speak is None:
+                    idx_first_speak = i
+                if (
+                    evt.get("type") == "agent_speak"
+                    and evt.get("data", {}).get("character_id") == target_name
+                    and idx_target_speak is None
+                ):
+                    idx_target_speak = i
+            if idx_target_speak is not None and idx_target_speak != idx_first_speak:
+                target_evt = events.pop(idx_target_speak)
+                events.insert(idx_first_speak, target_evt)
         # Resolve per-beat model route: prefer LLM-suggested, fall back to rule-based
         llm_suggested: str | None = None
         for evt in events:
