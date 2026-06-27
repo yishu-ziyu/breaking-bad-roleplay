@@ -204,7 +204,7 @@ test('AC-5: lab/cook keywords switch scene background to lab-rv', async ({ page 
 })
 
 /* ------------------------------------------------------------------ */
-/*  AC-6: If voice file exists → play button works                     */
+/*  AC-6: speechSynthesis available → play button works                */
 /* ------------------------------------------------------------------ */
 
 test('AC-6: VoicePlayer renders enabled play button when speechSynthesis available', async ({ page }) => {
