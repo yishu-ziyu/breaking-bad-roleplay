@@ -159,9 +159,6 @@ const uiText = {
     view: 'View',
     chat: 'Chat',
     story: 'Story',
-    perspective: 'Perspective',
-    global: 'Global',
-    inCharacter: 'In-Character',
     mode: 'Mode',
     direct: 'Direct Chat',
     crew: 'Crew Debate',
@@ -201,9 +198,6 @@ const uiText = {
     view: '视图',
     chat: '对话',
     story: '剧情',
-    perspective: '叙事视角',
-    global: '全局 导演',
-    inCharacter: '扮演 入戏',
     mode: '模式',
     direct: '微观私聊',
     crew: '宏观辩论',
@@ -644,16 +638,6 @@ function App() {
             <button className={view === 'story' ? 'active' : ''} onClick={() => setView('story')}>{t.story}</button>
           </div>
         </section>
-
-        {/* Perspective (story only) */}
-        {view === 'story' && (
-          <section>
-            <span className="field-label">{t.perspective}</span>
-            <div className="seg-control">
-              <button className="active">{t.global}</button>
-            </div>
-          </section>
-        )}
 
         {/* Relation */}
         <section>
