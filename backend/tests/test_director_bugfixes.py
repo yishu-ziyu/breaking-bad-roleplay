@@ -286,3 +286,193 @@ class TestCycle3_ActionSignalHandling:
         assert any(e.type == "complete" for e in events), (
             "Expected a complete event after switch_perspective"
         )
+
+
+# ===================================================================
+# Cycle 4: switch_perspective perspective semantics
+# ===================================================================
+
+class TestCycle4_PerspectiveSemantics:
+    """Scenario: switch_perspective signal should set active_character_id
+    (mapped to backend full-name form) so the next beat's first agent_speak
+    matches the target character."""
+
+    @pytest.fixture
+    def mock_db(self):
+        """Mock AsyncSession for db fallback tests. Added per drill BLOCKED 1:
+        test_director_bugfixes.py:17-28 only defines mock_provider/director,
+        no conftest.py exists, so mock_db must be defined here."""
+        from unittest.mock import MagicMock, AsyncMock
+        db = MagicMock()
+        db.execute = AsyncMock()
+        return db
+
+    @staticmethod
+    def _fake_beat_factory(record: list[dict]):
+        async def _fake_beat(*args, **kwargs):
+            record.append(kwargs)
+            yield AgentEvent(
+                type="beat_ready",
+                data={"beat_id": "beat_1", "beat_summary": "fake beat"},
+            )
+        return _fake_beat
+
+    async def test_switch_perspective_signal_sets_active_character_id(self, director):
+        """Given switch_perspective signal with target='jesse', the next
+        _generate_beat call receives active_character_id='Jesse Pinkman'."""
+        director._generate_outline = AsyncMock(
+            return_value="1. RV — cook\n2. White house — Skyler waits"
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "switch_perspective", "target": "jesse"})
+
+        events: list[AgentEvent] = []
+        async for ev in director.process(task="t", action_queue=queue):
+            events.append(ev)
+
+        # beat_calls[0] is beat 0 (before switch), beat_calls[1] is beat 1 (after switch)
+        assert len(beat_calls) == 2
+        assert beat_calls[1]["active_character_id"] == "Jesse Pinkman", (
+            f"Expected 'Jesse Pinkman', got {beat_calls[1].get('active_character_id')}"
+        )
+
+    async def test_switch_perspective_short_id_mapped_to_full_name(self, director):
+        """Given target='walter' (short id), active_character_id='Walter White'."""
+        director._generate_outline = AsyncMock(
+            return_value="1. RV — cook\n2. White house — Skyler waits"
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "switch_perspective", "target": "walter"})
+
+        async for ev in director.process(task="t", action_queue=queue):
+            pass
+
+        assert beat_calls[1]["active_character_id"] == "Walter White"
+
+    async def test_switch_perspective_db_fallback(self, director, mock_db):
+        """Given signal without 'target' key, director reads db and maps."""
+        director._generate_outline = AsyncMock(
+            return_value="1. RV — cook\n2. White house — Skyler waits"
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        # mock_db.execute returns a scalar of "skyler"
+        mock_db.execute = AsyncMock(
+            return_value=_MockScalar("skyler")
+        )
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "switch_perspective"})  # no target key
+
+        async for ev in director.process(
+            task="t", action_queue=queue, db=mock_db, session_id="s1"
+        ):
+            pass
+
+        assert beat_calls[1]["active_character_id"] == "Skyler White"
+
+    async def test_switch_perspective_redirect_preserves_perspective(self, director):
+        """Given switch_perspective then redirect, active_character_id persists."""
+        # 3 scenes (not 2): director.py:198 `if idx < len(scenes) - 1` means
+        # the last beat doesn't wait for action. With 2 scenes, beat 1 (last)
+        # never consumes the redirect signal. 3 scenes → beat 1 waits, consumes
+        # redirect, regenerates outline → beat_calls = [beat0, beat1, beat0_new].
+        first_outline = "1. RV — cook\n2. White house — Skyler waits\n3. DEA office — Hank"
+        second_outline = "1. Brand new scene"
+        director._generate_outline = AsyncMock(
+            side_effect=[first_outline, second_outline]
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "switch_perspective", "target": "jesse"})
+        queue.put_nowait({"action": "redirect", "prompt": "new direction"})
+
+        async for ev in director.process(task="t", action_queue=queue):
+            pass
+
+        # After redirect, new outline's first beat should still have active_character_id
+        # beat_calls: [beat0_orig, beat1_after_switch, beat0_new_outline]
+        assert len(beat_calls) == 3
+        assert beat_calls[2]["active_character_id"] == "Jesse Pinkman"
+
+    async def test_switch_perspective_no_target_keeps_none(self, director):
+        """Given signal without target and no db, active_character_id stays None."""
+        director._generate_outline = AsyncMock(
+            return_value="1. RV — cook\n2. White house — Skyler waits"
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "switch_perspective"})  # no target, no db
+
+        async for ev in director.process(task="t", action_queue=queue):
+            pass
+
+        assert beat_calls[1]["active_character_id"] is None
+
+    async def test_beat_prompt_contains_active_character(self, director, mock_provider):
+        """Given active_character_id, beat_prompt sent to LLM contains the
+        active character line."""
+        captured_messages = []
+        async def capture(messages, route=None):
+            captured_messages.append(messages)
+            return '[{"type":"beat_ready","data":{},"recommended_model":"stepfun/step-3.7-flash"}]'
+        mock_provider.call_model = AsyncMock(side_effect=capture)
+        mock_provider.resolve_model_route = MagicMock(return_value="stepfun/step-3.7-flash")
+
+        outline = "1. RV — cook"
+        async for _ in director._generate_beat(
+            task="t", outline=outline, beat_index=0,
+            context={"previous_scene": "", "current_scene": "RV"},
+            active_character_id="Jesse Pinkman",
+        ):
+            pass
+
+        user_prompt = captured_messages[0][1]["content"]
+        assert "Active perspective character: Jesse Pinkman" in user_prompt
+        assert "FIRST agent_speak" in user_prompt
+
+    async def test_filter_reorders_first_agent_speak_to_target(self, director, mock_provider):
+        """Given LLM returns walter-first events but active=jesse, filter
+        hoists jesse speak to first agent_speak position."""
+        llm_events = [
+            {"type": "scene_change", "data": {}, "recommended_model": "stepfun/step-3.7-flash"},
+            {"type": "agent_speak", "data": {"character_id": "Walter White", "content": "..."}, "recommended_model": "stepfun/step-3.7-flash"},
+            {"type": "agent_speak", "data": {"character_id": "Jesse Pinkman", "content": "..."}, "recommended_model": "stepfun/step-3.7-flash"},
+            {"type": "world_state_delta", "data": {"deltas": []}, "recommended_model": "stepfun/step-3.7-flash"},
+        ]
+        mock_provider.call_model = AsyncMock(return_value=json.dumps(llm_events))
+        mock_provider.resolve_model_route = MagicMock(return_value="stepfun/step-3.7-flash")
+
+        events_yielded = []
+        async for ev in director._generate_beat(
+            task="t", outline="1. RV — cook", beat_index=0,
+            context={"previous_scene": "", "current_scene": "RV"},
+            active_character_id="Jesse Pinkman",
+        ):
+            events_yielded.append(ev)
+
+        speak_events = [e for e in events_yielded if e.type == "agent_speak"]
+        assert len(speak_events) == 2
+        assert speak_events[0].data["character_id"] == "Jesse Pinkman", (
+            f"Expected first agent_speak to be Jesse Pinkman, got {speak_events[0].data.get('character_id')}"
+        )
+        assert speak_events[1].data["character_id"] == "Walter White"
+
+
+class _MockScalar:
+    """Mock for sqlalchemy scalar result."""
+    def __init__(self, value):
+        self._value = value
+    def scalar_one_or_none(self):
+        return self._value
