@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
 import json
+import logging
 import re
 from typing import Sequence
 
 from agents.provider import ProviderFacade
+
+logger = logging.getLogger(__name__)
 
 # Prompt appended when structured output is requested so the LLM returns
 # a JSON envelope alongside the in-character reply.
@@ -131,6 +134,10 @@ class BaseCharacter(ABC):
         try:
             raw = await self.provider.call_model(messages, model_route)
         except Exception:
+            logger.exception(
+                "%s LLM call failed, using fallback reply",
+                self.__class__.__name__,
+            )
             raw = json.dumps({
                 "reply_text": "...",
                 "emotion_state": "calm",
