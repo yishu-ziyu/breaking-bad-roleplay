@@ -780,12 +780,23 @@ function App() {
                       {evt.type === 'scene_change' && (
                         <p>{(evt.data.description as string) ?? ''}</p>
                       )}
-                      {evt.type === 'agent_speak' && (
-                        <div className="story-event__content">
-                          <p><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.content as string) ?? ''}</p>
-                          <GifCard src={resolveStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
-                        </div>
-                      )}
+                      {evt.type === 'agent_speak' && (() => {
+                        const speakCharId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
+                        const speakText = (evt.data.content as string) ?? ''
+                        return (
+                          <div className="story-event__content">
+                            <p><em>{(evt.data.character_id as string) ?? ''}:</em> {speakText}</p>
+                            {speakCharId && speakText && (
+                              <VoicePlayer
+                                text={speakText}
+                                characterId={speakCharId}
+                                language={language}
+                              />
+                            )}
+                            <GifCard src={resolveStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
+                          </div>
+                        )
+                      })()}
                       {evt.type === 'agent_think' && (
                         <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
                       )}
