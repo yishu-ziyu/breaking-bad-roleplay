@@ -213,7 +213,6 @@ async def stream_session(
                 yield payload.encode("utf-8")
         except asyncio.CancelledError:
             # Client disconnected — exit cleanly, no error event.
-            _session_queues.pop(session.id, None)
             return
         except Exception as exc:
             err = AgentEvent(type="error", data={"message": str(exc)})
@@ -221,6 +220,10 @@ async def stream_session(
                 f"event: error\n"
                 f"data: {err.model_dump_json()}\n\n"
             ).encode("utf-8")
+        finally:
+            # Always clean up the session queue to prevent memory leaks.
+            # Covers: normal completion, client disconnect, and error paths.
+            _session_queues.pop(session.id, None)
 
     return StreamingResponse(
         event_generator(),
