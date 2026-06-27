@@ -7,7 +7,7 @@ from typing import AsyncGenerator
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from db.session import get_db
 from db.models import Session as SessionModel
@@ -66,7 +66,7 @@ async def create_session(
       Session row and fed to the Director when streaming begins.
     """
     session_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     new_session = SessionModel(
         id=session_id,
@@ -159,7 +159,7 @@ async def session_action(
             detail=f"Unknown action: {action}. Expected continue|stop|redirect|switch_perspective",
         )
 
-    session.updated_at = datetime.utcnow()
+    session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
 
     return SessionActionResponse(status="ok", session_id=session_id)
