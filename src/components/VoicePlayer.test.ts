@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { VoicePlayer } from './VoicePlayer.tsx'
-import { pickVoice, createPlayHandler, VOICE_PROFILES } from '../lib/voicePlayerHelpers.ts'
+import { pickVoice, createPlayHandler, handleVoiceToggle, VOICE_PROFILES } from '../lib/voicePlayerHelpers.ts'
 
 // node 环境无 SpeechSynthesisUtterance / speechSynthesis，需 mock
 class MockUtterance {
@@ -140,6 +140,75 @@ describe('VoicePlayer (speechSynthesis)', () => {
       results.walter.rate < results.jesse.rate,
       'walter should have slower rate than jesse (急促)'
     )
+  })
+})
+
+describe('handleVoiceToggle (play/stop toggle)', () => {
+  it('TC-VOICE-TOGGLE-1: speaking state → calls synth.cancel and transitions to idle', () => {
+    let cancelled = false
+    let stateChange: string | null = null
+    const synth = {
+      speak: () => {},
+      getVoices: () => [],
+      cancel: () => { cancelled = true },
+    }
+    let playCalled = false
+    const play = () => { playCalled = true }
+
+    handleVoiceToggle(
+      'speaking',
+      synth,
+      play,
+      (s) => { stateChange = s }
+    )
+
+    assert.ok(cancelled, 'synth.cancel should be called when speaking')
+    assert.equal(stateChange, 'idle', 'state should transition to idle')
+    assert.ok(!playCalled, 'play should NOT be called when stopping')
+  })
+
+  it('TC-VOICE-TOGGLE-2: idle state → calls play and does NOT call cancel', () => {
+    let cancelled = false
+    let stateChange: string | null = null
+    const synth = {
+      speak: () => {},
+      getVoices: () => [],
+      cancel: () => { cancelled = true },
+    }
+    let playCalled = false
+    const play = () => { playCalled = true }
+
+    handleVoiceToggle(
+      'idle',
+      synth,
+      play,
+      (s) => { stateChange = s }
+    )
+
+    assert.ok(!cancelled, 'synth.cancel should NOT be called when idle')
+    assert.ok(playCalled, 'play should be called when idle')
+    // state change is delegated to play() → createPlayHandler → onStateChange
+    assert.equal(stateChange, null, 'handleVoiceToggle should not set state when playing')
+  })
+
+  it('TC-VOICE-TOGGLE-3: speaking → cancel missing on synth → still transitions to idle', () => {
+    let stateChange: string | null = null
+    const synth = {
+      speak: () => {},
+      getVoices: () => [],
+      // cancel intentionally omitted
+    }
+    const play = () => {}
+
+    handleVoiceToggle(
+      'speaking',
+      synth,
+      play,
+      (s) => { stateChange = s }
+    )
+
+    // Should not throw even without cancel
+    assert.equal(stateChange, 'idle', 'state should still transition to idle')
   })
 })
 
