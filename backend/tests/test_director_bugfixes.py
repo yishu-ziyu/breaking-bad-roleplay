@@ -476,3 +476,73 @@ class _MockScalar:
         self._value = value
     def scalar_one_or_none(self):
         return self._value
+
+
+# ===================================================================
+# Cycle 11: H3 — exception details must not leak to client
+# ===================================================================
+
+class TestCycle11_ErrorSanitization:
+    """Scenario: when the LLM call fails, the error event yielded to the
+    client must NOT contain the raw exception string (which may include
+    API keys, internal paths, or stack details). The server log should
+    capture the full traceback; the client should see only a generic
+    message."""
+
+    async def test_beat_error_message_excludes_raw_exception(self, director, mock_provider):
+        """Given provider.call_model raises an exception containing a
+        sensitive string, the yielded error event's message does NOT
+        contain that string."""
+        sensitive = "SECRET_API_KEY=sk-abc123-private-key"
+        mock_provider.call_model = AsyncMock(
+            side_effect=RuntimeError(f"connection refused: {sensitive}")
+        )
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        events: list[AgentEvent] = []
+        async for ev in director._generate_beat(
+            task="t",
+            outline="1. RV — cook",
+            beat_index=0,
+            context={"previous_scene": "", "current_scene": "RV"},
+        ):
+            events.append(ev)
+
+        error_events = [e for e in events if e.type == "error"]
+        assert len(error_events) >= 1, "Expected at least one error event"
+        msg = error_events[0].data.get("message", "")
+        assert sensitive not in msg, (
+            f"Raw exception leaked to client: {msg}"
+        )
+        assert "LLM call failed" in msg, (
+            f"Expected generic 'LLM call failed' message, got: {msg}"
+        )
+
+    async def test_beat_error_message_excludes_exception_type(self, director, mock_provider):
+        """Given provider.call_model raises a ValueError, the error event
+        message does NOT contain 'ValueError' or the exception args."""
+        mock_provider.call_model = AsyncMock(
+            side_effect=ValueError("internal model path /secret/weights.bin")
+        )
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        events: list[AgentEvent] = []
+        async for ev in director._generate_beat(
+            task="t",
+            outline="1. RV — cook\n2. Lab — cook\n3. Office — talk",
+            beat_index=2,
+            context={"previous_scene": "", "current_scene": "RV"},
+        ):
+            events.append(ev)
+
+        error_events = [e for e in events if e.type == "error"]
+        assert len(error_events) >= 1
+        msg = error_events[0].data.get("message", "")
+        assert "/secret/weights.bin" not in msg, (
+            f"Internal path leaked to client: {msg}"
+        )
+        assert "Beat 3" in msg, "Beat index should be in the generic message"
