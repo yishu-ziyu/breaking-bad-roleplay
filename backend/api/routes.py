@@ -120,7 +120,7 @@ async def session_action(
         session_id_to_signal = session.id
         session_data = _session_queues.get(session_id_to_signal)
         if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait("continue")
+            session_data["queue"].put_nowait({"action": "continue"})
 
     elif action == "stop":
         session.status = "paused"
@@ -132,6 +132,11 @@ async def session_action(
                 detail="redirect_prompt is required for redirect action",
             )
         session.task_prompt = payload.redirect_prompt
+        session_data = _session_queues.get(session.id)
+        if session_data and not session_data["queue"].full():
+            session_data["queue"].put_nowait(
+                {"action": "redirect", "prompt": payload.redirect_prompt}
+            )
 
     elif action == "switch_perspective":
         if not payload.target_character:
@@ -140,6 +145,11 @@ async def session_action(
                 detail="target_character is required for switch_perspective action",
             )
         session.active_character_id = payload.target_character
+        session_data = _session_queues.get(session.id)
+        if session_data and not session_data["queue"].full():
+            session_data["queue"].put_nowait(
+                {"action": "switch_perspective", "target": payload.target_character}
+            )
 
     else:
         raise HTTPException(

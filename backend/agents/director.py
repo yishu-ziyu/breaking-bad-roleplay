@@ -181,7 +181,9 @@ class DirectorAgent:
         )
         # ---- Step 2: render each beat (beat-by-beat with pause) ----------
         previous_scene = ""
-        for idx, scene_desc in enumerate(scenes):
+        idx = 0
+        while idx < len(scenes):
+            scene_desc = scenes[idx]
             current_scene = self._short_scene_name(scene_desc)
             async for event in self._generate_beat(
                 task=task,
@@ -200,18 +202,38 @@ class DirectorAgent:
                 )
                 try:
                     # Wait up to 5 minutes for player action
-                    action = await asyncio.wait_for(action_queue.get(), timeout=300)
-                    if action == "stop":
+                    signal = await asyncio.wait_for(action_queue.get(), timeout=300)
+                    act_type = signal.get("action") if isinstance(signal, dict) else signal
+                    if act_type == "stop":
                         yield AgentEvent(
                             type="status",
                             data={"message": "Session paused by player."},
                         )
                         return
+                    elif act_type == "redirect":
+                        task = signal.get("prompt", task)
+                        new_outline = await self._generate_outline(task)
+                        if new_outline is None:
+                            yield AgentEvent(
+                                type="status",
+                                data={"message": "Redirect applied but outline regeneration failed — continuing with current outline."},
+                            )
+                        else:
+                            outline_text = new_outline
+                            scenes = self._parse_outline(outline_text)
+                            yield AgentEvent(type="outline", data={"content": outline_text})
+                            idx = 0
+                            previous_scene = ""
+                            continue  # skip trailing idx+=1 / previous_scene overwrite
+                    elif act_type == "switch_perspective":
+                        pass  # only clears the deadlock; perspective semantics deferred to Cycle 4
+                    # "continue": fall through to next beat
                 except asyncio.TimeoutError:
                     yield AgentEvent(
                         type="status",
                         data={"message": "No action received — continuing automatically."},
                     )
+            idx += 1
             previous_scene = current_scene
         yield AgentEvent(
             type="complete",

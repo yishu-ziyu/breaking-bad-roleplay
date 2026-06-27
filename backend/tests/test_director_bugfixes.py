@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+from models.schemas import AgentEvent
 
 
 # ---------------------------------------------------------------------------
@@ -157,3 +160,129 @@ class TestB5_CrewChat:
         result = await director._handle_crew_chat("walter", "Hello?", context)
         assert "debate_logs" in result
         assert isinstance(result["debate_logs"], list)
+
+
+# ===================================================================
+# Cycle 3 PR-A: redirect / switch_perspective / continue dict signals
+# ===================================================================
+
+class TestCycle3_ActionSignalHandling:
+    """Scenario: routes.py pushes dict signals; Director.process must
+    dispatch them (regenerate outline on redirect, no-op fall-through
+    on continue / switch_perspective) instead of blocking 5 minutes and
+    continuing with the stale task."""
+
+    @staticmethod
+    def _fake_beat_factory(record: list[dict]):
+        """Return an async-gen function that yields one beat_ready event
+        and records its call kwargs into `record`."""
+        async def _fake_beat(*args, **kwargs):
+            record.append(kwargs)
+            yield AgentEvent(
+                type="beat_ready",
+                data={"beat_id": "beat_1", "beat_summary": "fake beat"},
+            )
+        return _fake_beat
+
+    async def test_redirect_signal_regenerates_outline(self, director):
+        """Given a redirect dict in the action queue, process() calls
+        _generate_outline a second time and emits a new outline event."""
+        first_outline = "1. RV in the desert — Walt and Jesse cook\n2. White house — Skyler waits"
+        second_outline = "1. Brand new scene — the superlab"
+
+        director._generate_outline = AsyncMock(
+            side_effect=[first_outline, second_outline]
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "redirect", "prompt": "new direction"})
+
+        events: list[AgentEvent] = []
+        async for ev in director.process(task="original task", action_queue=queue):
+            events.append(ev)
+
+        outline_events = [e for e in events if e.type == "outline"]
+        assert len(outline_events) == 2, (
+            f"Expected 2 outline events (initial + redirect), got {len(outline_events)}"
+        )
+        assert outline_events[1].data["content"] == second_outline
+
+    async def test_redirect_outline_regeneration_failure_fallback(self, director):
+        """Given redirect + _generate_outline returns None the second time,
+        process() emits a fallback status and continues rendering the next
+        beat using the OLD outline."""
+        first_outline = "1. RV in the desert — cook\n2. White house — Skyler"
+
+        director._generate_outline = AsyncMock(
+            side_effect=[first_outline, None]
+        )
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "redirect", "prompt": "new direction"})
+
+        events: list[AgentEvent] = []
+        async for ev in director.process(task="original task", action_queue=queue):
+            events.append(ev)
+
+        status_msgs = [
+            e.data.get("message", "") for e in events if e.type == "status"
+        ]
+        assert any(
+            "Redirect applied but outline regeneration failed" in m for m in status_msgs
+        ), f"Expected fallback status message, got: {status_msgs}"
+        # Continued with old outline: _generate_beat called for beat 0 and beat 1,
+        # both with the original outline.
+        assert len(beat_calls) == 2, (
+            f"Expected 2 beats after fallback, got {len(beat_calls)}"
+        )
+        assert beat_calls[1]["outline"] == first_outline
+
+    async def test_continue_signal_dict_type(self, director):
+        """Given a continue dict (not the legacy 'continue' string),
+        process() does not raise and advances to the next beat."""
+        outline = "1. RV in the desert — cook\n2. White house — Skyler"
+        director._generate_outline = AsyncMock(return_value=outline)
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "continue"})
+
+        events: list[AgentEvent] = []
+        # Should not raise.
+        async for ev in director.process(task="task", action_queue=queue):
+            events.append(ev)
+
+        # Both beats rendered and session completed.
+        assert len(beat_calls) == 2, (
+            f"Expected both beats to render, got {len(beat_calls)}"
+        )
+        assert any(e.type == "complete" for e in events), (
+            "Expected a complete event after continue"
+        )
+
+    async def test_switch_perspective_signal_does_not_deadlock(self, director):
+        """Given a switch_perspective dict, process() does not block and
+        advances to the next beat (perspective semantics deferred)."""
+        outline = "1. RV in the desert — cook\n2. White house — Skyler"
+        director._generate_outline = AsyncMock(return_value=outline)
+        beat_calls: list[dict] = []
+        director._generate_beat = self._fake_beat_factory(beat_calls)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue.put_nowait({"action": "switch_perspective", "target": "Jesse Pinkman"})
+
+        events: list[AgentEvent] = []
+        async for ev in director.process(task="task", action_queue=queue):
+            events.append(ev)
+
+        assert len(beat_calls) == 2, (
+            f"Expected both beats to render, got {len(beat_calls)}"
+        )
+        assert any(e.type == "complete" for e in events), (
+            "Expected a complete event after switch_perspective"
+        )

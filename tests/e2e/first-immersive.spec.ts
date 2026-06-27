@@ -102,35 +102,6 @@ async function mockChatCrew(
   })
 }
 
-async function mockStory(page: Page) {
-  await page.route('**/api/story', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        outline: ['Beat 1: Desert confrontation'],
-        beats: [
-          {
-            scene: 'Desert',
-            events: [
-              {
-                type: 'agent_speak',
-                data: {
-                  character_id: 'Walter White',
-                  content: 'We need to cook, and we need to do it now.',
-                  emotion_state: 'chemistry',
-                  gif_search_query: 'chemistry',
-                },
-              },
-            ],
-            director_note: '',
-          },
-        ],
-      }),
-    })
-  })
-}
-
 async function mockVoiceFileExists(page: Page) {
   await page.route('**/voice/walter.mp3', async (route) => {
     const method = route.request().method()
@@ -217,10 +188,10 @@ test('AC-3: Walter direct reply renders a GIF card', async ({ page }) => {
 })
 
 /* ------------------------------------------------------------------ */
-/*  AC-4: Skyler/Saul reply → text only, no broken image               */
+/*  AC-4: Skyler direct reply → GIF card visible after pool expansion  */
 /* ------------------------------------------------------------------ */
 
-test('AC-4: Skyler direct reply is text-only without GIF card', async ({ page }) => {
+test('AC-4: Skyler direct reply renders a GIF card', async ({ page }) => {
   await seedCharacter(page, 'skyler')
   await mockChatDirect(page, {
     reply_text: 'I am going to ask this once plainly.',
@@ -233,7 +204,10 @@ test('AC-4: Skyler direct reply is text-only without GIF card', async ({ page })
   await sendChatMessage(page, 'What do you want?')
 
   await expect(page.locator('.msg--char p', { hasText: 'I am going to ask this once plainly.' })).toBeVisible()
-  await expect(page.locator('.msg--char .gif-card')).not.toBeVisible()
+  const gifCard = page.locator('.msg--char .gif-card img').last()
+  await expect(gifCard).toBeVisible()
+  const src = await gifCard.getAttribute('src')
+  expect(src).toMatch(/^https:\/\//)
 })
 
 /* ------------------------------------------------------------------ */
@@ -269,14 +243,19 @@ test('AC-6: voice sample play button is enabled when audio file exists', async (
 })
 
 /* ------------------------------------------------------------------ */
-/*  AC-7: No audio file → disabled placeholder, no runtime error       */
+/*  AC-7: speechSynthesis unavailable → disabled placeholder, no error */
+/*  (Was: missing voice file → disabled. VoicePlayer now uses          */
+/*   speechSynthesis instead of HEAD-probing audio files.)             */
 /* ------------------------------------------------------------------ */
 
-test('AC-7: missing voice sample renders disabled placeholder without errors', async ({ page }) => {
+test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavailable', async ({ page }) => {
+  // Remove speechSynthesis so VoicePlayer falls back to disabled state
+  await page.addInitScript(() => {
+    delete (window as any).speechSynthesis
+  })
   await seedStorage(page, chatState('walter', [
     { id: 'opener-walter', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
   ]))
-  await mockVoiceFileMissing(page)
 
   // Ensure no console errors (e.g. runtime exception from missing audio)
   const errors: string[] = []
@@ -314,26 +293,8 @@ test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }
   }
 })
 
-/* ------------------------------------------------------------------ */
-/*  AC-9: Story mode agent_speak → GIF rendered                        */
-/* ------------------------------------------------------------------ */
-
-test('AC-9: story mode agent_speak event renders a GIF card', async ({ page }) => {
-  await seedCharacter(page, 'walter')
-  await mockStory(page)
-
-  await gotoFresh(page)
-  await page.locator('.seg-control button', { hasText: /Story|剧情/ }).click()
-
-  const taskInput = page.locator('.story-setup textarea')
-  await taskInput.fill('Walter needs to secure a new supply.')
-  await page.locator('.story-setup button', { hasText: /Start Story|开始剧情/ }).click()
-
-  await expect(page.locator('.story-setup', { hasText: /Story Outline|剧情大纲/ })).toBeVisible()
-  await page.locator('.story-controls button', { hasText: /Confirm|确认/ }).first().click()
-
-  const storyGif = page.locator('.story-event--agent_speak .gif-card img')
-  await expect(storyGif).toBeVisible()
-  const src = await storyGif.getAttribute('src')
-  expect(src).toMatch(/^https:\/\//)
-})
+/* AC-9 (story mode SSE) has been superseded by tests/e2e/sse-story.spec.ts
+   which mocks EventSource directly and covers outline / beat_paused /
+   continue / redirect / complete / error. The old mockStory helper mocked a
+   non-existent /api/story JSON endpoint that was decoupled from the real
+   SSE implementation in useStoryStream.ts. */

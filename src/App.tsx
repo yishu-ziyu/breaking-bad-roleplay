@@ -906,7 +906,7 @@ function App() {
                       </div>
                     )}
                     {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
-                      <VoicePlayer characterId={msg.sender as CharacterId} relation={relation} />
+                      <VoicePlayer text={msg.text} characterId={msg.sender as CharacterId} language={language} />
                     )}
                     <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={msg.gifQuery ? `${t.gifTrigger}: ${msg.gifQuery}` : undefined} />
                   </div>
