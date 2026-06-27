@@ -102,28 +102,6 @@ async function mockChatCrew(
   })
 }
 
-async function mockVoiceFileExists(page: Page) {
-  await page.route('**/voice/walter.mp3', async (route) => {
-    const method = route.request().method()
-    if (method === 'HEAD') {
-      await route.fulfill({ status: 200, headers: { 'content-type': 'audio/mpeg' } })
-      return
-    }
-    // Tiny silent MP3 (valid headers, no audio frames needed for loadmetadata in most browsers)
-    const mp3 = Buffer.from(
-      'SUQzBAAAAAABAFRYWFgAAAASAAADbWFqb3JfYnJhbmQAbXA0MgBUWFZYAAAAEQAAA21pbm9yX3ZlcnNpb24AMABUWFZYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzb21tcDQyAP/7UAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-      'base64',
-    )
-    await route.fulfill({ status: 200, body: mp3, headers: { 'content-type': 'audio/mpeg' } })
-  })
-}
-
-async function mockVoiceFileMissing(page: Page) {
-  await page.route('**/voice/**', async (route) => {
-    await route.fulfill({ status: 404, body: 'Not found' })
-  })
-}
-
 /* ------------------------------------------------------------------ */
 /*  AC-1: Fresh incognito → "Try without login" visible                */
 /* ------------------------------------------------------------------ */
@@ -229,11 +207,10 @@ test('AC-5: lab/cook keywords switch scene background to lab-rv', async ({ page 
 /*  AC-6: If voice file exists → play button works                     */
 /* ------------------------------------------------------------------ */
 
-test('AC-6: voice sample play button is enabled when audio file exists', async ({ page }) => {
+test('AC-6: VoicePlayer renders enabled play button when speechSynthesis available', async ({ page }) => {
   await seedStorage(page, chatState('walter', [
     { id: 'opener-walter', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
   ]))
-  await mockVoiceFileExists(page)
 
   await gotoFresh(page)
   const playButton = page.locator('.msg--char .voice-player').first()
