@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
+import logging
 import re
 from typing import Any, AsyncIterator
 
@@ -15,6 +16,8 @@ from agents.characters import (
 )
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
+
+logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
 # ---------------------------------------------------------------------------
@@ -422,9 +425,10 @@ class DirectorAgent:
         try:
             llm_response = await self.provider.call_model(messages, self.model_route)
         except Exception as exc:
+            logger.exception("Beat %d LLM call failed", beat_index + 1)
             yield AgentEvent(
                 type="error",
-                data={"message": f"Beat {beat_index + 1} LLM call failed: {exc!s}"},
+                data={"message": f"Beat {beat_index + 1} LLM call failed"},
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
             return
