@@ -76,7 +76,7 @@ export function useStoryStream(): UseStoryStreamReturn {
 
       // Store all beats locally (NOT shown yet)
       const rawBeats = (data.beats || []) as Array<Record<string, unknown>>
-      const beats: Beat[] = rawBeats.map((b) => {
+      const beats: Beat[] = rawBeats.map((b, beatIdx) => {
         const scene = typeof b.scene === 'string' ? b.scene : ''
         const rawEvents = Array.isArray(b.events) ? b.events : []
         const events: StoryEvent[] = rawEvents.map((e) => {
@@ -84,7 +84,7 @@ export function useStoryStream(): UseStoryStreamReturn {
           return {
             type: typeof evt.type === 'string' ? evt.type : 'unknown',
             data: (evt.data as Record<string, unknown>) || {},
-            beat_index: beatsRef.current.length,
+            beat_index: beatIdx,
           }
         })
         return { scene, events, director_note: typeof b.director_note === 'string' ? b.director_note : '' }
