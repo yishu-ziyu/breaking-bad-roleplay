@@ -1,6 +1,6 @@
 import { createElement, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
-import { createPlayHandler, type PlayState, type SpeechSynthLike } from '../lib/voicePlayerHelpers'
+import { createPlayHandler, handleVoiceToggle, type PlayState, type SpeechSynthLike } from '../lib/voicePlayerHelpers'
 
 export interface VoicePlayerProps {
   text: string
@@ -33,12 +33,14 @@ export function VoicePlayer({ text, characterId, language, label }: VoicePlayerP
 
   const play = createPlayHandler(text, characterId, language, synth, setState)
 
+  const handleClick = () => handleVoiceToggle(state, synth, play, setState)
+
   return createElement(
     'button',
     {
       type: 'button',
       className: `voice-player ${state === 'speaking' ? 'voice-player--playing' : ''}`,
-      onClick: play,
+      onClick: handleClick,
       'aria-label': label || 'Play voice sample',
     },
     `${state === 'speaking' ? '⏸' : '▶'} ${label || 'Voice'}`
