@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import AsyncGenerator
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 
@@ -24,6 +25,7 @@ from models.schemas import (
 _session_queues: dict[str, dict] = {}
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
