@@ -562,11 +562,11 @@ textarea {
   opacity: 0;
 }
 
-.chat-panel:has(.scene-layer--current) .scene-layer--current {
+.chat-panel.is-crossfade .scene-layer--current {
   opacity: 1;
 }
 
-.chat-panel:has(.scene-layer--current) .scene-layer--prev {
+.chat-panel.is-crossfade .scene-layer--prev {
   opacity: 0;
 }
 

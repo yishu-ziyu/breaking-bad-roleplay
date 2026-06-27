@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
@@ -230,21 +230,21 @@ function formatRelation(char: Character, relation: string, lang: Language): stri
 /* ------------------------------------------------------------------ */
 
 function App() {
-  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('abq_character', 'walter')
+  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
-  const [language, setLanguage] = usePersistedState<Language>('abq_language', 'zh')
+  const [language, setLanguage] = usePersistedState<Language>('language', 'zh')
   const t = uiText[language]
 
   // Relation per character (persist across character switches)
-  const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('abq_relation', {})
+  const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
   const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
 
-  const [view, setView] = usePersistedState<View>('abq_view', 'chat')
-  const [mode, setMode] = usePersistedState<ChatMode>('abq_mode', 'direct')
-  const [llmProvider, setLlmProvider] = usePersistedState<string>('abq_llm', 'stepfun')
+  const [view, setView] = usePersistedState<View>('view', 'chat')
+  const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
+  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm', 'stepfun')
 
   // Chat state
-  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('abq_messages', {})
+  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
   const messages = messagesByChar[selectedCharId] ?? []
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
@@ -257,9 +257,17 @@ function App() {
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
 
+  const storyEventGifs = useMemo(() => {
+    const map = new Map<StoryEvent, string | null>()
+    story.events.forEach(evt => {
+      map.set(evt, resolveStoryEventGif(evt))
+    })
+    return map
+  }, [story.events])
+
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
-  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('abq_memory', {})
+  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('memory', {})
   const currentMemory = memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] }
 
   // Cloud sync: persist to Supabase when authenticated
@@ -312,14 +320,21 @@ function App() {
   /* ---- Scene background cross-fade (chat view) ---- */
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
   const [prevSceneUrl, setPrevSceneUrl] = useState<string | null>(null)
+  const [sceneReady, setSceneReady] = useState(false)
 
   useEffect(() => {
     const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
     if (next !== currentSceneUrl) {
+      setSceneReady(false)
       setPrevSceneUrl(currentSceneUrl)
       setCurrentSceneUrl(next)
     }
-  }, [messages, currentSceneUrl])
+  }, [messages])
+
+  useEffect(() => {
+    const id = setTimeout(() => setSceneReady(true), 50)
+    return () => clearTimeout(id)
+  }, [currentSceneUrl])
 
   const userTurnCount = messages.filter(m => m.sender === 'user').length
   const showSavePrompt = !auth.user && userTurnCount >= 3
@@ -615,7 +630,7 @@ function App() {
                     {evt.type === 'agent_speak' && (
                       <div className="story-event__content">
                         <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
-                        <GifCard src={resolveStoryEventGif(evt)} alt={evt.data.gif_search_query as string} />
+                        <GifCard src={storyEventGifs.get(evt)} alt={evt.data.gif_search_query as string} />
                       </div>
                     )}
                     {evt.type === 'agent_think' && (
@@ -653,7 +668,7 @@ function App() {
         </section>
       ) : (
         /* ---------- Chat View ---------- */
-        <section className="chat-panel">
+        <section className={`chat-panel ${sceneReady ? 'is-crossfade' : ''}`}>
           <div className="scene-layer scene-layer--prev" style={{ backgroundImage: prevSceneUrl ? `url(${prevSceneUrl})` : 'none' } as CSSProperties} />
           <div className="scene-layer scene-layer--current" style={{ backgroundImage: `url(${currentSceneUrl})` } as CSSProperties} />
           <header className="chat-header">
@@ -698,7 +713,7 @@ function App() {
                     {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
                       <VoicePlayer characterId={msg.sender as CharacterId} relation={relation} />
                     )}
-                    <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={`${t.gifTrigger}: ${msg.gifQuery}`} />
+                    <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={msg.gifQuery ? `${t.gifTrigger}: ${msg.gifQuery}` : undefined} />
                   </div>
                 </article>
               )

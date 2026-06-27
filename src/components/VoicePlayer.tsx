@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 import { buildUrls, relationSlug } from '../lib/voiceUrls'
 
@@ -14,12 +14,12 @@ export function VoicePlayer({ characterId, relation, label }: VoicePlayerProps) 
   const [exists, setExists] = useState<boolean | null>(null)
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const urls = buildUrls(characterId, relation)
+  const urls = useMemo(() => buildUrls(characterId, relation), [characterId, relation])
 
   useEffect(() => {
     let cancelled = false
     setExists(null)
-    ;(async () => {
+    async function probe() {
       for (const url of urls) {
         try {
           const res = await fetch(url, { method: 'HEAD' })
@@ -32,22 +32,15 @@ export function VoicePlayer({ characterId, relation, label }: VoicePlayerProps) 
         }
       }
       if (!cancelled) setExists(false)
-    })()
+    }
+    probe()
     return () => { cancelled = true }
-  }, [urls.join('|')])
-
-  if (exists === false) {
-    return (
-      <button type="button" className="voice-player voice-player--disabled" disabled>
-        {label || 'Voice sample unavailable'}
-      </button>
-    )
-  }
+  }, [urls])
 
   if (exists !== true) {
     return (
       <button type="button" className="voice-player voice-player--disabled" disabled>
-        {label || 'Voice sample'}
+        {label || (exists === false ? 'Voice sample unavailable' : 'Voice sample')}
       </button>
     )
   }
