@@ -14,8 +14,9 @@ describe('gifResolver', () => {
     assert.ok(url, 'expected a GIF URL')
   })
 
-  it('returns null for characters with empty pools', () => {
+  it('returns a GIF for Skyler after pool expansion', () => {
     const url = resolveGifUrl('skyler', 'angry', 'family')
-    assert.equal(url, null)
+    assert.ok(url, 'expected a GIF URL for Skyler')
+    assert.ok(url.startsWith('https://'), 'expected externally hosted URL')
   })
 })

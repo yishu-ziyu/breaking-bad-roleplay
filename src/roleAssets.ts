@@ -139,19 +139,89 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
     characterId: 'skyler',
     displayName: 'Skyler',
     usageNotes:
-      'Intentionally empty until Skyler-specific GIFs are vetted. Use text-only fallback rather than mislabeling another character or scene.',
-    safetyNotes: 'Do not substitute unrelated domestic-conflict GIFs that could distort tone or character intent.',
-    copyrightNotes: 'No GIFs are registered yet; add only vetted externally hosted assets with clear usage notes.',
-    gifPools: [],
+      'Conservative pool for family-tension, restraint, and confrontation beats. Prefer family/confrontation tags; default is a controlled-restraint fallback.',
+    safetyNotes:
+      'Avoid pairing with domestic-violence framing or real harm guidance; keep selection tied to fictional emotional tension and boundary-setting.',
+    copyrightNotes: platformCopyrightNote,
+    gifPools: [
+      {
+        id: 'skyler-family-pressure',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/LBL8F53My1SZa/giphy.gif',
+        tags: ['default', 'family', 'tense', 'restraint'],
+        usageNotes: 'Default fallback for family pressure, controlled confrontation, or restrained replies.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes:
+          'TODO: surfaced via Giphy @breakingbad channel with amc.com source; verify fan-made status and replace with a vetted fan-made reaction GIF if an official clip is detected. ' +
+          platformCopyrightNote,
+      },
+      {
+        id: 'skyler-confrontation',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/10RCqM2nZpdqOQ/giphy.gif',
+        tags: ['confrontation', 'glare', 'tense'],
+        usageNotes: 'Direct confrontation, boundary-setting, or clipped challenge.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes:
+          'Original source is a Reddit r/reactiongifs fan-made GIF surfaced via Giphy @breakingbad channel; preferred over official-clip GIFs. ' +
+          platformCopyrightNote,
+      },
+      {
+        id: 'skyler-protective-fear',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/10RCqM2nZpdqOQ/giphy.gif',
+        tags: ['family', 'panic', 'confrontation'],
+        usageNotes: 'Family under threat; protective, strained tension. Reuses confrontation GIF until a vetted protective-fear-specific fan-made GIF is sourced.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes:
+          'TODO: temporarily reuses the confrontation GIF (Reddit r/reactiongifs fan-made); replace with a vetted protective-fear-specific fan-made reaction GIF before production. ' +
+          platformCopyrightNote,
+      },
+    ],
   },
   saul: {
     characterId: 'saul',
     displayName: 'Saul',
     usageNotes:
-      'Intentionally empty until Saul-specific legal-office or salesmanship GIFs are vetted. Text-only fallback is preferred for now.',
-    safetyNotes: 'Avoid using generic lawyer GIFs that imply real legal advice or misrepresent source media.',
-    copyrightNotes: 'No GIFs are registered yet; add only vetted externally hosted assets with clear usage notes.',
-    gifPools: [],
+      'Pool for lawyer-pitch, panic, and deal beats. Prefer lawyer/business tags for salesmanship; panic for comedic retreat; money/deal for transactions.',
+    safetyNotes:
+      'Avoid framing as real legal advice or implying official endorsement; keep selection tied to fictional sleazy-lawyer roleplay flavor.',
+    copyrightNotes: platformCopyrightNote,
+    gifPools: [
+      {
+        id: 'saul-lawyer-pitch',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/iFbDPhB72ZIcl2LbJy/giphy.gif',
+        tags: ['default', 'lawyer', 'business', 'deal'],
+        usageNotes: 'Default fallback; office pitch, salesmanship, or client-consultation energy.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes:
+          'TODO: surfaced via Giphy @bettercallsaulAMC channel with amc.tv source; verify fan-made status and replace with a vetted fan-made reaction GIF if an official clip is detected. ' +
+          platformCopyrightNote,
+      },
+      {
+        id: 'saul-office-panic',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/h4wZmNF30XcXtm228e/giphy.gif',
+        tags: ['panic', 'tense', 'lawyer'],
+        usageNotes: 'Comedic panic, retreat, or nervous deflection.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes:
+          'TODO: Giphy internal GIF; original source unverified; replace with a vetted fan-made reaction GIF before production. ' +
+          platformCopyrightNote,
+      },
+      {
+        id: 'saul-cash-deal',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/l0EwYGlvQ7STj3wyc/giphy.gif',
+        tags: ['money', 'deal', 'business'],
+        usageNotes: 'Cash deal, transaction framing, or sleazy negotiation.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes:
+          'TODO: surfaced via Giphy stanaustralia channel (streaming platform); verify fan-made status and replace with a vetted fan-made reaction GIF if an official clip is detected. ' +
+          platformCopyrightNote,
+      },
+    ],
   },
   mike: {
     characterId: 'mike',
