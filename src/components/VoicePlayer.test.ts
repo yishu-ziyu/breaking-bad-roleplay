@@ -3,13 +3,15 @@ import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { VoicePlayer } from './VoicePlayer.tsx'
-import { pickVoice, createPlayHandler } from '../lib/voicePlayerHelpers.ts'
+import { pickVoice, createPlayHandler, VOICE_PROFILES } from '../lib/voicePlayerHelpers.ts'
 
 // node 环境无 SpeechSynthesisUtterance / speechSynthesis，需 mock
 class MockUtterance {
   text: string
   lang = ''
   voice: unknown = null
+  pitch = 1
+  rate = 1
   onstart: (() => void) | null = null
   onend: (() => void) | null = null
   onerror: (() => void) | null = null
@@ -78,6 +80,66 @@ describe('VoicePlayer (speechSynthesis)', () => {
     play()
     assert.ok(spoken !== null, 'speechSynthesis.speak should be called')
     assert.equal(spoken?.text, 'hello', 'utterance.text should match input')
+  })
+
+  it('TC-VOICE-PROFILE-1: applies VOICE_PROFILES pitch/rate for each character', () => {
+    const characters = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus'] as const
+    for (const characterId of characters) {
+      let spoken: { pitch?: number; rate?: number } | null = null
+      const synth = {
+        speak: (u: { pitch?: number; rate?: number }) => {
+          spoken = u
+        },
+        getVoices: () => [],
+        cancel: () => {},
+      }
+      const play = createPlayHandler('hi', characterId, 'en', synth)
+      play()
+      const expected = VOICE_PROFILES[characterId]
+      assert.ok(spoken !== null, `${characterId}: speak should be called`)
+      assert.equal(
+        spoken?.pitch,
+        expected.pitch,
+        `${characterId}: pitch should be ${expected.pitch}, got ${spoken?.pitch}`
+      )
+      assert.equal(
+        spoken?.rate,
+        expected.rate,
+        `${characterId}: rate should be ${expected.rate}, got ${spoken?.rate}`
+      )
+    }
+  })
+
+  it('TC-VOICE-PROFILE-2: walter pitch differs from jesse pitch (distinct voices)', () => {
+    const results: Record<string, { pitch: number; rate: number }> = {}
+    for (const characterId of ['walter', 'jesse'] as const) {
+      let spoken: { pitch?: number; rate?: number } | null = null
+      const synth = {
+        speak: (u: { pitch?: number; rate?: number }) => {
+          spoken = u
+        },
+        getVoices: () => [],
+        cancel: () => {},
+      }
+      createPlayHandler('hi', characterId, 'en', synth)()
+      results[characterId] = {
+        pitch: spoken!.pitch!,
+        rate: spoken!.rate!,
+      }
+    }
+    assert.notEqual(
+      results.walter.pitch,
+      results.jesse.pitch,
+      'walter and jesse should have different pitch values'
+    )
+    assert.ok(
+      results.walter.pitch < results.jesse.pitch,
+      'walter (老男) should have lower pitch than jesse (年轻)'
+    )
+    assert.ok(
+      results.walter.rate < results.jesse.rate,
+      'walter should have slower rate than jesse (急促)'
+    )
   })
 })
 
