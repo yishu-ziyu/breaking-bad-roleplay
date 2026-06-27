@@ -15,7 +15,7 @@ import json
 import logging
 import re
 from typing import Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -190,11 +190,11 @@ def _apply_dossier_delta(
     dossier.trust_level = max(1, min(10, dossier.trust_level + trust_delta))
     if new_knowledge:
         knowledge = _load_knowledge(dossier.knowledge)
-        knowledge[f"beat_{datetime.utcnow().isoformat()}"] = new_knowledge
+        knowledge[f"beat_{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}"] = new_knowledge
         dossier.knowledge = json.dumps(knowledge, ensure_ascii=False)
     if new_notes:
         dossier.relationship_notes = (
-            dossier.relationship_notes + f"\n[{datetime.utcnow().strftime('%H:%M')}] {new_notes}"
+            dossier.relationship_notes + f"\n[{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%H:%M')}] {new_notes}"
         ).strip()
 
 
