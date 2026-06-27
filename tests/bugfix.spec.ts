@@ -39,9 +39,9 @@ describe('B3: Heartbeat timeout', () => {
 
 import { readFileSync } from 'node:fs'
 
-describe('B4: Event key stability', () => {
-  it('StoryPanel should use deterministic keys, not Math.random()', () => {
-    const source = readFileSync(`${PROJECT_ROOT}src/components/StoryPanel.tsx`, 'utf8')
+describe('B4: Story event rendering', () => {
+  it('App.tsx should not use Math.random() for event keys', () => {
+    const source = readFileSync(`${PROJECT_ROOT}src/App.tsx`, 'utf8')
     const randomKeyPattern = /key=.*Math\.random\(\)/g
     const matches = source.match(randomKeyPattern)
     assert.equal(matches, null,
@@ -49,9 +49,9 @@ describe('B4: Event key stability', () => {
     )
   })
 
-  it('StoryPanel key should reference event.id or event.type', () => {
-    const source = readFileSync(`${PROJECT_ROOT}src/components/StoryPanel.tsx`, 'utf8')
-    const hasIdReference = /key=.*event\.(id|type)/.test(source)
+  it('Story event keys should reference event.id or event.type', () => {
+    const source = readFileSync(`${PROJECT_ROOT}src/App.tsx`, 'utf8')
+    const hasIdReference = /key=.*evt\.(type|id)/.test(source)
     assert.ok(hasIdReference, 'Key should reference event.id or event.type for stability')
   })
 })

@@ -18,6 +18,7 @@ export function AuthSection({ auth, language, syncStatus }: AuthSectionProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
+  const [guestHint, setGuestHint] = useState(false)
   const zh = language === 'zh'
 
   if (auth.loading) {
@@ -108,6 +109,24 @@ export function AuthSection({ auth, language, syncStatus }: AuthSectionProps) {
             : (zh ? '已有账号？登录' : 'Have an account? Sign in')}
         </button>
       </form>
+
+      {!guestHint && (
+        <button
+          type="button"
+          className="auth-btn-guest"
+          onClick={() => setGuestHint(true)}
+        >
+          {zh ? '无需登录，先试试' : 'Try without login'}
+        </button>
+      )}
+
+      {guestHint && (
+        <p className="auth-guest-hint">
+          {zh
+            ? '你可以直接开始对话。登录后可在多设备同步。'
+            : 'You can start chatting. Sign in later to save across devices.'}
+        </p>
+      )}
     </section>
   )
 }

@@ -233,6 +233,33 @@ textarea {
   line-height: 1.3;
 }
 
+.auth-btn-guest {
+  min-height: 36px;
+  border: 1px dashed var(--color-border-soft-3);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-bb-yellow);
+  font: 800 12px/1 var(--font-sans);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.auth-btn-guest:hover {
+  color: var(--color-bb-ink);
+  background: var(--color-bb-yellow);
+  border-color: var(--color-bb-yellow);
+}
+
+.auth-guest-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-ring-olive);
+  color: var(--color-surface-cream);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* ==========================================
    Story Panel (right side, story view)
    ========================================== */
@@ -450,6 +477,11 @@ textarea {
 .story-event--scene_change { border-left: 3px solid var(--color-bb-violet); }
 .story-event--agent_act    { border-left: 3px solid var(--color-text-muted); }
 
+.story-event__content {
+  display: grid;
+  gap: 10px;
+}
+
 /* Beat decision controls (Continue / Stop) */
 .beat-controls {
   display: flex;
@@ -508,10 +540,34 @@ textarea {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 16px;
+  background: none;
+  overflow: hidden;
+}
+
+.scene-layer {
+  position: absolute;
+  inset: 0;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  transition: background-image 0.8s ease;
+  z-index: 0;
+  transition: opacity 800ms ease;
+}
+
+.scene-layer--prev {
+  opacity: 1;
+}
+
+.scene-layer--current {
+  opacity: 0;
+}
+
+.chat-panel.is-crossfade .scene-layer--current {
+  opacity: 1;
+}
+
+.chat-panel.is-crossfade .scene-layer--prev {
+  opacity: 0;
 }
 
 .chat-panel::before {
@@ -519,13 +575,13 @@ textarea {
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(8,11,8,0.18) 0%, rgba(8,11,8,0.45) 100%);
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
-.chat-panel > * {
+.chat-panel > *:not(.scene-layer) {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 /* Chat header */
@@ -780,31 +836,6 @@ textarea {
   color: var(--color-error-text);
   font-size: 12px;
   line-height: 1.35;
-}
-
-/* ==========================================
-   Scene Background
-   ========================================== */
-.chat-panel {
-  position: relative;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  transition: background-image 0.8s ease;
-}
-
-.chat-panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(8,11,8,0.18) 0%, rgba(8,11,8,0.45) 100%);
-  z-index: 0;
-  pointer-events: none;
-}
-
-.chat-panel > * {
-  position: relative;
-  z-index: 1;
 }
 
 /* ==========================================
