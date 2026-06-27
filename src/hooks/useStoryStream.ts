@@ -205,7 +205,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       body.target_character = params.target_character
     }
 
-    if (action === 'continue') {
+    if (action === 'continue' || action === 'switch_perspective' || action === 'redirect') {
       setConnectionState('streaming')
     }
 
@@ -219,11 +219,12 @@ export function useStoryStream(): UseStoryStreamReturn {
         const err = await res.json().catch(() => ({ detail: 'Action failed' }))
         setError(err.detail || 'Action failed')
         // Roll back optimistic state so user can retry from beat_paused
-        if (action === 'continue') setConnectionState('beat_paused')
+        // (action !== 'stop' here — stop returned early above)
+        setConnectionState('beat_paused')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed')
-      if (action === 'continue') setConnectionState('beat_paused')
+      setConnectionState('beat_paused')
     }
   }, [closeEventSource])
 
