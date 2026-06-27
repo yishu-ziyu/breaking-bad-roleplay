@@ -472,3 +472,19 @@ test('TC-SSE-6: switch_perspective sends target_character and next beat first ag
   const beat2FirstSpeak = page.locator('.story-event--agent_speak').nth(1)
   await expect(beat2FirstSpeak).toContainText('Jesse Pinkman')
 })
+
+/* ------------------------------------------------------------------ */
+/*  TC-SSE-7: Story agent_speak renders VoicePlayer button             */
+/* ------------------------------------------------------------------ */
+
+test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) => {
+  await driveToBeatPaused(page, {
+    outline: '1. RV — cook\n2. White house — Skyler waits',
+  })
+
+  // driveToBeatPaused emits beat 1 with agent_speak events containing content
+  const voicePlayer = page.locator('.story-event--agent_speak .voice-player').first()
+  await expect(voicePlayer).toBeVisible()
+  await expect(voicePlayer).toBeEnabled()
+  await expect(voicePlayer).toContainText(/Voice|▶/)
+})
