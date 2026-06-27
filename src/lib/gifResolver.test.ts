@@ -19,4 +19,11 @@ describe('gifResolver', () => {
     assert.ok(url, 'expected a GIF URL for Skyler')
     assert.ok(url.startsWith('https://'), 'expected externally hosted URL')
   })
+
+  it('TC-GIF-SKYLAR-1: skyler protective-fear returns distinct URL from confrontation', () => {
+    const url = resolveGifUrl('skyler', 'panic', 'family protective fear')
+    assert.ok(url, 'expected a GIF URL for Skyler protective-fear')
+    assert.ok(!url.includes('10RCqM2nZpdqOQ'), 'must not reuse the confrontation GIF URL')
+    assert.ok(url.includes('c4rNN6FOS8l6o'), 'expected the Crawl Space protective-fear GIF URL')
+  })
 })

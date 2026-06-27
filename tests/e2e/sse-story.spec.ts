@@ -488,3 +488,23 @@ test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) 
   await expect(voicePlayer).toBeEnabled()
   await expect(voicePlayer).toContainText(/Voice|▶/)
 })
+
+/* ------------------------------------------------------------------ */
+/*  TC-SIDEBAR-1: story mode sidebar has no Perspective field-label   */
+/* ------------------------------------------------------------------ */
+
+test('TC-SIDEBAR-1: story mode sidebar has no Perspective field-label', async ({ page }) => {
+  await driveToBeatPaused(page)
+  await expect(page.locator('.field-label', { hasText: /Perspective|叙事视角/ })).toHaveCount(0)
+})
+
+/* ------------------------------------------------------------------ */
+/*  TC-SIDEBAR-2: BeatControls Switch Perspective still works         */
+/* ------------------------------------------------------------------ */
+
+test('TC-SIDEBAR-2: BeatControls Switch Perspective button still visible at beat_paused', async ({ page }) => {
+  await driveToBeatPaused(page)
+  const switchBtn = page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ })
+  await expect(switchBtn).toBeVisible()
+  await expect(switchBtn).toBeEnabled()
+})
