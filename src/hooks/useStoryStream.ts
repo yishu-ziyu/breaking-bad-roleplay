@@ -1,160 +1,271 @@
 /* =================================================================
-   ABQ Roleplay Lab — useStoryStream (outline-confirm + local replay)
-   Phase 1: API returns all data, frontend shows outline only
-   Phase 2: User confirms → beats replay one at a time
+   ABQ Roleplay Lab — useStoryStream (SSE real-time streaming)
+   Connects to backend /api/session/{id}/stream via EventSource.
+   Player decisions at beat_ready affect real plot progression.
    ================================================================= */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface StoryEvent {
   type: string
   data: Record<string, unknown>
-  beat_index?: number
+  received_at?: number
+}
+
+export type StoryConnectionState =
+  | 'idle' | 'connecting' | 'streaming'
+  | 'beat_paused' | 'complete' | 'error'
+
+export type StoryAction = 'continue' | 'stop' | 'redirect' | 'switch_perspective'
+
+export interface StoryActionParams {
+  redirect_prompt?: string
+  target_character?: string
 }
 
 export interface UseStoryStreamReturn {
   events: StoryEvent[]
   outline: string | null
-  beatIndex: number
-  totalBeats: number
-  confirmed: boolean
-  isGenerating: boolean
   sessionId: string | null
-  startStory: (taskPrompt: string, characterId?: string, llmProvider?: string) => Promise<void>
-  confirmStory: () => void
-  sendAction: (action: 'continue' | 'stop') => void
-}
-
-interface Beat {
-  scene: string
-  events: StoryEvent[]
-  director_note: string
+  connectionState: StoryConnectionState
+  currentBeatId: string | null
+  beatIndex: number
+  error: string | null
+  autoContinued: boolean
+  startStory: (taskPrompt: string, characterId?: string) => Promise<void>
+  sendAction: (action: StoryAction, params?: StoryActionParams) => Promise<void>
+  reconnect: () => void
+  reset: () => void
 }
 
 export function useStoryStream(): UseStoryStreamReturn {
   const [events, setEvents] = useState<StoryEvent[]>([])
   const [outline, setOutline] = useState<string | null>(null)
-  const [beatIndex, setBeatIndex] = useState(0)
-  const [totalBeats, setTotalBeats] = useState(0)
-  const [confirmed, setConfirmed] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [connectionState, setConnectionState] = useState<StoryConnectionState>('idle')
+  const [currentBeatId, setCurrentBeatId] = useState<string | null>(null)
+  const [beatIndex, setBeatIndex] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [autoContinued, setAutoContinued] = useState(false)
 
-  const beatsRef = useRef<Beat[]>([])
+  const esRef = useRef<EventSource | null>(null)
+  const sessionRef = useRef<string | null>(null)
 
-  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', llmProvider = 'agnes'): Promise<void> => {
+  const closeEventSource = useCallback(() => {
+    if (esRef.current) {
+      esRef.current.close()
+      esRef.current = null
+    }
+  }, [])
+
+  const appendEvent = useCallback((evt: StoryEvent) => {
+    setEvents((prev) => [...prev, { ...evt, received_at: Date.now() }])
+  }, [])
+
+  const connectStream = useCallback((sid: string) => {
+    closeEventSource()
+    const es = new EventSource(`/api/session/${sid}/stream`)
+    esRef.current = es
+
+    es.addEventListener('outline', (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setOutline(payload.data?.content ?? '')
+        setConnectionState('streaming')
+      } catch { /* ignore parse error */ }
+    })
+
+    es.addEventListener('status', (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        const msg = payload.data?.message ?? ''
+        if (msg.includes('continuing automatically')) {
+          setAutoContinued(true)
+          setConnectionState('streaming')
+        } else {
+          appendEvent({ type: 'status', data: payload.data })
+        }
+      } catch { /* ignore */ }
+    })
+
+    const appendTypes = ['scene_change', 'agent_act', 'agent_think', 'agent_speak', 'world_state_delta']
+    appendTypes.forEach((t) => {
+      es.addEventListener(t, (e: MessageEvent) => {
+        try {
+          const payload = JSON.parse(e.data)
+          appendEvent({ type: t, data: payload.data })
+        } catch { /* ignore */ }
+      })
+    })
+
+    es.addEventListener('beat_ready', (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setCurrentBeatId(payload.data?.beat_id ?? null)
+        setBeatIndex((prev) => prev + 1)
+        setAutoContinued(false)
+        setConnectionState('beat_paused')
+      } catch { /* ignore */ }
+    })
+
+    es.addEventListener('complete', (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        appendEvent({ type: 'complete', data: payload.data })
+      } catch { /* ignore */ }
+      setConnectionState('complete')
+      closeEventSource()
+    })
+
+    es.addEventListener('error', (e: MessageEvent) => {
+      // Distinguish SSE connection error vs backend error event
+      // Backend error events have data; connection errors don't
+      if (e.data) {
+        try {
+          const payload = JSON.parse(e.data)
+          setError(payload.data?.message ?? 'Unknown error')
+          appendEvent({ type: 'error', data: payload.data })
+        } catch {
+          setError('Stream error')
+        }
+      } else {
+        setError('SSE connection lost')
+      }
+      setConnectionState('error')
+      closeEventSource()
+    })
+  }, [appendEvent, closeEventSource])
+
+  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter'): Promise<void> => {
+    closeEventSource()
     setEvents([])
     setOutline(null)
-    setBeatIndex(0)
-    setTotalBeats(0)
-    setConfirmed(false)
-    beatsRef.current = []
-    setIsGenerating(true)
     setSessionId(null)
+    setCurrentBeatId(null)
+    setBeatIndex(0)
+    setError(null)
+    setAutoContinued(false)
+    setConnectionState('connecting')
 
     try {
-      const res = await fetch('/api/story', {
+      const res = await fetch('/api/session/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_prompt: taskPrompt, active_character_id: characterId, llmProvider }),
+        body: JSON.stringify({
+          title: taskPrompt.slice(0, 80),
+          task_prompt: taskPrompt,
+          active_character_id: characterId,
+        }),
       })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Failed' }))
-        throw new Error(err.error || 'Story start failed')
+        const err = await res.json().catch(() => ({ detail: 'Failed to create session' }))
+        throw new Error(err.detail || 'Session creation failed')
       }
       const data = await res.json()
-
-      setSessionId(crypto.randomUUID())
-
-      // Format outline — only scene titles, NO details
-      const outlineRaw = data.outline
-      if (Array.isArray(outlineRaw)) {
-        setOutline(outlineRaw.join('\n'))
-      } else if (typeof outlineRaw === 'string') {
-        setOutline(outlineRaw)
-      }
-
-      // Store all beats locally (NOT shown yet)
-      const rawBeats = (data.beats || []) as Array<Record<string, unknown>>
-      const beats: Beat[] = rawBeats.map((b, beatIdx) => {
-        const scene = typeof b.scene === 'string' ? b.scene : ''
-        const rawEvents = Array.isArray(b.events) ? b.events : []
-        const events: StoryEvent[] = rawEvents.map((e) => {
-          const evt = e as Record<string, unknown>
-          return {
-            type: typeof evt.type === 'string' ? evt.type : 'unknown',
-            data: (evt.data as Record<string, unknown>) || {},
-            beat_index: beatIdx,
-          }
-        })
-        return { scene, events, director_note: typeof b.director_note === 'string' ? b.director_note : '' }
-      })
-
-      // Fallback: create one beat from outline if no structured beats
-      if (beats.length === 0 && outlineRaw) {
-        const outlineText = Array.isArray(outlineRaw) ? outlineRaw.join('\n') : outlineRaw
-        beats.push({
-          scene: outlineText.split('\n')[0] || 'The story begins',
-          events: [{ type: 'scene_change', data: { description: outlineText }, beat_index: 0 }],
-          director_note: '',
-        })
-      }
-
-      beatsRef.current = beats
-      setTotalBeats(beats.length)
+      const sid = data.session_id as string
+      setSessionId(sid)
+      sessionRef.current = sid
+      connectStream(sid)
     } catch (e) {
-      throw e
-    } finally {
-      setIsGenerating(false)
+      setError(e instanceof Error ? e.message : 'Unknown error')
+      setConnectionState('error')
     }
-  }, [])
+  }, [closeEventSource, connectStream])
 
-  const confirmStory = useCallback(() => {
-    setConfirmed(true)
-    const beats = beatsRef.current
-    if (beats.length > 0) {
-      setEvents(beats[0].events)
-      setBeatIndex(0)
-    }
-  }, [])
+  const sendAction = useCallback(async (action: StoryAction, params?: StoryActionParams): Promise<void> => {
+    const sid = sessionRef.current
+    if (!sid) return
 
-  const sendAction = useCallback((action: 'continue' | 'stop') => {
     if (action === 'stop') {
+      try {
+        await fetch(`/api/session/${sid}/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop' }),
+        })
+      } catch {
+        // ignore — we close locally regardless
+      }
+      closeEventSource()
+      setConnectionState('idle')
       setEvents([])
       setOutline(null)
-      setBeatIndex(0)
-      setTotalBeats(0)
-      setConfirmed(false)
-      beatsRef.current = []
       setSessionId(null)
+      sessionRef.current = null
+      setBeatIndex(0)
+      setCurrentBeatId(null)
       return
     }
 
-    if (action === 'continue') {
-      const nextIndex = beatIndex + 1
-      if (nextIndex >= beatsRef.current.length) {
-        setEvents((prev) => [...prev, { type: 'complete', data: { message: 'All beats rendered.' }, beat_index: nextIndex }])
-        return
-      }
-
-      setIsGenerating(true)
-      const beat = beatsRef.current[nextIndex]
-      setBeatIndex(nextIndex)
-      setEvents((prev) => [...prev, ...beat.events])
-      setIsGenerating(false)
+    const body: Record<string, unknown> = { action }
+    if (action === 'redirect' && params?.redirect_prompt) {
+      body.redirect_prompt = params.redirect_prompt
     }
-  }, [beatIndex])
+    if (action === 'switch_perspective' && params?.target_character) {
+      body.target_character = params.target_character
+    }
+
+    if (action === 'continue') {
+      setConnectionState('streaming')
+    }
+
+    try {
+      const res = await fetch(`/api/session/${sid}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Action failed' }))
+        setError(err.detail || 'Action failed')
+        // Roll back optimistic state so user can retry from beat_paused
+        if (action === 'continue') setConnectionState('beat_paused')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Action failed')
+      if (action === 'continue') setConnectionState('beat_paused')
+    }
+  }, [closeEventSource])
+
+  const reconnect = useCallback(() => {
+    const sid = sessionRef.current
+    if (!sid) return
+    setError(null)
+    setConnectionState('connecting')
+    connectStream(sid)
+  }, [connectStream])
+
+  const reset = useCallback(() => {
+    closeEventSource()
+    setEvents([])
+    setOutline(null)
+    setSessionId(null)
+    setCurrentBeatId(null)
+    setBeatIndex(0)
+    setError(null)
+    setAutoContinued(false)
+    setConnectionState('idle')
+    sessionRef.current = null
+  }, [closeEventSource])
+
+  useEffect(() => {
+    return () => {
+      closeEventSource()
+    }
+  }, [closeEventSource])
 
   return {
     events,
     outline,
-    beatIndex,
-    totalBeats,
-    confirmed,
-    isGenerating,
     sessionId,
+    connectionState,
+    currentBeatId,
+    beatIndex,
+    error,
+    autoContinued,
     startStory,
-    confirmStory,
     sendAction,
+    reconnect,
+    reset,
   }
 }

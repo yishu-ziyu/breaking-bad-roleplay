@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
@@ -42,6 +42,23 @@ function resolveStoryEventGif(evt: StoryEvent): string | null {
     (evt.data.emotion_state as string) ?? null,
     (evt.data.gif_search_query as string) ?? null,
   )
+}
+
+function getEventTitle(evt: StoryEvent, lang: Language): string {
+  const charId = (evt.data.character_id as string) ?? ''
+  switch (evt.type) {
+    case 'outline': return lang === 'zh' ? '故事大纲' : 'Story Outline'
+    case 'scene_change': return lang === 'zh' ? '场景切换' : 'Scene Change'
+    case 'agent_speak': return lang === 'zh' ? `${charId} 说` : `${charId} speaks`
+    case 'agent_think': return lang === 'zh' ? `${charId} 思考` : `${charId} thinks`
+    case 'agent_act': return lang === 'zh' ? `${charId} 行动` : `${charId} acts`
+    case 'beat_ready': return lang === 'zh' ? '🎬 导演等你决策' : '🎬 Director awaits your decision'
+    case 'world_state_delta': return lang === 'zh' ? '📊 世界状态变化' : '📊 World State Delta'
+    case 'status': return lang === 'zh' ? '状态更新' : 'Status'
+    case 'complete': return lang === 'zh' ? '🎬 剧情完结' : '🎬 Story Complete'
+    case 'error': return lang === 'zh' ? '⚠ 错误' : '⚠ Error'
+    default: return evt.type
+  }
 }
 
 type ChatMessage = {
@@ -171,6 +188,10 @@ const uiText = {
     connecting: 'Connecting…',
     disconnected: 'Disconnected',
     storyComplete: 'Story complete. All beats rendered.',
+    continue: 'Continue',
+    stop: 'Stop',
+    storyOutline: 'Story Outline',
+    paused: 'Paused',
   },
   zh: {
     tagline: '《绝命毒师》微观智能体引擎，后台 Plan-Reflect 认知循环与文件记忆库。',
@@ -209,6 +230,10 @@ const uiText = {
     connecting: '连接中…',
     disconnected: '已断开',
     storyComplete: '剧情结束。所有 beat 已渲染。',
+    continue: '继续',
+    stop: '停止',
+    storyOutline: '故事大纲',
+    paused: '已暂停',
   },
 } satisfies Record<Language, Record<string, string>>
 
@@ -223,6 +248,112 @@ function getRelationLabel(relation: string, lang: Language): string {
 function formatRelation(char: Character, relation: string, lang: Language): string {
   const label = getRelationLabel(relation, lang)
   return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
+}
+
+/* ------------------------------------------------------------------ */
+/*  BeatControls — decision UI at beat_ready                          */
+/* ------------------------------------------------------------------ */
+
+type BeatAction = 'continue' | 'stop' | 'redirect' | 'switch_perspective'
+
+interface BeatControlsProps {
+  t: Record<string, string>
+  language: Language
+  characters: Character[]
+  onContinue: () => void | Promise<void>
+  onStop: () => void | Promise<void>
+  onRedirect: (prompt: string) => void | Promise<void>
+  onSwitchPerspective: (charId: string) => void | Promise<void>
+}
+
+function BeatControls({ t, language, characters, onContinue, onStop, onRedirect, onSwitchPerspective }: BeatControlsProps) {
+  const [pending, setPending] = useState<BeatAction | null>(null)
+  const [redirectOpen, setRedirectOpen] = useState(false)
+  const [redirectText, setRedirectText] = useState('')
+  const [perspectiveOpen, setPerspectiveOpen] = useState(false)
+
+  const wrap = (action: BeatAction, fn: () => void | Promise<void>) => async () => {
+    if (pending) return
+    setPending(action)
+    try {
+      await fn()
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const zh = language === 'zh'
+  const labels = {
+    redirect: zh ? '↩ 重定向' : '↩ Redirect',
+    switchPerspective: zh ? '👤 切换视角' : '👤 Switch Perspective',
+    submit: zh ? '提交' : 'Submit',
+    cancel: zh ? '取消' : 'Cancel',
+    selectCharacter: zh ? '选择角色…' : 'Select character…',
+    redirectPlaceholder: zh ? '输入新的剧情方向…' : 'Enter new plot direction…',
+  }
+
+  return (
+    <div className="beat-controls">
+      <button onClick={wrap('continue', onContinue)} disabled={pending !== null}>
+        {pending === 'continue' ? '...' : `▶ ${t.continue}`}
+      </button>
+      <button onClick={wrap('stop', onStop)} disabled={pending !== null}>
+        {pending === 'stop' ? '...' : `⏹ ${t.stop}`}
+      </button>
+      {!redirectOpen && (
+        <button onClick={() => setRedirectOpen(true)} disabled={pending !== null}>{labels.redirect}</button>
+      )}
+      {redirectOpen && (
+        <div className="redirect-control">
+          <input
+            value={redirectText}
+            onChange={e => setRedirectText(e.target.value)}
+            placeholder={labels.redirectPlaceholder}
+            disabled={pending !== null}
+          />
+          <button
+            onClick={wrap('redirect', () => {
+              if (redirectText.trim()) {
+                const p = redirectText
+                setRedirectOpen(false)
+                setRedirectText('')
+                return onRedirect(p)
+              }
+              return Promise.resolve()
+            })}
+            disabled={pending !== null || !redirectText.trim()}
+          >
+            {labels.submit}
+          </button>
+          <button onClick={() => setRedirectOpen(false)} disabled={pending !== null}>{labels.cancel}</button>
+        </div>
+      )}
+      {!perspectiveOpen && (
+        <button onClick={() => setPerspectiveOpen(true)} disabled={pending !== null}>{labels.switchPerspective}</button>
+      )}
+      {perspectiveOpen && (
+        <div className="perspective-control">
+          <select
+            value=""
+            onChange={e => {
+              if (e.target.value) {
+                wrap('switch_perspective', () => {
+                  const v = e.target.value
+                  setPerspectiveOpen(false)
+                  return onSwitchPerspective(v)
+                })()
+              }
+            }}
+            disabled={pending !== null}
+          >
+            <option value="">{labels.selectCharacter}</option>
+            {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <button onClick={() => setPerspectiveOpen(false)} disabled={pending !== null}>{labels.cancel}</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -256,14 +387,6 @@ function App() {
   // Story state
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
-
-  const storyEventGifs = useMemo(() => {
-    const map = new Map<StoryEvent, string | null>()
-    story.events.forEach(evt => {
-      map.set(evt, resolveStoryEventGif(evt))
-    })
-    return map
-  }, [story.events])
 
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
@@ -341,10 +464,11 @@ function App() {
 
   /* ---- Story start ---- */
   const handleStartStory = useCallback(async () => {
-    if (!storyTask.trim() || story.isGenerating) return
+    if (!storyTask.trim()) return
+    if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     setError(null)
     try {
-      await story.startStory(storyTask, selectedCharId, llmProvider)
+      await story.startStory(storyTask, selectedCharId)
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -572,10 +696,23 @@ function App() {
       {view === 'story' ? (
         /* ---------- Story View ---------- */
         <section className="story-panel">
-          {/* Phase 1: Input */}
-          {!story.sessionId ? (
+          <header className="story-header">
+            <h2>{t.narrativeStream}</h2>
+            <span className="schema-pill">
+              {story.connectionState === 'idle' && t.setStage}
+              {story.connectionState === 'connecting' && t.connecting}
+              {story.connectionState === 'streaming' && (language === 'zh' ? '播放中' : 'Streaming')}
+              {story.connectionState === 'beat_paused' && t.paused}
+              {story.connectionState === 'complete' && (language === 'zh' ? '已完结' : 'Complete')}
+              {story.connectionState === 'error' && (language === 'zh' ? '错误' : 'Error')}
+            </span>
+            <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
+          </header>
+
+          {/* Idle: task input */}
+          {story.connectionState === 'idle' && (
             <div className="story-setup">
-              <h2>{t.setStage}</h2>
+              <h3>{t.setStage}</h3>
               <p>{t.setStageHint}</p>
               <textarea
                 value={storyTask}
@@ -585,83 +722,138 @@ function App() {
               <button
                 type="button"
                 onClick={handleStartStory}
-                disabled={!storyTask.trim() || story.isGenerating}
+                disabled={!storyTask.trim()}
               >
-                {story.isGenerating ? t.directing : t.startStory}
+                {t.startStory}
               </button>
               {error && <div className="error-box">{error}</div>}
             </div>
-          ) : story.outline && !story.confirmed ? (
-            /* Phase 2: Outline confirmation (no details) */
-            <div className="story-setup">
-              <h2>{language === 'zh' ? '剧情大纲' : 'Story Outline'}</h2>
-              <p>{language === 'zh' ? 'Director 已经构思好了故事走向。确认后开始播放。' : 'The Director has planned the story. Confirm to begin.'}</p>
-              <div className="story-outline-confirm">
-                <pre>{story.outline}</pre>
-              </div>
-              <div className="story-controls">
-                <button type="button" onClick={() => story.confirmStory()} disabled={story.isGenerating}>
-                  {language === 'zh' ? '确认并开始' : 'Confirm & Start'}
-                </button>
-                <button type="button" onClick={() => story.sendAction('stop')}>
-                  {language === 'zh' ? '放弃' : 'Discard'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Phase 3: Beat replay */
-            <div className="story-stream">
-              <header>
-                <h2>{t.narrativeStream}</h2>
-                <span className="schema-pill">{language === 'zh' ? '播放中' : 'Playing'}</span>
-                <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
-              </header>
+          )}
 
-              {story.outline && story.confirmed && (
-                <div className="story-progress">
-                  <span>{language === 'zh' ? 'Beat' : 'Beat'} {story.beatIndex + 1}/{story.totalBeats}</span>
+          {/* Connecting */}
+          {story.connectionState === 'connecting' && (
+            <div className="story-status" aria-live="polite">
+              <div className="typing">
+                <span className="dot" /><span className="dot" /><span className="dot" />
+              </div>
+              <p>{t.directing}</p>
+            </div>
+          )}
+
+          {/* Error */}
+          {story.connectionState === 'error' && (
+            <div className="story-error">
+              <p>⚠ {story.error}</p>
+              {story.sessionId && (
+                <button type="button" onClick={story.reconnect}>
+                  {language === 'zh' ? '重连' : 'Reconnect'}
+                </button>
+              )}
+              <button type="button" onClick={story.reset}>
+                {language === 'zh' ? '重新开始' : 'Restart'}
+              </button>
+              {error && <div className="error-box">{error}</div>}
+            </div>
+          )}
+
+          {/* Streaming / beat_paused / complete: live event feed */}
+          {(story.connectionState === 'streaming'
+            || story.connectionState === 'beat_paused'
+            || story.connectionState === 'complete') && (
+            <div className="story-stream">
+              {story.outline && (
+                <div className="story-outline">
+                  <strong>{t.storyOutline}</strong>
+                  <p>{story.outline}</p>
                 </div>
               )}
 
+              <div className="story-progress">
+                <span>Beat {story.beatIndex}</span>
+              </div>
+
               <div className="story-events">
-                {story.events.filter(e => e.type !== 'outline').map((evt, i) => (
-                  <div key={`${evt.beat_index ?? i}-${evt.type}`} className={`story-event story-event--${evt.type}`}>
-                    <strong>{evt.type}</strong>
-                    {evt.type === 'agent_speak' && (
-                      <div className="story-event__content">
-                        <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
-                        <GifCard src={storyEventGifs.get(evt)} alt={evt.data.gif_search_query as string} />
-                      </div>
-                    )}
-                    {evt.type === 'agent_think' && (
-                      <p><em>{evt.data.character_id as string} thinks:</em> {evt.data.thought_content as string}</p>
-                    )}
-                    {evt.type === 'scene_change' && (
-                      <p>{evt.data.description as string}</p>
-                    )}
-                    {evt.type === 'agent_act' && (
-                      <p><em>{evt.data.character_id as string}</em> {evt.data.action as string}</p>
-                    )}
-                    {evt.type === 'beat_ready' && (
-                      <div className="beat-controls">
-                        <p>{t.directorDecision}</p>
-                        <button onClick={() => story.sendAction('continue')} disabled={story.isGenerating}>
-                          {story.isGenerating ? '...' : '▶ ' + (language === 'zh' ? '继续' : 'Continue')}
-                        </button>
-                        <button onClick={() => story.sendAction('stop')} disabled={story.isGenerating}>
-                          {language === 'zh' ? '停止' : 'Stop'}
-                        </button>
-                      </div>
-                    )}
+                {story.events.map((evt, i) => (
+                  <div key={`${i}-${evt.type}-${evt.received_at ?? ''}`} className={`story-event story-event--${evt.type}`}>
+                    <strong>{getEventTitle(evt, language)}</strong>
+                    <div className="event-body">
+                      {evt.type === 'scene_change' && (
+                        <p>{(evt.data.description as string) ?? ''}</p>
+                      )}
+                      {evt.type === 'agent_speak' && (
+                        <div className="story-event__content">
+                          <p><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.content as string) ?? ''}</p>
+                          <GifCard src={resolveStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
+                        </div>
+                      )}
+                      {evt.type === 'agent_think' && (
+                        <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
+                      )}
+                      {evt.type === 'agent_act' && (
+                        <p><em>{(evt.data.character_id as string) ?? ''}</em> {(evt.data.action as string) ?? ''}</p>
+                      )}
+                      {evt.type === 'world_state_delta' && (
+                        <ul className="world-delta">
+                          {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => (
+                            <li key={j}>
+                              {d.target ?? d.entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {evt.type === 'status' && (
+                        <p className="status-msg">{evt.data.message as string}</p>
+                      )}
+                      {evt.type === 'complete' && (
+                        <p>{(evt.data.message as string) ?? t.storyComplete}</p>
+                      )}
+                      {evt.type === 'error' && (
+                        <p className="status-msg">⚠ {(evt.data.message as string) ?? 'Error'}</p>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {story.isGenerating && (
-                <div className="typing" aria-live="polite">
-                  <span className="dot" /><span className="dot" /><span className="dot" />
+              {/* Streaming indicator */}
+              {story.connectionState === 'streaming' && (
+                <div className="streaming-indicator" aria-live="polite">
+                  {story.autoContinued ? (
+                    <span className="auto-continue-notice">
+                      {language === 'zh' ? '导演 5 分钟无操作，自动继续中…' : 'Director auto-continuing (5min idle)…'}
+                    </span>
+                  ) : (
+                    <div className="typing">
+                      <span className="dot" /><span className="dot" /><span className="dot" />
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* beat_paused: decision controls */}
+              {story.connectionState === 'beat_paused' && (
+                <div className="beat-paused">
+                  <p>{t.directorDecision}</p>
+                  <BeatControls
+                    t={t}
+                    language={language}
+                    characters={characters}
+                    onContinue={() => story.sendAction('continue')}
+                    onStop={() => story.sendAction('stop')}
+                    onRedirect={(prompt) => story.sendAction('redirect', { redirect_prompt: prompt })}
+                    onSwitchPerspective={(charId) => story.sendAction('switch_perspective', { target_character: charId })}
+                  />
+                </div>
+              )}
+
+              {/* complete: restart entry */}
+              {story.connectionState === 'complete' && (
+                <div className="story-complete">
+                  <p>🎬 {t.storyComplete}</p>
+                  <button type="button" onClick={story.reset}>{t.startStory}</button>
+                </div>
+              )}
+
               {error && <div className="error-box">{error}</div>}
             </div>
           )}
@@ -693,14 +885,17 @@ function App() {
           <div className="chat-stream">
             {messages.map(msg => {
               const isUser = msg.sender === 'user'
+              const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
+              const senderName = senderChar?.name ?? (isUser ? t.you : (msg.sender as string))
+              const senderColor = senderChar?.color ?? selectedChar.color
               return (
                 <article key={msg.id} className={`msg ${isUser ? 'msg--user' : 'msg--char'}`}>
-                  <div className="msg-avatar" style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : selectedChar.color } as CSSProperties}>
-                    {isUser ? <span className="avatar-letter">{t.you[0]}</span> : <Silhouette characterId={msg.sender as CharacterId} name={selectedChar.name} size={36} />}
+                  <div className="msg-avatar" style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}>
+                    {isUser ? <span className="avatar-letter">{t.you[0]}</span> : <Silhouette characterId={msg.sender as CharacterId} name={senderName} size={36} />}
                   </div>
                   <div className="msg-body">
                     <div className="msg-meta">
-                      <strong>{isUser ? `${t.you}, ${getRelationLabel(relation, language)}` : selectedChar.name}</strong>
+                      <strong>{isUser ? `${t.you}, ${getRelationLabel(relation, language)}` : senderName}</strong>
                       {msg.emotion && <span>{msg.emotion}</span>}
                     </div>
                     <p>{msg.text}</p>
