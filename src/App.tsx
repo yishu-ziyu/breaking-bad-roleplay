@@ -3,12 +3,15 @@ import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
-import { useStoryStream } from './hooks/useStoryStream'
+import { useStoryStream, type StoryEvent } from './hooks/useStoryStream'
 import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMemory'
 import { useAuth } from './hooks/useAuth'
 import { loadChatMessages, loadCharacterMemory, persistChatMessage, persistCharacterMemory } from './lib/supabasePersistence'
 import { AuthSection } from './components/AuthSection'
+import { GifCard } from './components/GifCard'
+import { VoicePlayer } from './components/VoicePlayer'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
+import { resolveGifUrl } from './lib/gifResolver'
 import './App.css'
 
 /* ------------------------------------------------------------------ */
@@ -20,6 +23,26 @@ type Language = 'en' | 'zh'
 type View = 'chat' | 'story'
 
 type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
+
+const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
+  'Walter White': 'walter', 'Walter': 'walter',
+  'Jesse Pinkman': 'jesse', 'Jesse': 'jesse',
+  'Skyler White': 'skyler', 'Skyler': 'skyler',
+  'Saul Goodman': 'saul', 'Saul': 'saul',
+  'Mike Ehrmantraut': 'mike', 'Mike': 'mike',
+  'Gus Fring': 'gus', 'Gus': 'gus',
+}
+
+function resolveStoryEventGif(evt: StoryEvent): string | null {
+  if (evt.type !== 'agent_speak') return null
+  const charId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
+  if (!charId) return null
+  return resolveGifUrl(
+    charId,
+    (evt.data.emotion_state as string) ?? null,
+    (evt.data.gif_search_query as string) ?? null,
+  )
+}
 
 type ChatMessage = {
   id: string
@@ -207,21 +230,21 @@ function formatRelation(char: Character, relation: string, lang: Language): stri
 /* ------------------------------------------------------------------ */
 
 function App() {
-  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('abq_character', 'walter')
+  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
-  const [language, setLanguage] = usePersistedState<Language>('abq_language', 'zh')
+  const [language, setLanguage] = usePersistedState<Language>('language', 'zh')
   const t = uiText[language]
 
   // Relation per character (persist across character switches)
-  const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('abq_relation', {})
+  const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
   const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
 
-  const [view, setView] = usePersistedState<View>('abq_view', 'chat')
-  const [mode, setMode] = usePersistedState<ChatMode>('abq_mode', 'direct')
-  const [llmProvider, setLlmProvider] = usePersistedState<string>('abq_llm', 'stepfun')
+  const [view, setView] = usePersistedState<View>('view', 'chat')
+  const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
+  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm', 'stepfun')
 
   // Chat state
-  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('abq_messages', {})
+  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
   const messages = messagesByChar[selectedCharId] ?? []
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
@@ -234,9 +257,17 @@ function App() {
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
 
+  const storyEventGifs = useMemo(() => {
+    const map = new Map<StoryEvent, string | null>()
+    story.events.forEach(evt => {
+      map.set(evt, resolveStoryEventGif(evt))
+    })
+    return map
+  }, [story.events])
+
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
-  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('abq_memory', {})
+  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('memory', {})
   const currentMemory = memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] }
 
   // Cloud sync: persist to Supabase when authenticated
@@ -271,6 +302,7 @@ function App() {
   useEffect(() => {
     if (!messagesByChar[selectedCharId]) {
       const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
+      const openerGif = resolveGifUrl(selectedCharId, 'opening pressure', null)
       setMessagesByChar(prev => ({
         ...prev,
         [selectedCharId]: [{
@@ -279,22 +311,33 @@ function App() {
           text: opener,
           emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
           gifQuery: null,
-          gifUrl: null,
+          gifUrl: openerGif,
         }],
       }))
     }
   }, [selectedCharId, language]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ---- Scene background (chat view) ---- */
-  const sceneStyle = useMemo<CSSProperties>(() => {
-    const recentTexts = messages.slice(-8).map(m => m.text)
-    return {
-      backgroundImage: `url(${pickSceneUrl(recentTexts)})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundRepeat: 'no-repeat',
+  /* ---- Scene background cross-fade (chat view) ---- */
+  const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
+  const [prevSceneUrl, setPrevSceneUrl] = useState<string | null>(null)
+  const [sceneReady, setSceneReady] = useState(false)
+
+  useEffect(() => {
+    const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
+    if (next !== currentSceneUrl) {
+      setSceneReady(false)
+      setPrevSceneUrl(currentSceneUrl)
+      setCurrentSceneUrl(next)
     }
   }, [messages])
+
+  useEffect(() => {
+    const id = setTimeout(() => setSceneReady(true), 50)
+    return () => clearTimeout(id)
+  }, [currentSceneUrl])
+
+  const userTurnCount = messages.filter(m => m.sender === 'user').length
+  const showSavePrompt = !auth.user && userTurnCount >= 3
 
   /* ---- Story start ---- */
   const handleStartStory = useCallback(async () => {
@@ -362,13 +405,14 @@ function App() {
         const debateReplies: ChatMessage[] = []
         if (Array.isArray(data.debate_logs)) {
           data.debate_logs.forEach((log: Record<string, unknown>) => {
+            const sender = log.sender as CharacterId
             debateReplies.push({
               id: crypto.randomUUID(),
-              sender: log.sender as CharacterId,
+              sender,
               text: log.text as string,
               emotion: log.emotion as string | undefined,
               gifQuery: log.gifQuery as string | null,
-              gifUrl: null,
+              gifUrl: resolveGifUrl(sender, log.emotion as string | null, log.gifQuery as string | null),
               thinking: log.thinking as string | undefined,
               toolExecuted: log.tool_executed as string | null,
               toolLog: log.tool_log as string | null,
@@ -383,7 +427,7 @@ function App() {
           text: data.reply_text,
           emotion: data.emotion_state,
           gifQuery: data.gif_search_query,
-          gifUrl: null,
+          gifUrl: resolveGifUrl(selectedCharId, data.emotion_state, data.gif_search_query),
           thinking: data.thinking,
           toolExecuted: data.tool_executed,
           toolLog: data.tool_log,
@@ -581,10 +625,13 @@ function App() {
 
               <div className="story-events">
                 {story.events.filter(e => e.type !== 'outline').map((evt, i) => (
-                  <div key={i} className={`story-event story-event--${evt.type}`}>
+                  <div key={`${evt.beat_index ?? i}-${evt.type}`} className={`story-event story-event--${evt.type}`}>
                     <strong>{evt.type}</strong>
                     {evt.type === 'agent_speak' && (
-                      <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
+                      <div className="story-event__content">
+                        <p><em>{evt.data.character_id as string}:</em> {evt.data.content as string}</p>
+                        <GifCard src={storyEventGifs.get(evt)} alt={evt.data.gif_search_query as string} />
+                      </div>
                     )}
                     {evt.type === 'agent_think' && (
                       <p><em>{evt.data.character_id as string} thinks:</em> {evt.data.thought_content as string}</p>
@@ -621,7 +668,9 @@ function App() {
         </section>
       ) : (
         /* ---------- Chat View ---------- */
-        <section className="chat-panel" style={sceneStyle}>
+        <section className={`chat-panel ${sceneReady ? 'is-crossfade' : ''}`}>
+          <div className="scene-layer scene-layer--prev" style={{ backgroundImage: prevSceneUrl ? `url(${prevSceneUrl})` : 'none' } as CSSProperties} />
+          <div className="scene-layer scene-layer--current" style={{ backgroundImage: `url(${currentSceneUrl})` } as CSSProperties} />
           <header className="chat-header">
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
@@ -630,6 +679,13 @@ function App() {
                   ? `${selectedChar.name} 与其${getRelationLabel(relation, language)}`
                   : `${selectedChar.name} with their ${getRelationLabel(relation, language)}`}
               </h2>
+              {showSavePrompt && (
+                <div className="save-prompt">
+                  {language === 'zh'
+                    ? '登录以保存这段对话到云端。'
+                    : 'Sign in to save this conversation to the cloud.'}
+                </div>
+              )}
             </div>
             <span className="schema-pill">{t.schema}</span>
           </header>
@@ -654,12 +710,10 @@ function App() {
                         {msg.toolLog && <p>{msg.toolLog}</p>}
                       </div>
                     )}
-                    {msg.gifUrl && (
-                      <figure className="gif-card">
-                        <img src={msg.gifUrl} alt={msg.gifQuery ?? ''} onError={e => e.currentTarget.closest('figure')?.setAttribute('hidden', 'true')} />
-                        <figcaption>{t.gifTrigger}: {msg.gifQuery}</figcaption>
-                      </figure>
+                    {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
+                      <VoicePlayer characterId={msg.sender as CharacterId} relation={relation} />
                     )}
+                    <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={msg.gifQuery ? `${t.gifTrigger}: ${msg.gifQuery}` : undefined} />
                   </div>
                 </article>
               )
