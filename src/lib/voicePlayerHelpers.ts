@@ -1,6 +1,6 @@
 import type { CharacterId } from '../roleProfiles'
 
-export type PlayState = 'idle' | 'speaking' | 'paused'
+export type PlayState = 'idle' | 'speaking'
 
 export interface SpeechSynthLike {
   speak: (utterance: SpeechSynthesisUtterance) => void
@@ -82,5 +82,23 @@ export function createPlayHandler(
     synth.speak(utter)
     onStateChange?.('speaking')
     return utter
+  }
+}
+
+/**
+ * VoicePlayer toggle 行为：speaking 时停止，idle 时播放。
+ * 分离为纯函数以便单测。
+ */
+export function handleVoiceToggle(
+  state: PlayState,
+  synth: SpeechSynthLike,
+  play: () => void,
+  onStateChange?: (s: PlayState) => void
+): void {
+  if (state === 'speaking') {
+    synth.cancel?.()
+    onStateChange?.('idle')
+  } else {
+    play()
   }
 }
