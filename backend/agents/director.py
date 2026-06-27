@@ -496,7 +496,10 @@ class DirectorAgent:
                         )
                         evt_data = {**evt_data, "content": real_reply}
                     except Exception:
-                        pass  # Keep the LLM-generated dialogue as fallback
+                        logger.warning(
+                            "Character sub-agent call failed for %s, using LLM dialogue fallback",
+                            evt_data.get("character_id"),
+                        )
             yield AgentEvent(
                 type=evt_type,
                 data=evt_data,
@@ -520,7 +523,9 @@ class DirectorAgent:
                         data={"deltas": deltas, "model_route": beat_model_route},
                     )
             except Exception:
-                pass  # Dossier update failure shouldn't break the beat
+                logger.exception(
+                    "Dossier update failed for session %s", session_id
+                )
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
     @staticmethod
