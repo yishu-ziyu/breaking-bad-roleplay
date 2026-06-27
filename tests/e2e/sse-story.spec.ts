@@ -508,3 +508,78 @@ test('TC-SIDEBAR-2: BeatControls Switch Perspective button still visible at beat
   await expect(switchBtn).toBeVisible()
   await expect(switchBtn).toBeEnabled()
 })
+
+/* ------------------------------------------------------------------ */
+/*  TC-SSE-8: switch_perspective via UI transitions to streaming       */
+/* ------------------------------------------------------------------ */
+
+test('TC-SSE-8: switch_perspective via UI hides BeatControls and shows Streaming indicator', async ({ page }) => {
+  await driveToBeatPaused(page, {
+    outline: '1. RV — cook\n2. Jesse\'s house — talk',
+  })
+
+  // Click "Switch Perspective" button to open the select dropdown
+  const switchBtn = page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ })
+  await switchBtn.click()
+
+  // Select Jesse from the dropdown — triggers onSwitchPerspective('jesse')
+  const select = page.locator('.beat-controls .perspective-control select')
+  await select.selectOption('jesse')
+
+  // After switch_perspective sendAction: connectionState should be 'streaming'
+  // → BeatControls hidden, Streaming indicator visible
+  await expect(page.locator('.beat-controls')).toHaveCount(0)
+  await expect(page.locator('.streaming-indicator')).toBeVisible()
+
+  // Emit next beat's events to simulate backend processing switch_perspective
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Jesse Pinkman',
+      content: 'Yo, Mr. White, what now?',
+      emotion_state: 'anxious',
+      gif_search_query: 'jesse pinkman nervous',
+    },
+  })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
+
+  // After beat_ready: back to beat_paused, BeatControls visible again
+  await expect(page.locator('.beat-controls')).toBeVisible()
+})
+
+/* ------------------------------------------------------------------ */
+/*  TC-SSE-9: redirect via UI transitions to streaming                 */
+/* ------------------------------------------------------------------ */
+
+test('TC-SSE-9: redirect via UI hides BeatControls and shows Streaming indicator', async ({ page }) => {
+  await driveToBeatPaused(page, {
+    outline: '1. RV — cook\n2. White house — talk',
+  })
+
+  // Click "Redirect" button to open the input
+  const redirectBtn = page.locator('.beat-controls button', { hasText: /Redirect|重定向/ })
+  await redirectBtn.click()
+
+  // Fill redirect text and submit
+  const input = page.locator('.beat-controls .redirect-control input')
+  await input.fill('Walter gets arrested')
+  await page.locator('.beat-controls .redirect-control button', { hasText: /Submit|提交/ }).click()
+
+  // After redirect sendAction: connectionState should be 'streaming'
+  await expect(page.locator('.beat-controls')).toHaveCount(0)
+  await expect(page.locator('.streaming-indicator')).toBeVisible()
+
+  // Emit new outline + beat events to simulate backend processing redirect
+  await emitSSE(page, 'outline', { data: { content: '1. DEA office — arrest\n2. Jail — interrogation' } })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Walter White',
+      content: 'I want my lawyer.',
+      emotion_state: 'panic',
+      gif_search_query: 'walter white arrested',
+    },
+  })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
+
+  // After beat_ready: back to beat_paused
+  await expect(page.locator('.beat-controls')).toBeVisible()
+})
