@@ -511,6 +511,28 @@ class DirectorAgent:
                 data=evt_data,
                 model_route=beat_model_route,
             )
+            # Persist agent_speak events as Message rows so story history
+            # survives page refresh. Other event types (agent_think, act,
+            # scene_change, world_state_delta) are not user-visible dialogue
+            # and are intentionally not persisted here.
+            if (
+                db is not None
+                and session_id is not None
+                and evt_type == "agent_speak"
+            ):
+                from db.models import Message
+
+                db.add(
+                    Message(
+                        session_id=session_id,
+                        role="assistant",
+                        content=evt_data.get("content", ""),
+                        character_name=evt_data.get("character_id"),
+                        emotion_state=evt_data.get("emotion_state"),
+                        gif_search_query=evt_data.get("gif_search_query"),
+                        beat_id=f"beat_{beat_index + 1}",
+                    )
+                )
             beat_events_for_dossier.append(evt)
         # Update dossiers after the beat
         if db is not None and session_id is not None:
