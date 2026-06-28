@@ -537,6 +537,12 @@ class DirectorAgent:
         # Update dossiers after the beat
         if db is not None and session_id is not None:
             try:
+                # L5 fix: commit the agent_speak Messages (db.add'd in the
+                # loop above) BEFORE calling update_dossiers. If update_dossiers
+                # fails below, db.rollback() will only undo the dossier changes
+                # — the already-committed Messages survive so dialogue does not
+                # "disappear" on page refresh after a dossier failure.
+                await db.commit()
                 deltas = await update_dossiers(
                     db=db,
                     session_id=session_id,
