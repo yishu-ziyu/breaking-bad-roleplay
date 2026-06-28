@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     secret_key: str
     app_env: str = "development"
     allowed_origins: str = ""
+    log_level: str = "INFO"
 
 
 settings = Settings()
