@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from db.session import get_db
-from db.models import Session as SessionModel
+from db.models import Session as SessionModel, Message as MessageModel
 from agents.provider import ProviderFacade
 from agents.director import DirectorAgent
 from models.schemas import (
@@ -236,6 +236,48 @@ async def stream_session(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Message history — recover story beats after page refresh
+# ---------------------------------------------------------------------------
+
+class MessageOut(BaseModel):
+    id: str
+    session_id: str
+    role: str
+    content: str
+    character_name: str | None = None
+    emotion_state: str | None = None
+    gif_search_query: str | None = None
+    beat_id: str | None = None
+    created_at: datetime
+
+
+@router.get("/session/{session_id}/messages", response_model=list[MessageOut])
+async def list_session_messages(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return persisted assistant messages for a session, ordered oldest-first.
+
+    Used by the frontend to rebuild story history after a page refresh.
+    Only agent_speak events are persisted by the Director, so this list
+    represents the canonical dialogue history of the session.
+    """
+    result = await db.execute(
+        select(SessionModel).where(SessionModel.id == session_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    rows = await db.execute(
+        select(MessageModel)
+        .where(MessageModel.session_id == session_id)
+        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+    )
+    return rows.scalars().all()
 
 
 # ---------------------------------------------------------------------------
