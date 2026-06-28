@@ -20,6 +20,37 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _parse_allowed_origins(raw: str, app_env: str) -> list[str]:
+    """Parse the ALLOWED_ORIGINS env var into a list of CORS origins.
+
+    Rules:
+    - ``"*"`` → ``["*"]`` (allow all; development only).
+    - comma-separated list → trimmed list of origins.
+    - empty string → ``[]`` (no origins allowed; production default).
+
+    In production with empty origins, logs a WARNING so the misconfiguration
+    is visible in logs instead of manifesting as mysterious CORS 403s on the
+    frontend. The default is intentionally NOT ``"*"`` in production — that
+    would weaken CORS security.
+    """
+    raw = raw.strip()
+    if raw == "*":
+        return ["*"]
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    # empty
+    if app_env == "production":
+        logger.warning(
+            "ALLOWED_ORIGINS is empty in production — all browser CORS "
+            "requests will be rejected. Set ALLOWED_ORIGINS to a "
+            "comma-separated list of allowed origins "
+            "(e.g. https://your-app.example.com)."
+        )
+    return []
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,14 +82,12 @@ app = FastAPI(
 
 # CORS: parse ALLOWED_ORIGINS from env (comma-separated).
 # Empty string → no origins allowed (production default).
-# "*" → allow all (development only).
-_raw_origins = settings.allowed_origins.strip()
-if _raw_origins == "*":
-    allowed_origins = ["*"]
-elif _raw_origins:
-    allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
-else:
-    allowed_origins = []
+# "*" → allow all (development only). A WARNING is logged in production
+# when ALLOWED_ORIGINS is empty so the misconfiguration is visible — see
+# _parse_allowed_origins for the full rules.
+allowed_origins = _parse_allowed_origins(
+    settings.allowed_origins, settings.app_env
+)
 
 app.add_middleware(
     CORSMiddleware,
