@@ -23,6 +23,49 @@ export interface StoryActionParams {
   target_character?: string
 }
 
+/* ----- Backend message schema (GET /api/session/{id}/messages) ----- */
+interface MessageOut {
+  id: string
+  session_id: string
+  role: string
+  content: string
+  character_name: string | null
+  emotion_state: string | null
+  gif_search_query: string | null
+  beat_id: string | null
+  created_at: string
+}
+
+/* ----- localStorage key for session persistence (abq_ prefix) ----- */
+const SESSION_STORAGE_KEY = 'abq_story_session_id'
+
+function readSavedSessionId(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(SESSION_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeSavedSessionId(sid: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, sid)
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+function clearSavedSessionId(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
 export interface UseStoryStreamReturn {
   events: StoryEvent[]
   outline: string | null
@@ -32,24 +75,32 @@ export interface UseStoryStreamReturn {
   beatIndex: number
   error: string | null
   autoContinued: boolean
+  isResuming: boolean
   startStory: (taskPrompt: string, characterId?: string) => Promise<void>
   sendAction: (action: StoryAction, params?: StoryActionParams) => Promise<void>
   reconnect: () => void
   reset: () => void
+  resumeSession: (sid: string) => Promise<void>
 }
 
 export function useStoryStream(): UseStoryStreamReturn {
   const [events, setEvents] = useState<StoryEvent[]>([])
   const [outline, setOutline] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [connectionState, setConnectionState] = useState<StoryConnectionState>('idle')
+  // Initialize to 'connecting' if a saved session exists, so the UI shows
+  // loading immediately on mount instead of flashing the idle form.
+  const [connectionState, setConnectionState] = useState<StoryConnectionState>(() =>
+    readSavedSessionId() ? 'connecting' : 'idle',
+  )
   const [currentBeatId, setCurrentBeatId] = useState<string | null>(null)
   const [beatIndex, setBeatIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [autoContinued, setAutoContinued] = useState(false)
+  const [isResuming, setIsResuming] = useState<boolean>(() => readSavedSessionId() !== null)
 
   const esRef = useRef<EventSource | null>(null)
   const sessionRef = useRef<string | null>(null)
+  const hasAttemptedResumeRef = useRef(false)
 
   const closeEventSource = useCallback(() => {
     if (esRef.current) {
@@ -165,10 +216,59 @@ export function useStoryStream(): UseStoryStreamReturn {
       const sid = data.session_id as string
       setSessionId(sid)
       sessionRef.current = sid
+      writeSavedSessionId(sid)
       connectStream(sid)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setConnectionState('error')
+    }
+  }, [closeEventSource, connectStream])
+
+  const resumeSession = useCallback(async (sid: string): Promise<void> => {
+    setIsResuming(true)
+    sessionRef.current = sid
+    setConnectionState('connecting')
+    setError(null)
+
+    try {
+      const res = await fetch(`/api/session/${sid}/messages`)
+      if (res.status === 404) {
+        // Session no longer exists — clear storage and return to idle.
+        clearSavedSessionId()
+        closeEventSource()
+        setEvents([])
+        setOutline(null)
+        setSessionId(null)
+        sessionRef.current = null
+        setCurrentBeatId(null)
+        setBeatIndex(0)
+        setAutoContinued(false)
+        setConnectionState('idle')
+        return
+      }
+      if (!res.ok) {
+        throw new Error(`Failed to fetch session history (${res.status})`)
+      }
+      const msgs = (await res.json()) as MessageOut[]
+      const restoredEvents: StoryEvent[] = msgs.map((msg) => ({
+        type: 'agent_speak',
+        data: {
+          character_id: msg.character_name,
+          content: msg.content,
+          emotion_state: msg.emotion_state,
+          gif_search_query: msg.gif_search_query,
+        },
+        received_at: Date.now(),
+      }))
+      setEvents(restoredEvents)
+      setSessionId(sid)
+      setConnectionState('streaming')
+      connectStream(sid)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to resume session')
+      setConnectionState('error')
+    } finally {
+      setIsResuming(false)
     }
   }, [closeEventSource, connectStream])
 
@@ -194,6 +294,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       sessionRef.current = null
       setBeatIndex(0)
       setCurrentBeatId(null)
+      // NOTE: deliberately do NOT clear localStorage — user may want to resume.
       return
     }
 
@@ -247,7 +348,20 @@ export function useStoryStream(): UseStoryStreamReturn {
     setAutoContinued(false)
     setConnectionState('idle')
     sessionRef.current = null
+    clearSavedSessionId()
   }, [closeEventSource])
+
+  // Auto-resume on mount if a sessionId is saved in localStorage.
+  // Guarded by a ref to avoid duplicate triggers (React strict mode, etc.)
+  useEffect(() => {
+    if (hasAttemptedResumeRef.current) return
+    hasAttemptedResumeRef.current = true
+
+    const savedSid = readSavedSessionId()
+    if (savedSid) {
+      resumeSession(savedSid)
+    }
+  }, [resumeSession])
 
   useEffect(() => {
     return () => {
@@ -264,9 +378,11 @@ export function useStoryStream(): UseStoryStreamReturn {
     beatIndex,
     error,
     autoContinued,
+    isResuming,
     startStory,
     sendAction,
     reconnect,
     reset,
+    resumeSession,
   }
 }
