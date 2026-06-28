@@ -75,7 +75,7 @@ async def test_update_dossiers_creates_session_and_world_rows():
             "trust_delta": 2,
             "new_knowledge": "Walter notices Jesse kept the plan quiet.",
             "world_persisted": True,
-            "model_route": "minimax/MiniMax-M3",
+            "model_route": "stepfun/step-3.7-flash",
         }
     ]
     assert len(db.added) == 2
