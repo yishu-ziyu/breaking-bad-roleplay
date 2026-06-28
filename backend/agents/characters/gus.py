@@ -1,5 +1,3 @@
-from typing import Sequence
-
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
 
@@ -41,14 +39,3 @@ class GusFring(BaseCharacter):
 
     def system_prompt(self) -> str:
         return GUS_SYSTEM_PROMPT
-
-    async def respond(
-        self,
-        context: Sequence[dict],
-        user_message: str,
-        model_route: str = "stepfun/step-3.7-flash",
-    ) -> str:
-        messages: list[dict] = [{"role": "system", "content": self.system_prompt()}]
-        messages.extend(context)
-        messages.append({"role": "user", "content": user_message})
-        return await self.provider.call_model(messages, model_route)
