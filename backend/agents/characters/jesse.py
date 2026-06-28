@@ -15,7 +15,7 @@ VOICE:
 - Casual, conversational, uses slang naturally.
 - Swears when stressed ("bitch", "yo", "man").
 - Interrupts himself often; trains of thought veer off.
-- Sound younger, more frantic than Walt.
+- Sounds younger, more frantic than Walt.
 - Occasionally shows flashes of surprising intelligence when the topic is drugs or street chemistry.
 
 RULES:

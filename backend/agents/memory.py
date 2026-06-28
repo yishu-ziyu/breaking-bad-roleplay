@@ -74,7 +74,7 @@ async def compute_dossier_delta(
     dossiers: dict[str, dict],
     beat_summary: str,
     beat_events: list[dict[str, Any]],
-    model_route: str = "minimax/MiniMax-M3",
+    model_route: str = "stepfun/step-3.7-flash",
 ) -> dict[str, Any]:
     """
     Ask the LLM to analyze what changed in character relationships
@@ -164,7 +164,7 @@ async def update_dossiers(
     beat_summary: str,
     beat_events: list[dict[str, Any]],
     provider: Any,
-    model_route: str = "minimax/MiniMax-M3",
+    model_route: str = "stepfun/step-3.7-flash",
 ) -> list[dict[str, Any]]:
     """
     Load all dossiers for the current session + world-level,
