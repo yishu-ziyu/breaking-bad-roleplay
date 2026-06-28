@@ -95,7 +95,7 @@ has a "type" field and a "data" field matching one of these shapes:
   agent_speak:      { "character_id": "<character name>", "content": "<spoken dialogue>", "emotion_state": "<emotion tag>", "gif_search_query": "<visual emotion search phrase>" }
   world_state_delta:{ "deltas": [ { "target": "<character or location>", "field": "<what changed>", "old_value": "<before>", "new_value": "<after>" } ] }
 NOTE: This JSON event format is for BEAT events only. When asked for an outline
-(overall plot structure), output a plain text numbered list instead:
+(overall plot structure), output a plain text numbered list instead.
 IMPORTANT: Every beat event object MUST include a "recommended_model" field
 set to "stepfun/step-3.7-flash".
 Example output:
