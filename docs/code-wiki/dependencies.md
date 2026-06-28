@@ -36,7 +36,6 @@
 | `httpx` | 异步 HTTP 客户端，调用 LLM |
 | `pydantic-settings` | 环境变量配置 |
 | `python-dotenv` | .env 文件加载 |
-| `deepagents` | Agent 编排框架 |
 | `pytest-asyncio`（dev） | 异步测试 |
 | `ruff`（dev） | 代码检查 |
 

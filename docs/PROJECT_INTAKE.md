@@ -46,7 +46,7 @@ Docker:   python:3.12-slim, COPY dist/ + backend/, CMD python3 start.py
 - 前端：dist/ 预编译，Dockerfile 服务
 - 后端：同一个 Dockerfile
 - DB：Render 内置 PostgreSQL
-- 环境变量：MINIMAX_API_KEY, STEPFUN_API_KEY, DATABASE_URL, SECRET_KEY, ALLOWED_ORIGINS
+- 环境变量：MINIMAX_API_KEY, STEPFUN_API_KEY, DATABASE_URL, ALLOWED_ORIGINS
 
 ## 待修复项
 

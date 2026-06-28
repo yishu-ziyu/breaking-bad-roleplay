@@ -44,7 +44,7 @@ ABQ Roleplay Lab 是一个《绝命毒师》世界观的 AI 角色扮演产品�
 │  └──────┬──────┘  └──────┬──────┘                 │
 │         │ SSE             │ HTTP                   │
 ├─────────┼────────────────┼─────────────────────────┤
-│  Python Backend: FastAPI + deepagents              │
+│  Python Backend: FastAPI                            │
 │  ┌─────────────────────────────────────────────┐  │
 │  │  Director Agent (主控)                       │  │
 │  │  ┌────────┬────────┬────────┬────────┐      │  │
@@ -90,7 +90,7 @@ ABQ Roleplay Lab 是一个《绝命毒师》世界观的 AI 角色扮演产品�
 
 ### 2.4 子 Agent 委派
 
-- Director 使用 deepagents 的 sub-agent 机制，将每个 beat 的演出委托给对应的角色 Sub-agent
+- Director 通过 sub-agent 机制，将每个 beat 的演出委托给对应的角色 Sub-agent
 - 每个 Sub-agent 有隔离的上下文窗口（避免长对话污染）
 - Sub-agent 的输出通过 Director 汇总后以 SSE 事件推送给前端
 
@@ -228,7 +228,7 @@ Provider Facade 接收统一调用 → 根据路由规则转换协议 → 转发
 
 ### 5.3 Provider Facade 职责
 
-1. 接收 deepagents 的统一模型调用
+1. 接收统一模型调用
 2. 根据路由规则选择模型
 3. 协议转换：
    - MiniMax：Anthropic messages API → 标准 messages 格式
@@ -316,7 +316,7 @@ Session End
 | 7 | 玩家动作集 | 继续 / 阻止 / 改方向 / 切换角色视角 |
 | 8 | 在场视角切换角色 | 换扮演的角色，共享工作记忆 |
 | 9 | 模式间关系 | 同一 session 自由切换 |
-| 10 | 后端技术栈 | Python + deepagents |
+| 10 | 后端技术栈 | Python + FastAPI |
 | 11 | 模型供应 | MiniMax-M3 + StepFun step-3.7-flash |
 | 12 | 路由策略 | 场景级分层路由 |
 | 13 | 通信协议 | SSE 细粒度事件流 |
@@ -339,7 +339,6 @@ Session End
 - 角色 dossiers 的具体字段和更新规则（LLM 生成的 delta 如何验证一致性）
 - SSE 重连机制（玩家断线后怎么恢复当前 beat）
 - 多用户场景下的 session 管理和资源限制
-- deepagents 对 MiniMax  Anthropic-compatible endpoint 的实际兼容性验证
 - 角色工具（tools）从 hand-written prompt 升级到真正的 function calling schema 的改造计划
 - 前端镜头切换的 UI/UX 具体形态
 
