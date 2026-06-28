@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     minimax_api_key: str
     stepfun_api_key: str
     database_url: str
-    secret_key: str
     app_env: str = "development"
     allowed_origins: str = ""
     log_level: str = "INFO"
