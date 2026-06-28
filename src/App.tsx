@@ -720,7 +720,9 @@ function App() {
               <div className="typing">
                 <span className="dot" /><span className="dot" /><span className="dot" />
               </div>
-              <p>{t.directing}</p>
+              <p>{story.isResuming
+                ? (language === 'zh' ? '正在恢复上次剧情…' : 'Resuming previous story…')
+                : t.directing}</p>
             </div>
           )}
 
