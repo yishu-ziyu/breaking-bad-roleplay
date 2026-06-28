@@ -39,9 +39,16 @@ export function usePersistedState<T>(
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const fullKey = PREFIX + key
   const [state, setState] = useState<T>(() => readFromStorage(fullKey, initialValue))
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    writeToStorage(fullKey, state)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      writeToStorage(fullKey, state)
+    }, 300)
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
   }, [fullKey, state])
 
   return [state, setState]
