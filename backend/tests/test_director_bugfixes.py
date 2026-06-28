@@ -886,3 +886,90 @@ class TestCycle16_MessagesEndpoint:
         result = await list_session_messages(session_id="s1", db=db)
 
         assert result == []
+
+
+# ===================================================================
+# Cycle 17: routes.py exception sanitization (M6-问题1)
+# ===================================================================
+
+class TestCycle17_ExceptionSanitization:
+    """Scenario: when director raises an exception, routes.py must NOT
+    leak the raw exception string (may contain API keys, DB connection
+    strings, internal file paths) to the client. Instead, return a
+    generic message and log the full traceback server-side."""
+
+    async def test_chat_endpoint_does_not_leak_raw_exception(self):
+        """Given director.handle_chat_message raises with a sensitive
+        message, the HTTPException detail is a generic string, NOT the
+        raw exception text."""
+        from api.routes import chat, ChatRequest
+        from fastapi import HTTPException
+
+        sensitive_msg = "API key sk-abc123 is invalid at /etc/secrets/config"
+        mock_director = MagicMock()
+        mock_director.handle_chat_message = AsyncMock(
+            side_effect=RuntimeError(sensitive_msg)
+        )
+
+        payload = ChatRequest(
+            characterId="walter",
+            userInput="hello",
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await chat(payload=payload, director=mock_director)
+
+        assert exc_info.value.status_code == 500
+        detail = exc_info.value.detail
+        assert detail == "Internal server error."
+        assert "sk-abc123" not in detail, (
+            f"Raw exception leaked into HTTPException detail: {detail}"
+        )
+        assert sensitive_msg not in detail
+
+    async def test_sse_stream_does_not_leak_raw_exception(self):
+        """Given director.process raises during SSE streaming, the error
+        event payload contains a generic message, NOT the raw exception."""
+        from api.routes import stream_session
+
+        sensitive_msg = "postgres://user:password@host:5432/db"
+
+        # Mock session exists
+        mock_session = MagicMock()
+        mock_session.id = "s1"
+        mock_session.task_prompt = "task"
+
+        # Mock db returns session on first execute
+        db = MagicMock()
+        db.execute = AsyncMock(
+            return_value=_ExecuteResult([mock_session])
+        )
+
+        # Mock director.process raises immediately
+        mock_director = MagicMock()
+
+        async def _raising_process(*args, **kwargs):
+            raise RuntimeError(sensitive_msg)
+            yield  # pragma: no cover - unreachable, makes it an async gen
+
+        mock_director.process = _raising_process
+
+        response = await stream_session(
+            session_id="s1", db=db, director=mock_director
+        )
+
+        # Consume the StreamingResponse body
+        chunks: list[bytes] = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk)
+
+        body = b"".join(chunks).decode("utf-8")
+        assert "sk-abc123" not in body, (
+            f"Raw exception leaked into SSE body: {body}"
+        )
+        assert sensitive_msg not in body, (
+            f"Sensitive connection string leaked into SSE body: {body}"
+        )
+        assert "Internal server error during stream." in body, (
+            f"Expected generic error message in SSE body, got: {body}"
+        )
