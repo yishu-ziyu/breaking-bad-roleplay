@@ -39,6 +39,12 @@ interface MessageOut {
 /* ----- localStorage key for session persistence (abq_ prefix) ----- */
 const SESSION_STORAGE_KEY = 'abq_story_session_id'
 
+/* ----- Maximum number of events retained in memory.
+ * Long streaming sessions can produce hundreds of events; capping the
+ * array bounds memory growth and keeps the rendered event feed cheap.
+ * Oldest events are dropped when the cap is exceeded. */
+const MAX_EVENTS = 200
+
 function readSavedSessionId(): string | null {
   if (typeof window === 'undefined') return null
   try {
@@ -133,7 +139,9 @@ export function useStoryStream(): UseStoryStreamReturn {
     setEvents((prev) => {
       const key = dedupKey(evt)
       if (prev.some((e) => dedupKey(e) === key)) return prev // skip duplicate
-      return [...prev, { ...evt, received_at: Date.now() }]
+      const next = [...prev, { ...evt, received_at: Date.now() }]
+      // Bound memory in long sessions: drop oldest events beyond MAX_EVENTS.
+      return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next
     })
   }, [])
 
