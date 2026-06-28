@@ -494,7 +494,7 @@ function App() {
     setError(null)
 
     // Update memory with user turn
-    const updatedAfterUser = charMemory.addTurn('user', userText, currentMemory)
+    const updatedAfterUser = charMemory.addTurn(selectedCharId, 'user', userText, currentMemory)
 
     try {
       const res = await fetch('/api/chat', {
@@ -553,7 +553,7 @@ function App() {
         updateMessages(current => [...current, reply])
 
         // Update memory with character reply
-        const finalMemory = charMemory.addTurn(selectedCharId, reply.text, updatedAfterUser)
+        const finalMemory = charMemory.addTurn(selectedCharId, selectedCharId, reply.text, updatedAfterUser)
         setMemoryByChar(prev => ({ ...prev, [selectedCharId]: finalMemory }))
 
         // Persist to Supabase if authenticated
