@@ -247,7 +247,12 @@ class DirectorAgent:
                                     )
                                 )
                                 target_raw = row.scalar_one_or_none()
-                            except Exception:
+                            except Exception as e:
+                                logger.error(
+                                    "Error fetching active_character_id for session %s: %s",
+                                    session_id,
+                                    e,
+                                )
                                 target_raw = None
                         # Map frontend short id -> backend full name (F3 fix).
                         if target_raw:
@@ -295,6 +300,7 @@ class DirectorAgent:
                 return self._extract_text_from_json_outline(raw)
             return raw
         except Exception:
+            logger.exception("Outline generation LLM call failed")
             return None
     @staticmethod
     def _extract_text_from_json_outline(raw: str) -> str:

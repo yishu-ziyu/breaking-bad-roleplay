@@ -26,67 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# World State Loader
-# ---------------------------------------------------------------------------
-
-async def load_world_state(db: AsyncSession, character_id: str) -> dict[str, Any]:
-    """
-    Load persistent world-state for a character:
-      - Character states with no session (global position / emotion)
-      - Dossiers this character holds about others (no session = world-level)
-
-    Returns a dict suitable for injection into a Director or character prompt.
-    """
-    # Global character states (session_id IS NULL)
-    stmt = select(CharacterState).where(
-        CharacterState.session_id.is_(None),
-        CharacterState.character_id == character_id,
-    )
-    result = await db.execute(stmt)
-    global_states = result.scalars().all()
-
-    # Dossiers owned by this character about others (world-level)
-    dossiers: dict[str, dict] = {}
-    for dossier in global_states:
-        if dossier.character_id:  # character_id field stores the subject
-            dossiers[dossier.character_id] = {
-                "current_emotion": dossier.current_emotion,
-                "location": dossier.location,
-                "status": dossier.status,
-            }
-
-    # Dossier relationship data (world-level: session_id IS NULL)
-    dossiers_stmt = select(CharacterDossier).where(
-        CharacterDossier.session_id.is_(None),
-        CharacterDossier.owner_id == character_id,
-    )
-    dossiers_result = await db.execute(dossiers_stmt)
-    dossiers_rows = dossiers_result.scalars().all()
-
-    for row in dossiers_rows:
-        try:
-            knowledge = json.loads(row.knowledge)
-        except (json.JSONDecodeError, TypeError):
-            knowledge = {}
-        dossiers[row.subject_id] = {
-            **dossiers.get(row.subject_id, {}),
-            "trust_level": row.trust_level,
-            "knowledge": knowledge,
-            "relationship_notes": row.relationship_notes,
-        }
-
-    return {
-        "character_id": character_id,
-        "global_states": {cs.character_id: {
-            "emotion": cs.current_emotion,
-            "location": cs.location,
-            "status": cs.status,
-        } for cs in global_states},
-        "dossiers": dossiers,
-    }
-
-
-# ---------------------------------------------------------------------------
 # Dossier Delta Computation
 # ---------------------------------------------------------------------------
 
