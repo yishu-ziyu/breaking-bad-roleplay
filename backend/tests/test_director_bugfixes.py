@@ -10,23 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.schemas import AgentEvent
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def mock_provider():
-    provider = MagicMock()
-    provider.call_model = AsyncMock()
-    provider.resolve_model_route = MagicMock(return_value="minimax/MiniMax-M3")
-    return provider
-
-
-@pytest.fixture
-def director(mock_provider):
-    from agents.director import DirectorAgent
-    return DirectorAgent(provider=mock_provider)
+# Fixtures mock_provider, director, and mock_db are defined in
+# conftest.py and auto-discovered by pytest — no import needed.
 
 
 # ===================================================================
@@ -298,16 +283,6 @@ class TestCycle4_PerspectiveSemantics:
     (mapped to backend full-name form) so the next beat's first agent_speak
     matches the target character."""
 
-    @pytest.fixture
-    def mock_db(self):
-        """Mock AsyncSession for db fallback tests. Added per drill BLOCKED 1:
-        test_director_bugfixes.py:17-28 only defines mock_provider/director,
-        no conftest.py exists, so mock_db must be defined here."""
-        from unittest.mock import MagicMock, AsyncMock
-        db = MagicMock()
-        db.execute = AsyncMock()
-        return db
-
     @staticmethod
     def _fake_beat_factory(record: list[dict]):
         async def _fake_beat(*args, **kwargs):
@@ -555,14 +530,6 @@ class TestCycle15_DossierRollback:
     partial dossier changes from being committed by get_db's post-yield
     commit."""
 
-    @pytest.fixture
-    def mock_db(self):
-        """Mock AsyncSession for dossier rollback tests."""
-        db = MagicMock()
-        db.execute = AsyncMock()
-        db.rollback = AsyncMock()
-        return db
-
     async def test_dossier_failure_triggers_db_rollback(self, director, mock_provider, mock_db):
         """Given update_dossiers raises during _generate_beat, db.rollback() is called."""
         # LLM returns a single agent_act event (no agent_speak → no second call_model)
@@ -608,15 +575,6 @@ class TestCycle16_MessagePersistence:
     persisted as Message rows so story history survives page refresh.
     Non-agent_speak events (act/think/scene_change) are not user-visible
     dialogue and must NOT be persisted."""
-
-    @pytest.fixture
-    def mock_db(self):
-        """Mock AsyncSession that records db.add calls."""
-        db = MagicMock()
-        db.execute = AsyncMock()
-        db.rollback = AsyncMock()
-        db.add = MagicMock()
-        return db
 
     @staticmethod
     def _beat_events_json(events: list[dict]) -> str:
