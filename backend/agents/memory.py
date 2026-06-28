@@ -56,16 +56,26 @@ Rules:
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    """Pull the first JSON object from a model response."""
+    """Pull the first JSON object from a model response.
+
+    Always returns a dict; returns {} if no valid JSON object can be
+    extracted (clear contract — callers need not catch exceptions).
+    """
     # Try fenced block first
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fenced:
-        return json.loads(fenced.group(1))
+        try:
+            return json.loads(fenced.group(1))
+        except (json.JSONDecodeError, TypeError):
+            return {}
     # Try raw object
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
-        return json.loads(text[start : end + 1])
+        try:
+            return json.loads(text[start : end + 1])
+        except (json.JSONDecodeError, TypeError):
+            return {}
     return {}
 
 

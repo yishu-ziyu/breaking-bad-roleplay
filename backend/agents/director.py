@@ -194,6 +194,7 @@ class DirectorAgent:
                 outline=outline_text,
                 beat_index=idx,
                 context={"previous_scene": previous_scene, "current_scene": current_scene},
+                scene_desc=scene_desc,
                 db=db,
                 session_id=session_id,
                 active_character_id=active_character_id,
@@ -374,6 +375,7 @@ class DirectorAgent:
         outline: str,
         beat_index: int,
         context: dict[str, str],
+        scene_desc: str | None = None,
         db: Any = None,
         session_id: str | None = None,
         active_character_id: str | None = None,
@@ -387,8 +389,14 @@ class DirectorAgent:
           4. Yield each event (with model_route attached)
           5. After all events, update dossiers if db is available
           6. Emit beat_ready
+
+        ``scene_desc`` is the pre-parsed scene description for this beat.
+        Callers that already hold the parsed outline (e.g. ``process()``)
+        should pass it to avoid re-parsing the outline per beat (O(n²) → O(n)).
+        Falls back to parsing ``outline`` only if not supplied.
         """
-        scene_desc = self._parse_outline(outline)[beat_index]
+        if scene_desc is None:
+            scene_desc = self._parse_outline(outline)[beat_index]
         current_scene = self._short_scene_name(scene_desc)
         previous_scene = context.get("previous_scene", "")
         characters_in_scene: list[str] = list(CHARACTER_AGENTS.keys())
