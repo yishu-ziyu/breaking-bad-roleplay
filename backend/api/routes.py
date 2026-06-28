@@ -216,8 +216,15 @@ async def stream_session(
         except asyncio.CancelledError:
             # Client disconnected — exit cleanly, no error event.
             return
-        except Exception as exc:
-            err = AgentEvent(type="error", data={"message": str(exc)})
+        except Exception:
+            # Sanitize: never leak raw exception (may contain API keys,
+            # internal paths, DB connection strings) to the client.
+            # Full traceback is preserved in server logs.
+            logger.exception("SSE stream failed for session %s", session.id)
+            err = AgentEvent(
+                type="error",
+                data={"message": "Internal server error during stream."},
+            )
             yield (
                 f"event: error\n"
                 f"data: {err.model_dump_json()}\n\n"
@@ -356,8 +363,11 @@ async def chat(
         return result
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception:
+        # Sanitize: never leak raw exception detail to the client.
+        # Full traceback is preserved in server logs.
+        logger.exception("Chat endpoint failed for character %s", payload.characterId)
         raise HTTPException(
             status_code=500,
-            detail=exc if isinstance(exc, str) else str(exc),
+            detail="Internal server error.",
         )
