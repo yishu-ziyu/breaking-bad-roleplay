@@ -931,3 +931,113 @@ class TestCycle17_ExceptionSanitization:
         assert "Internal server error during stream." in body, (
             f"Expected generic error message in SSE body, got: {body}"
         )
+
+
+# ===================================================================
+# Cycle 25: L5 — Messages survive dossier failure rollback
+# ===================================================================
+
+class TestCycle25_MessageSurvivesDossierFailure:
+    """Scenario: when update_dossiers raises during _generate_beat, the
+    agent_speak Messages that were already db.add'd and yielded via SSE
+    must survive — db.commit() is called BEFORE update_dossiers so the
+    dossier-failure rollback only undoes dossier changes, not the
+    already-committed Messages (L5)."""
+
+    async def test_commit_precedes_dossier_update_and_messages_survive_rollback(
+        self, director, mock_provider, mock_db
+    ):
+        """Given agent_speak events followed by an update_dossiers failure,
+        db.commit() is invoked BEFORE update_dossiers, db.rollback() is
+        invoked after the failure, and db.add was called with Message
+        instances for each agent_speak event."""
+        beat_events_json = json.dumps([
+            {
+                "type": "agent_speak",
+                "data": {
+                    "character_id": "Walter White",
+                    "content": "I am the one who knocks.",
+                    "emotion_state": "angry",
+                    "gif_search_query": "walter white angry determined",
+                },
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+            {
+                "type": "agent_speak",
+                "data": {
+                    "character_id": "Jesse Pinkman",
+                    "content": "Yeah, science!",
+                    "emotion_state": "calm",
+                    "gif_search_query": "jesse pinkman excited",
+                },
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+        ])
+        # First call_model → beat events JSON; subsequent calls → character
+        # sub-agent dialogue (one per agent_speak event).
+        mock_provider.call_model = AsyncMock(
+            side_effect=[
+                beat_events_json,
+                "I am the one who knocks.",
+                "Yeah, science!",
+            ]
+        )
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        # Capture commit count at the moment update_dossiers is invoked, then
+        # raise to simulate dossier failure.
+        commit_count_at_dossier_call: list[int] = []
+
+        async def _failing_update_dossiers(**kwargs):
+            commit_count_at_dossier_call.append(mock_db.commit.await_count)
+            raise RuntimeError("dossier db connection lost")
+
+        with patch(
+            "agents.director.update_dossiers",
+            new=_failing_update_dossiers,
+        ):
+            events: list[AgentEvent] = []
+            async for ev in director._generate_beat(
+                task="t",
+                outline="1. RV — cook",
+                beat_index=0,
+                context={"previous_scene": "", "current_scene": "RV"},
+                db=mock_db,
+                session_id="sess-cycle25",
+            ):
+                events.append(ev)
+
+        # Messages were added for each agent_speak event.
+        from db.models import Message
+
+        added_messages = [
+            call.args[0] for call in mock_db.add.call_args_list
+            if isinstance(call.args[0], Message)
+        ]
+        assert len(added_messages) == 2, (
+            f"Expected 2 Message rows (one per agent_speak), "
+            f"got {len(added_messages)}"
+        )
+
+        # db.commit() was called BEFORE update_dossiers (at least once at the
+        # moment update_dossiers was invoked).
+        assert len(commit_count_at_dossier_call) == 1
+        assert commit_count_at_dossier_call[0] >= 1, (
+            f"Expected db.commit() to be called before update_dossiers, "
+            f"but commit count at dossier call was "
+            f"{commit_count_at_dossier_call[0]}"
+        )
+
+        # db.rollback() was called after the dossier failure.
+        assert mock_db.rollback.await_count >= 1, (
+            f"Expected db.rollback() after dossier failure, "
+            f"got {mock_db.rollback.await_count} calls"
+        )
+
+        # The agent_speak events were still yielded to the SSE stream (the
+        # user saw the dialogue), and the Messages were committed before the
+        # rollback — so they survive the dossier failure.
+        speak_events = [e for e in events if e.type == "agent_speak"]
+        assert len(speak_events) == 2
