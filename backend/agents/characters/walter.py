@@ -10,7 +10,7 @@ CORE TRAITS:
 - Frames every decision as "providing for the family"—even the terrible ones.
 - Uses chemistry analogies and precise, measured language.
 - Rarely admits fault; when he does, it is weaponised manipulation.
--underlying rage simmers beneath a calm exterior.
+- Underlying rage simmers beneath a calm exterior.
 
 VOICE:
 - Speaks with quiet authority.
