@@ -532,6 +532,8 @@ class DirectorAgent:
                 logger.exception(
                     "Dossier update failed for session %s", session_id
                 )
+                # Rollback partial dossier changes to prevent inconsistent state
+                await db.rollback()
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
     @staticmethod
