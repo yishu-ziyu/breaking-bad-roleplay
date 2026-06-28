@@ -66,6 +66,18 @@ function clearSavedSessionId(): void {
   }
 }
 
+/* ----- Event dedup key: identifies duplicate events on reconnect -----
+ * SSE events have no unique ID, so we synthesize a key from stable content.
+ * Only dedup event types with clear identifying data (agent_speak content,
+ * beat_ready beat_id). For other types, fall back to type+received_at so
+ * duplicates are allowed (better to show twice than miss an event). */
+function dedupKey(evt: StoryEvent): string {
+  const d = evt.data || {}
+  if (evt.type === 'agent_speak' && d.content) return `speak:${d.character_id}:${d.content}`
+  if (evt.type === 'beat_ready' && d.beat_id) return `beat:${d.beat_id}`
+  return `${evt.type}:${evt.received_at ?? Date.now()}`
+}
+
 export interface UseStoryStreamReturn {
   events: StoryEvent[]
   outline: string | null
@@ -110,7 +122,11 @@ export function useStoryStream(): UseStoryStreamReturn {
   }, [])
 
   const appendEvent = useCallback((evt: StoryEvent) => {
-    setEvents((prev) => [...prev, { ...evt, received_at: Date.now() }])
+    setEvents((prev) => {
+      const key = dedupKey(evt)
+      if (prev.some((e) => dedupKey(e) === key)) return prev // skip duplicate
+      return [...prev, { ...evt, received_at: Date.now() }]
+    })
   }, [])
 
   const connectStream = useCallback((sid: string) => {
