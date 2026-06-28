@@ -85,14 +85,16 @@ export interface UseStoryStreamReturn {
   connectionState: StoryConnectionState
   currentBeatId: string | null
   beatIndex: number
-  error: string | null
+  isSendingByChar: Record<string, boolean>
+  errorByChar: Record<string, string | null>
   autoContinued: boolean
   isResuming: boolean
   startStory: (taskPrompt: string, characterId?: string) => Promise<void>
-  sendAction: (action: StoryAction, params?: StoryActionParams) => Promise<void>
+  sendAction: (action: StoryAction, params?: StoryActionParams, characterId?: string) => Promise<void>
   reconnect: () => void
   reset: () => void
   resumeSession: (sid: string) => Promise<void>
+  getCharState: (characterId: string) => { isSending: boolean; error: string | null }
 }
 
 export function useStoryStream(): UseStoryStreamReturn {
@@ -106,19 +108,25 @@ export function useStoryStream(): UseStoryStreamReturn {
   )
   const [currentBeatId, setCurrentBeatId] = useState<string | null>(null)
   const [beatIndex, setBeatIndex] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+  const [isSendingByChar, setIsSendingByChar] = useState<Record<string, boolean>>({})
+  const [errorByChar, setErrorByChar] = useState<Record<string, string | null>>({})
   const [autoContinued, setAutoContinued] = useState(false)
   const [isResuming, setIsResuming] = useState<boolean>(() => readSavedSessionId() !== null)
 
   const esRef = useRef<EventSource | null>(null)
   const sessionRef = useRef<string | null>(null)
   const hasAttemptedResumeRef = useRef(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const closeEventSource = useCallback(() => {
     if (esRef.current) {
       esRef.current.close()
       esRef.current = null
     }
+  }, [])
+
+  const setSessionError = useCallback((err: string | null) => {
+    setErrorByChar(prev => ({ ...prev, '__session__': err }))
   }, [])
 
   const appendEvent = useCallback((evt: StoryEvent) => {
@@ -191,10 +199,10 @@ export function useStoryStream(): UseStoryStreamReturn {
         // Server-sent `event: error` message — fatal backend error.
         try {
           const payload = JSON.parse(e.data)
-          setError(payload.data?.message ?? 'Unknown error')
+          setSessionError(payload.data?.message ?? 'Unknown error')
           appendEvent({ type: 'error', data: payload.data })
         } catch {
-          setError('Stream error')
+          setSessionError('Stream error')
         }
         setConnectionState('error')
         closeEventSource()
@@ -205,14 +213,14 @@ export function useStoryStream(): UseStoryStreamReturn {
       // readyState is CONNECTING. Only treat as fatal if the connection
       // was forcibly closed (readyState === CLOSED).
       if (es.readyState === EventSource.CLOSED) {
-        setError('SSE connection closed')
+        setSessionError('SSE connection closed')
         setConnectionState('error')
         closeEventSource()
       }
       // readyState === CONNECTING → transient disconnect, let EventSource
       // retry natively. No state change, no close.
     })
-  }, [appendEvent, closeEventSource])
+  }, [appendEvent, closeEventSource, setSessionError])
 
   const startStory = useCallback(async (taskPrompt: string, characterId = 'walter'): Promise<void> => {
     closeEventSource()
@@ -221,7 +229,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     setSessionId(null)
     setCurrentBeatId(null)
     setBeatIndex(0)
-    setError(null)
+    setSessionError(null)
     setAutoContinued(false)
     setConnectionState('connecting')
 
@@ -246,16 +254,16 @@ export function useStoryStream(): UseStoryStreamReturn {
       writeSavedSessionId(sid)
       connectStream(sid)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      setSessionError(e instanceof Error ? e.message : 'Unknown error')
       setConnectionState('error')
     }
-  }, [closeEventSource, connectStream])
+  }, [closeEventSource, connectStream, setSessionError])
 
   const resumeSession = useCallback(async (sid: string): Promise<void> => {
     setIsResuming(true)
     sessionRef.current = sid
     setConnectionState('connecting')
-    setError(null)
+    setSessionError(null)
 
     try {
       const res = await fetch(`/api/session/${sid}/messages`)
@@ -296,16 +304,23 @@ export function useStoryStream(): UseStoryStreamReturn {
       // Continue to resume streaming (which triggers the next beat).
       setConnectionState('beat_paused')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to resume session')
+      setSessionError(e instanceof Error ? e.message : 'Failed to resume session')
       setConnectionState('error')
     } finally {
       setIsResuming(false)
     }
-  }, [closeEventSource])
+  }, [closeEventSource, setSessionError])
 
-  const sendAction = useCallback(async (action: StoryAction, params?: StoryActionParams): Promise<void> => {
+  const sendAction = useCallback(async (action: StoryAction, params?: StoryActionParams, characterId?: string): Promise<void> => {
     const sid = sessionRef.current
     if (!sid) return
+
+    // M9: Abort any in-flight fetch from a previous sendAction before starting a new one.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     if (action === 'stop') {
       try {
@@ -313,9 +328,13 @@ export function useStoryStream(): UseStoryStreamReturn {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'stop' }),
+          signal: controller.signal,
         })
-      } catch {
-        // ignore — we close locally regardless
+      } catch (e) {
+        // ignore — we close locally regardless (abort or network error)
+        if (!(e instanceof Error && e.name === 'AbortError')) {
+          // non-abort error: still proceed with local cleanup
+        }
       }
       closeEventSource()
       setConnectionState('idle')
@@ -328,6 +347,9 @@ export function useStoryStream(): UseStoryStreamReturn {
       // User explicitly stopped — clear localStorage so we don't auto-resume
       // a stopped session on next page refresh (defeats the purpose of Stop).
       clearSavedSessionId()
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
       return
     }
 
@@ -343,41 +365,69 @@ export function useStoryStream(): UseStoryStreamReturn {
       setConnectionState('streaming')
     }
 
+    // M8: per-character isSending/error state
+    if (characterId) {
+      setIsSendingByChar(prev => ({ ...prev, [characterId]: true }))
+      setErrorByChar(prev => ({ ...prev, [characterId]: null }))
+    }
+
     try {
       const res = await fetch(`/api/session/${sid}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Action failed' }))
-        setError(err.detail || 'Action failed')
+        if (characterId) {
+          setErrorByChar(prev => ({ ...prev, [characterId]: err.detail || 'Action failed' }))
+        }
         // Roll back optimistic state so user can retry from beat_paused
         // (action !== 'stop' here — stop returned early above)
         setConnectionState('beat_paused')
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed')
-      setConnectionState('beat_paused')
+      if (e instanceof Error && e.name === 'AbortError') {
+        // Aborted by a newer sendAction or stop — don't set error, don't change connectionState.
+        // isSending is cleared in finally.
+      } else {
+        if (characterId) {
+          setErrorByChar(prev => ({ ...prev, [characterId]: e instanceof Error ? e.message : 'Action failed' }))
+        }
+        setConnectionState('beat_paused')
+      }
+    } finally {
+      if (characterId) {
+        setIsSendingByChar(prev => ({ ...prev, [characterId]: false }))
+      }
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
     }
   }, [closeEventSource])
 
   const reconnect = useCallback(() => {
     const sid = sessionRef.current
     if (!sid) return
-    setError(null)
+    setSessionError(null)
     setConnectionState('connecting')
     connectStream(sid)
-  }, [connectStream])
+  }, [connectStream, setSessionError])
 
   const reset = useCallback(() => {
     closeEventSource()
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
     setEvents([])
     setOutline(null)
     setSessionId(null)
     setCurrentBeatId(null)
     setBeatIndex(0)
-    setError(null)
+    setIsSendingByChar({})
+    setErrorByChar({})
     setAutoContinued(false)
     setConnectionState('idle')
     sessionRef.current = null
@@ -396,11 +446,21 @@ export function useStoryStream(): UseStoryStreamReturn {
     }
   }, [resumeSession])
 
+  // M9: abort in-flight fetch on unmount to prevent leaked requests and stale updates.
   useEffect(() => {
     return () => {
       closeEventSource()
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
     }
   }, [closeEventSource])
+
+  const getCharState = useCallback((characterId: string): { isSending: boolean; error: string | null } => ({
+    isSending: !!isSendingByChar[characterId],
+    error: errorByChar[characterId] ?? errorByChar['__session__'] ?? null,
+  }), [isSendingByChar, errorByChar])
 
   return {
     events,
@@ -409,7 +469,8 @@ export function useStoryStream(): UseStoryStreamReturn {
     connectionState,
     currentBeatId,
     beatIndex,
-    error,
+    isSendingByChar,
+    errorByChar,
     autoContinued,
     isResuming,
     startStory,
@@ -417,5 +478,6 @@ export function useStoryStream(): UseStoryStreamReturn {
     reconnect,
     reset,
     resumeSession,
+    getCharState,
   }
 }

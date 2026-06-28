@@ -746,7 +746,7 @@ function App() {
           {/* Error */}
           {story.connectionState === 'error' && (
             <div className="story-error">
-              <p>⚠ {story.error}</p>
+              <p>⚠ {story.getCharState(selectedCharId).error}</p>
               {story.sessionId && (
                 <button type="button" onClick={story.reconnect}>
                   {language === 'zh' ? '重连' : 'Reconnect'}
@@ -852,10 +852,10 @@ function App() {
                     t={t}
                     language={language}
                     characters={characters}
-                    onContinue={() => story.sendAction('continue')}
-                    onStop={() => story.sendAction('stop')}
-                    onRedirect={(prompt) => story.sendAction('redirect', { redirect_prompt: prompt })}
-                    onSwitchPerspective={(charId) => story.sendAction('switch_perspective', { target_character: charId })}
+                    onContinue={() => story.sendAction('continue', undefined, selectedCharId)}
+                    onStop={() => story.sendAction('stop', undefined, selectedCharId)}
+                    onRedirect={(prompt) => story.sendAction('redirect', { redirect_prompt: prompt }, selectedCharId)}
+                    onSwitchPerspective={(charId) => story.sendAction('switch_perspective', { target_character: charId }, selectedCharId)}
                   />
                 </div>
               )}
