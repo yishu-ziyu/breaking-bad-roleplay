@@ -576,7 +576,7 @@ function App() {
     } finally {
       setIsSending(false)
     }
-  }, [message, isSending, messages, selectedCharId, relation, mode, language, llmProvider, updateMessages])
+  }, [message, isSending, messages, selectedCharId, relation, mode, language, llmProvider, updateMessages, auth, currentMemory, charMemory, setMemoryByChar])
 
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {

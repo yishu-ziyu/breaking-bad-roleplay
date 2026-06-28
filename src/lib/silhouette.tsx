@@ -5,6 +5,7 @@
  * 用法：<Silhouette characterId="walter" name="Walter" size={42} />
  */
 
+import { useEffect, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 
 interface SilhouetteProps {
@@ -14,6 +15,20 @@ interface SilhouetteProps {
 }
 
 export function Silhouette({ characterId, name, size = 42 }: SilhouetteProps) {
+  const [showFallback, setShowFallback] = useState(false)
+
+  useEffect(() => {
+    setShowFallback(false)
+  }, [characterId])
+
+  if (showFallback) {
+    return (
+      <span className="silhouette-fallback" style={{ width: size, height: size }}>
+        {name.slice(0, 1)}
+      </span>
+    )
+  }
+
   return (
     <img
       src={`/avatars/${characterId}.svg`}
@@ -21,16 +36,8 @@ export function Silhouette({ characterId, name, size = 42 }: SilhouetteProps) {
       className="silhouette-avatar"
       width={size}
       height={size}
-      onError={(event) => {
-        // 兜底：剪影加载失败时显示首字母
-        const img = event.currentTarget
-        const parent = img.parentElement
-        if (!parent) return
-        img.style.display = 'none'
-        const fallback = document.createElement('span')
-        fallback.className = 'silhouette-fallback'
-        fallback.textContent = name.slice(0, 1)
-        parent.appendChild(fallback)
+      onError={() => {
+        setShowFallback(true)
       }}
     />
   )

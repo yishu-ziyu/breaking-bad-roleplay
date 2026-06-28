@@ -12,9 +12,9 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   console.warn('[supabase] VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY not set')
 }
 
-export function createClient() {
+export function createClient(): ReturnType<typeof createBrowserClient> | null {
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    return null as unknown as ReturnType<typeof createBrowserClient>
+    return null
   }
   return createBrowserClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
 }
