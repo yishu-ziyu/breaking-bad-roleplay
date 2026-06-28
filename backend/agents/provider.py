@@ -72,11 +72,19 @@ class ProviderFacade:
         )
         resp.raise_for_status()
         data = resp.json()
+        if "error" in data:
+            error_msg = data["error"].get("message", str(data["error"]))
+            raise RuntimeError(f"MiniMax API error: {error_msg}")
         # Anthropic-compatible response: content is a list of blocks
         content_blocks = data.get("content", [])
-        return "".join(
+        if not content_blocks:
+            raise RuntimeError(f"MiniMax API returned no content blocks: {data}")
+        content = "".join(
             block.get("text", "") for block in content_blocks if block.get("type") == "text"
         )
+        if not content:
+            raise RuntimeError(f"MiniMax API returned empty content: {data}")
+        return content
 
     async def _call_stepfun(self, messages: list[dict], model: str) -> str:
         resp = await self._client.post(
@@ -93,7 +101,16 @@ class ProviderFacade:
         resp.raise_for_status()
         data = resp.json()
         # OpenAI-compatible response
-        return data["choices"][0]["message"]["content"]
+        if "error" in data:
+            error_msg = data["error"].get("message", str(data["error"]))
+            raise RuntimeError(f"StepFun API error: {error_msg}")
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"StepFun API returned no choices: {data}")
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            raise RuntimeError(f"StepFun API returned empty content: {data}")
+        return content
 
     async def close(self) -> None:
         await self._client.aclose()
