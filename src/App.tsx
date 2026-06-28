@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
@@ -455,6 +455,7 @@ function App() {
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
   const [prevSceneUrl, setPrevSceneUrl] = useState<string | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
@@ -469,6 +470,10 @@ function App() {
     const id = setTimeout(() => setSceneReady(true), 50)
     return () => clearTimeout(id)
   }, [currentSceneUrl])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages.length])
 
   const userTurnCount = messages.filter(m => m.sender === 'user').length
   const showSavePrompt = !auth.user && userTurnCount >= 3
@@ -642,8 +647,8 @@ function App() {
         <section>
           <span className="field-label">{t.language}</span>
           <div className="seg-control">
-            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>EN</button>
-            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')}>中文</button>
+            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>EN</button>
+            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>中文</button>
           </div>
         </section>
 
