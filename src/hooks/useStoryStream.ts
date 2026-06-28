@@ -169,9 +169,10 @@ export function useStoryStream(): UseStoryStreamReturn {
     })
 
     es.addEventListener('error', (e: MessageEvent) => {
-      // Distinguish SSE connection error vs backend error event
-      // Backend error events have data; connection errors don't
+      // Distinguish SSE connection error vs backend error event.
+      // Backend error events have data; transport-layer errors don't.
       if (e.data) {
+        // Server-sent `event: error` message — fatal backend error.
         try {
           const payload = JSON.parse(e.data)
           setError(payload.data?.message ?? 'Unknown error')
@@ -179,11 +180,21 @@ export function useStoryStream(): UseStoryStreamReturn {
         } catch {
           setError('Stream error')
         }
-      } else {
-        setError('SSE connection lost')
+        setConnectionState('error')
+        closeEventSource()
+        return
       }
-      setConnectionState('error')
-      closeEventSource()
+      // Transport-layer error (no e.data) — may be transient.
+      // Do NOT unconditionally close: EventSource auto-reconnects when
+      // readyState is CONNECTING. Only treat as fatal if the connection
+      // was forcibly closed (readyState === CLOSED).
+      if (es.readyState === EventSource.CLOSED) {
+        setError('SSE connection closed')
+        setConnectionState('error')
+        closeEventSource()
+      }
+      // readyState === CONNECTING → transient disconnect, let EventSource
+      // retry natively. No state change, no close.
     })
   }, [appendEvent, closeEventSource])
 
@@ -262,15 +273,19 @@ export function useStoryStream(): UseStoryStreamReturn {
       }))
       setEvents(restoredEvents)
       setSessionId(sid)
-      setConnectionState('streaming')
-      connectStream(sid)
+      // The /messages endpoint only returns persisted messages; we don't
+      // know the true server-side session state. Default to 'beat_paused'
+      // so the UI shows the Continue/Stop controls and lets the user
+      // decide. Do NOT auto-connect the SSE stream — the user clicks
+      // Continue to resume streaming (which triggers the next beat).
+      setConnectionState('beat_paused')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to resume session')
       setConnectionState('error')
     } finally {
       setIsResuming(false)
     }
-  }, [closeEventSource, connectStream])
+  }, [closeEventSource])
 
   const sendAction = useCallback(async (action: StoryAction, params?: StoryActionParams): Promise<void> => {
     const sid = sessionRef.current
