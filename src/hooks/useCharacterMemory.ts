@@ -18,9 +18,9 @@ export interface CharacterMemory {
 }
 
 export interface UseCharacterMemoryReturn {
-  addTurn: (sender: string, text: string, existingMemory: CharacterMemory) => CharacterMemory
-  reset: () => CharacterMemory
-  getTurnCount: () => number
+  addTurn: (characterId: string, sender: string, text: string, existingMemory: CharacterMemory) => CharacterMemory
+  reset: (characterId?: string) => CharacterMemory
+  getTurnCount: (characterId?: string) => number
 }
 
 const WINDOW_SIZE = 8
@@ -36,11 +36,12 @@ const FACT_PATTERNS: Array<{ pattern: RegExp; category: KeyFact['category'] }> =
 ]
 
 export function useCharacterMemory(): UseCharacterMemoryReturn {
-  const turnCountRef = useRef(0)
+  const turnCountsRef = useRef<Record<string, number>>({})
 
-  const addTurn = useCallback((sender: string, text: string, existingMemory: CharacterMemory): CharacterMemory => {
-    turnCountRef.current += 1
-    const turnNumber = turnCountRef.current
+  const addTurn = useCallback((characterId: string, sender: string, text: string, existingMemory: CharacterMemory): CharacterMemory => {
+    const currentCount = turnCountsRef.current[characterId] ?? 0
+    const turnNumber = currentCount + 1
+    turnCountsRef.current[characterId] = turnNumber
 
     // Extract key facts from this turn
     const newFacts: KeyFact[] = []
@@ -82,12 +83,19 @@ export function useCharacterMemory(): UseCharacterMemoryReturn {
     return { summary, keyFacts }
   }, [])
 
-  const reset = useCallback((): CharacterMemory => {
-    turnCountRef.current = 0
+  const reset = useCallback((characterId?: string): CharacterMemory => {
+    if (characterId) {
+      delete turnCountsRef.current[characterId]
+    } else {
+      turnCountsRef.current = {}
+    }
     return { summary: '', keyFacts: [] }
   }, [])
 
-  const getTurnCount = useCallback(() => turnCountRef.current, [])
+  const getTurnCount = useCallback((characterId?: string) => {
+    if (characterId) return turnCountsRef.current[characterId] ?? 0
+    return 0
+  }, [])
 
   return { addTurn, reset, getTurnCount }
 }
