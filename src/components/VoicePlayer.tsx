@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react'
+import { createElement, useEffect, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 import { createPlayHandler, handleVoiceToggle, type PlayState, type SpeechSynthLike } from '../lib/voicePlayerHelpers'
 
@@ -18,6 +18,15 @@ function getSpeechSynthesis(): SpeechSynthLike | undefined {
 export function VoicePlayer({ text, characterId, language, label }: VoicePlayerProps) {
   const [state, setState] = useState<PlayState>('idle')
   const synth = getSpeechSynthesis()
+
+  // Cancel any in-progress speech when the component unmounts.
+  // Placed before the early return so the hook always runs (Rules of Hooks).
+  // Prevents setState-on-unmounted warnings and stops audio continuing.
+  useEffect(() => {
+    return () => {
+      synth?.cancel?.()
+    }
+  }, [synth])
 
   if (!synth) {
     return createElement(
