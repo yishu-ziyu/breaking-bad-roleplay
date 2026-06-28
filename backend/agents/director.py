@@ -494,21 +494,36 @@ class DirectorAgent:
             evt_type = evt.get("type", "")
             evt_data = evt.get("data", {})
             if evt_type == "agent_speak":
-                # Call the actual character agent for authentic dialogue
+                # Call the actual character agent for authentic dialogue.
+                # Cycle 37 (Additional #2): use respond_structured so the
+                # sub-agent returns emotion_state and gif_search_query
+                # alongside the rewritten content from the SAME LLM call
+                # (no extra token cost). This keeps the three fields in
+                # sync — the UI shows emotion and GIF that match the final
+                # displayed text, not the Director's original draft. If
+                # the sub-agent response lacks structured metadata (plain
+                # text fallback), keep the Director-provided values.
                 character_id = evt_data.get("character_id", "")
                 character_cls = CHARACTER_AGENTS.get(character_id)
                 if character_cls is not None:
                     character_agent = character_cls(self.provider)
                     try:
-                        # Build context from recent events in this beat
-                        ctx_messages = [
-                            {"role": "system", "content": character_agent.system_prompt()},
-                            {"role": "user", "content": f"Scene: {scene_desc}\nContext: {task}\nRespond in character."},
-                        ]
-                        real_reply = await self.provider.call_model(
-                            ctx_messages, beat_model_route
+                        sub_result = await character_agent.respond_structured(
+                            context=[],
+                            user_message=(
+                                f"Scene: {scene_desc}\nContext: {task}\n"
+                                f"Respond in character."
+                            ),
+                            model_route=beat_model_route,
                         )
-                        evt_data = {**evt_data, "content": real_reply}
+                        evt_data = {
+                            **evt_data,
+                            "content": sub_result["reply_text"],
+                            "emotion_state": sub_result["emotion_state"]
+                            or evt_data.get("emotion_state"),
+                            "gif_search_query": sub_result["gif_search_query"]
+                            or evt_data.get("gif_search_query"),
+                        }
                     except Exception:
                         logger.warning(
                             "Character sub-agent call failed for %s, using LLM dialogue fallback",
