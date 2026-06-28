@@ -309,7 +309,9 @@ export function useStoryStream(): UseStoryStreamReturn {
       sessionRef.current = null
       setBeatIndex(0)
       setCurrentBeatId(null)
-      // NOTE: deliberately do NOT clear localStorage — user may want to resume.
+      // User explicitly stopped — clear localStorage so we don't auto-resume
+      // a stopped session on next page refresh (defeats the purpose of Stop).
+      clearSavedSessionId()
       return
     }
 
