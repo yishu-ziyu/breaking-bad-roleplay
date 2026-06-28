@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,15 @@ from config import settings
 from api.routes import router as api_router
 from db.models import Base  # noqa: F401 — registers models with Base.metadata
 from db.session import engine
+
+# Configure logging before any application module uses a logger.
+# Without this, Python's lastResort handler emits bare WARNING+ messages
+# to stderr with no timestamp, module name, or level control.
+logging.basicConfig(
+    level=settings.log_level.upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 @asynccontextmanager
