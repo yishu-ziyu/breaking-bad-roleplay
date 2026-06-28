@@ -390,49 +390,66 @@ function App() {
   // Cloud sync: persist to Supabase when authenticated
   const [syncStatus, setSyncStatus] = useState<string | null>(null)
 
+  /* ---- Unified init: cloud sync (merge) + first-visit opener ----
+     M2: Cloud sync MERGES cloud messages with local (dedup by sender+text)
+     instead of replacing, so unsaved local messages (opener, guest-mode chat)
+     are no longer lost.
+     M3: Opener insertion is unified with cloud sync into a single effect,
+     eliminating the race where one effect would overwrite the other. Flow:
+     fetch cloud → merge with local → if merged is empty, insert opener. */
   useEffect(() => {
-    if (!auth.user) {
-      setSyncStatus(null)
-      return
-    }
-    // Load cloud messages + memory on login
+    const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
+    const openerGif = resolveGifUrl(selectedCharId, 'opening pressure', null)
+
     ;(async () => {
-      try {
-        const [msgs, mem] = await Promise.all([
-          loadChatMessages(auth.user!.id, selectedCharId),
-          loadCharacterMemory(auth.user!.id, selectedCharId),
-        ])
-        if (msgs.length > 0) {
-          setMessagesByChar(prev => ({ ...prev, [selectedCharId]: msgs as ChatMessage[] }))
+      let cloudMsgs: ChatMessage[] = []
+      let cloudMem: CharacterMemory | null = null
+
+      if (auth.user) {
+        try {
+          const [msgs, mem] = await Promise.all([
+            loadChatMessages(auth.user.id, selectedCharId),
+            loadCharacterMemory(auth.user.id, selectedCharId),
+          ])
+          cloudMsgs = msgs as ChatMessage[]
+          cloudMem = mem as unknown as CharacterMemory
+          setSyncStatus('synced')
+        } catch {
+          setSyncStatus('sync-failed')
         }
-        if (mem) {
-          setMemoryByChar(prev => ({ ...prev, [selectedCharId]: mem as unknown as CharacterMemory }))
+      } else {
+        setSyncStatus(null)
+      }
+
+      setMessagesByChar(prev => {
+        const local = prev[selectedCharId] ?? []
+        const cloudKeys = new Set(cloudMsgs.map(m => JSON.stringify({ sender: m.sender, text: m.text })))
+        const localOnly = local.filter(m => !cloudKeys.has(JSON.stringify({ sender: m.sender, text: m.text })))
+        const merged = [...localOnly, ...cloudMsgs]
+
+        if (merged.length === 0) {
+          return {
+            ...prev,
+            [selectedCharId]: [{
+              id: `opener-${selectedCharId}`,
+              sender: selectedCharId,
+              text: opener,
+              emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
+              gifQuery: null,
+              gifUrl: openerGif,
+            }],
+          }
         }
-        setSyncStatus('synced')
-      } catch (e) {
-        setSyncStatus('sync-failed')
+
+        if (merged.length === local.length) return prev
+        return { ...prev, [selectedCharId]: merged }
+      })
+
+      if (cloudMem) {
+        setMemoryByChar(prev => ({ ...prev, [selectedCharId]: cloudMem }))
       }
     })()
-  }, [auth.user, selectedCharId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* ---- First-visit opener ---- */
-  useEffect(() => {
-    if (!messagesByChar[selectedCharId]) {
-      const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
-      const openerGif = resolveGifUrl(selectedCharId, 'opening pressure', null)
-      setMessagesByChar(prev => ({
-        ...prev,
-        [selectedCharId]: [{
-          id: `opener-${selectedCharId}`,
-          sender: selectedCharId,
-          text: opener,
-          emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
-          gifQuery: null,
-          gifUrl: openerGif,
-        }],
-      }))
-    }
-  }, [selectedCharId, language]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.user, selectedCharId, language, relation]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Scene background cross-fade (chat view) ---- */
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
