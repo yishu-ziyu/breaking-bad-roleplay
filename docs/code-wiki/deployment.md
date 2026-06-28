@@ -11,7 +11,6 @@
 | `MINIMAX_API_KEY` | MiniMax API key |
 | `STEPFUN_API_KEY` | StepFun API key |
 | `DATABASE_URL` | PostgreSQL 异步连接串，例如 `postgresql+asyncpg://user:pass@host/db` |
-| `SECRET_KEY` | 加密/Session 密钥 |
 | `APP_ENV` | `development`（默认）或 `production` |
 | `ALLOWED_ORIGINS` | CORS 来源，逗号分隔；`*` 表示允许所有（仅开发） |
 
@@ -120,7 +119,7 @@ healthcheckPath = "/api/health"
 
 - 免费 PostgreSQL 数据库：`abq-roleplay-db`
 - Web 服务：Docker 构建，从数据库读取 `DATABASE_URL`
-- 环境变量：MINIMAX_API_KEY、STEPFUN_API_KEY、SECRET_KEY、APP_ENV、ALLOWED_ORIGINS
+- 环境变量：MINIMAX_API_KEY、STEPFUN_API_KEY、APP_ENV、ALLOWED_ORIGINS
 
 ### 3.5 Vercel
 
