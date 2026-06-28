@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.schemas import AgentEvent
 
@@ -546,3 +546,53 @@ class TestCycle11_ErrorSanitization:
             f"Internal path leaked to client: {msg}"
         )
         assert "Beat 3" in msg, "Beat index should be in the generic message"
+
+
+class TestCycle15_DossierRollback:
+    """Scenario: when update_dossiers raises an exception during
+    _generate_beat, the db session must be rolled back to prevent
+    partial dossier changes from being committed by get_db's post-yield
+    commit."""
+
+    @pytest.fixture
+    def mock_db(self):
+        """Mock AsyncSession for dossier rollback tests."""
+        db = MagicMock()
+        db.execute = AsyncMock()
+        db.rollback = AsyncMock()
+        return db
+
+    async def test_dossier_failure_triggers_db_rollback(self, director, mock_provider, mock_db):
+        """Given update_dossiers raises during _generate_beat, db.rollback() is called."""
+        # LLM returns a single agent_act event (no agent_speak → no second call_model)
+        beat_events_json = json.dumps([
+            {
+                "type": "agent_act",
+                "data": {"character_id": "Walter White", "action": "cooks meth"},
+                "recommended_model": "stepfun/step-3.7-flash",
+            }
+        ])
+        mock_provider.call_model = AsyncMock(return_value=beat_events_json)
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        with patch(
+            "agents.director.update_dossiers",
+            new=AsyncMock(side_effect=RuntimeError("db connection lost")),
+        ):
+            events: list[AgentEvent] = []
+            async for ev in director._generate_beat(
+                task="t",
+                outline="1. RV — cook",
+                beat_index=0,
+                context={"previous_scene": "", "current_scene": "RV"},
+                db=mock_db,
+                session_id="s1",
+            ):
+                events.append(ev)
+
+        assert mock_db.rollback.await_count >= 1, (
+            f"Expected db.rollback to be called after dossier failure, "
+            f"but it was called {mock_db.rollback.await_count} times"
+        )
