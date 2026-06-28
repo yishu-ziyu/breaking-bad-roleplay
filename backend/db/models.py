@@ -21,7 +21,6 @@ class Session(Base):
     )
     title: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="active")
-    current_mode: Mapped[str] = mapped_column(String(20), default="global")
     active_character_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     task_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     plot_outline: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

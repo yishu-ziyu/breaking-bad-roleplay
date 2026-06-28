@@ -89,25 +89,6 @@ class BaseCharacter(ABC):
     def system_prompt(self) -> str:
         """Return the character's system prompt."""
 
-    @abstractmethod
-    async def respond(
-        self,
-        context: Sequence[dict],
-        user_message: str,
-        model_route: str = "stepfun/step-3.7-flash",
-    ) -> str:
-        """
-        Generate an in-character reply.
-
-        Args:
-            context: Ordered list of prior messages (role + content).
-            user_message: The latest user utterance the character reacts to.
-            model_route: Provider/model selector passed to ProviderFacade.
-
-        Returns:
-            The character's reply text.
-        """
-
     async def respond_structured(
         self,
         context: Sequence[dict],
