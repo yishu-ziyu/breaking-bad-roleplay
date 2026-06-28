@@ -488,7 +488,7 @@ function App() {
       text: userText,
     }
     const nextHistory = [...messages, userMsg]
-    updateMessages(() => nextHistory)
+    updateMessages(prev => [...prev, userMsg])
     setMessage('')
     setIsSending(true)
     setError(null)
