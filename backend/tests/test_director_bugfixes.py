@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pytest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.schemas import AgentEvent
@@ -596,3 +597,292 @@ class TestCycle15_DossierRollback:
             f"Expected db.rollback to be called after dossier failure, "
             f"but it was called {mock_db.rollback.await_count} times"
         )
+
+
+# ===================================================================
+# Cycle 16: C2 — Message persistence for agent_speak events
+# ===================================================================
+
+class TestCycle16_MessagePersistence:
+    """Scenario: agent_speak events emitted during _generate_beat must be
+    persisted as Message rows so story history survives page refresh.
+    Non-agent_speak events (act/think/scene_change) are not user-visible
+    dialogue and must NOT be persisted."""
+
+    @pytest.fixture
+    def mock_db(self):
+        """Mock AsyncSession that records db.add calls."""
+        db = MagicMock()
+        db.execute = AsyncMock()
+        db.rollback = AsyncMock()
+        db.add = MagicMock()
+        return db
+
+    @staticmethod
+    def _beat_events_json(events: list[dict]) -> str:
+        return json.dumps(events)
+
+    async def test_agent_speak_creates_message_row(
+        self, director, mock_provider, mock_db
+    ):
+        """Given an agent_speak event, db.add is called with a Message
+        instance carrying the dialogue content, character name, emotion,
+        gif query, and beat_id."""
+        beat_events_json = self._beat_events_json([
+            {
+                "type": "agent_speak",
+                "data": {
+                    "character_id": "Walter White",
+                    "content": "I am the one who knocks.",
+                    "emotion_state": "angry",
+                    "gif_search_query": "walter white angry determined",
+                },
+                "recommended_model": "stepfun/step-3.7-flash",
+            }
+        ])
+        mock_provider.call_model = AsyncMock(
+            side_effect=[beat_events_json, "I am the one who knocks."]
+        )
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        with patch(
+            "agents.director.update_dossiers",
+            new=AsyncMock(return_value=None),
+        ):
+            async for _ in director._generate_beat(
+                task="t",
+                outline="1. RV — cook",
+                beat_index=0,
+                context={"previous_scene": "", "current_scene": "RV"},
+                db=mock_db,
+                session_id="sess-123",
+            ):
+                pass
+
+        # Message was added
+        assert mock_db.add.call_count >= 1, (
+            f"Expected db.add to be called for agent_speak event, "
+            f"but it was called {mock_db.add.call_count} times"
+        )
+        # Inspect the added Message instance
+        from db.models import Message
+
+        added_messages = [
+            call.args[0] for call in mock_db.add.call_args_list
+            if isinstance(call.args[0], Message)
+        ]
+        assert len(added_messages) == 1, (
+            f"Expected exactly 1 Message added, got {len(added_messages)}"
+        )
+        msg = added_messages[0]
+        assert msg.session_id == "sess-123"
+        assert msg.role == "assistant"
+        assert msg.content == "I am the one who knocks."
+        assert msg.character_name == "Walter White"
+        assert msg.emotion_state == "angry"
+        assert msg.gif_search_query == "walter white angry determined"
+        assert msg.beat_id == "beat_1"
+
+    async def test_non_speak_events_do_not_create_message(
+        self, director, mock_provider, mock_db
+    ):
+        """Given only agent_act / agent_think / scene_change events, db.add
+        is NOT called with a Message instance."""
+        beat_events_json = self._beat_events_json([
+            {
+                "type": "scene_change",
+                "data": {"from_scene": "A", "to_scene": "B", "description": "x"},
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+            {
+                "type": "agent_act",
+                "data": {"character_id": "Walter White", "action": "cooks"},
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+            {
+                "type": "agent_think",
+                "data": {"character_id": "Walter White", "thought_content": "hmm"},
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+        ])
+        mock_provider.call_model = AsyncMock(return_value=beat_events_json)
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        with patch(
+            "agents.director.update_dossiers",
+            new=AsyncMock(return_value=None),
+        ):
+            async for _ in director._generate_beat(
+                task="t",
+                outline="1. RV — cook",
+                beat_index=0,
+                context={"previous_scene": "", "current_scene": "RV"},
+                db=mock_db,
+                session_id="sess-456",
+            ):
+                pass
+
+        from db.models import Message
+
+        added_messages = [
+            call.args[0] for call in mock_db.add.call_args_list
+            if isinstance(call.args[0], Message)
+        ]
+        assert added_messages == [], (
+            f"Expected no Message rows for non-speak events, got {added_messages}"
+        )
+
+    async def test_no_persistence_when_db_is_none(self, director, mock_provider):
+        """Given db=None, _generate_beat does not crash and does not
+        attempt to write any Message rows."""
+        beat_events_json = self._beat_events_json([
+            {
+                "type": "agent_speak",
+                "data": {
+                    "character_id": "Jesse Pinkman",
+                    "content": "Yeah, science!",
+                    "emotion_state": "calm",
+                    "gif_search_query": "jesse pinkman excited",
+                },
+                "recommended_model": "stepfun/step-3.7-flash",
+            }
+        ])
+        mock_provider.call_model = AsyncMock(
+            side_effect=[beat_events_json, "Yeah, science!"]
+        )
+        mock_provider.resolve_model_route = MagicMock(
+            return_value="stepfun/step-3.7-flash"
+        )
+
+        # Must not raise
+        with patch(
+            "agents.director.update_dossiers",
+            new=AsyncMock(return_value=None),
+        ):
+            events: list[AgentEvent] = []
+            async for ev in director._generate_beat(
+                task="t",
+                outline="1. RV — cook",
+                beat_index=0,
+                context={"previous_scene": "", "current_scene": "RV"},
+                db=None,
+                session_id=None,
+            ):
+                events.append(ev)
+
+        # The agent_speak event was still emitted to the stream
+        speak_events = [e for e in events if e.type == "agent_speak"]
+        assert len(speak_events) == 1
+        assert speak_events[0].data["content"] == "Yeah, science!"
+
+
+# ===================================================================
+# Cycle 16: C2 — GET /session/{id}/messages endpoint
+# ===================================================================
+
+class _Scalars:
+    """Stub for SQLAlchemy Result.scalars() chain."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _ExecuteResult:
+    """Stub for SQLAlchemy Result."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalar_one_or_none(self):
+        return self._rows[0] if self._rows else None
+
+    def scalars(self):
+        return _Scalars(self._rows)
+
+
+class TestCycle16_MessagesEndpoint:
+    """Scenario: GET /session/{session_id}/messages returns persisted
+    dialogue history, ordered oldest-first. Unknown session → 404."""
+
+    @staticmethod
+    def _make_db(session_exists: bool, message_rows: list | None = None):
+        """Build a mock AsyncSession that returns session_exists for the
+        first execute() call and message_rows for the second."""
+        db = MagicMock()
+        session_row = [MagicMock(id="s1")] if session_exists else []
+        message_rows = message_rows or []
+        db.execute = AsyncMock(
+            side_effect=[
+                _ExecuteResult(session_row),
+                _ExecuteResult(message_rows),
+            ]
+        )
+        return db
+
+    async def test_list_messages_returns_rows_oldest_first(self):
+        """Given a session with 2 messages, the endpoint returns them
+        in the order they were returned by the query (oldest-first)."""
+        from api.routes import list_session_messages
+
+        msg1 = MagicMock(
+            id="m1",
+            session_id="s1",
+            role="assistant",
+            content="Hello.",
+            character_name="Walter White",
+            emotion_state="calm",
+            gif_search_query="walter calm",
+            beat_id="beat_1",
+            created_at=datetime(2026, 1, 1, 12, 0, 0),
+        )
+        msg2 = MagicMock(
+            id="m2",
+            session_id="s1",
+            role="assistant",
+            content="Goodbye.",
+            character_name="Jesse Pinkman",
+            emotion_state="resigned",
+            gif_search_query="jesse sad",
+            beat_id="beat_1",
+            created_at=datetime(2026, 1, 1, 12, 0, 5),
+        )
+        db = self._make_db(session_exists=True, message_rows=[msg1, msg2])
+
+        result = await list_session_messages(session_id="s1", db=db)
+
+        assert len(result) == 2
+        assert result[0].id == "m1"
+        assert result[1].id == "m2"
+        assert result[0].content == "Hello."
+        assert result[1].character_name == "Jesse Pinkman"
+
+    async def test_list_messages_404_for_unknown_session(self):
+        """Given an unknown session_id, the endpoint raises HTTPException
+        with status 404."""
+        from api.routes import list_session_messages
+        from fastapi import HTTPException
+
+        db = self._make_db(session_exists=False)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await list_session_messages(session_id="unknown", db=db)
+
+        assert exc_info.value.status_code == 404
+        assert "Session not found" in exc_info.value.detail
+
+    async def test_list_messages_empty_for_session_without_messages(self):
+        """Given a session with no messages, the endpoint returns []."""
+        from api.routes import list_session_messages
+
+        db = self._make_db(session_exists=True, message_rows=[])
+
+        result = await list_session_messages(session_id="s1", db=db)
+
+        assert result == []
