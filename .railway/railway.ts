@@ -13,7 +13,6 @@ export default defineRailway(() => {
       APP_ENV: preserve(),
       DATABASE_URL: preserve(),
       MINIMAX_API_KEY: preserve(),
-      SECRET_KEY: preserve(),
       STEPFUN_API_KEY: preserve(),
     },
   });

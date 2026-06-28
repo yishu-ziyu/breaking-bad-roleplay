@@ -165,10 +165,10 @@ else
     cd "$BACKEND_DIR"
     if command -v uv >/dev/null 2>&1; then
         uv pip install -e . --system >/dev/null 2>&1 || \
-        uv pip install fastapi uvicorn sqlalchemy[asyncio] asyncpg httpx pydantic-settings python-dotenv deepagents --system >/dev/null 2>&1 || true
+        uv pip install fastapi uvicorn sqlalchemy[asyncio] asyncpg httpx pydantic-settings python-dotenv --system >/dev/null 2>&1 || true
     else
         pip3 install -e . >/dev/null 2>&1 || \
-        pip3 install fastapi uvicorn sqlalchemy[asyncio] asyncpg httpx pydantic-settings python-dotenv deepagents >/dev/null 2>&1 || true
+        pip3 install fastapi uvicorn sqlalchemy[asyncio] asyncpg httpx pydantic-settings python-dotenv >/dev/null 2>&1 || true
     fi
     if python3 -c "import fastapi, uvicorn" >/dev/null 2>&1; then
         DEPS_OK=1
