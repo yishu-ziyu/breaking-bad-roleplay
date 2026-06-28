@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 export interface GifCardProps {
@@ -7,17 +8,20 @@ export interface GifCardProps {
 }
 
 export function GifCard({ src, alt, caption }: GifCardProps) {
+  const [hidden, setHidden] = useState(false)
+
+  useEffect(() => {
+    setHidden(false)
+  }, [src])
+
   if (!src) return null
   return (
-    <figure className="gif-card">
+    <figure className="gif-card" hidden={hidden}>
       <img
         src={src}
         alt={alt || ''}
-        onError={e => {
-          const figure = e.currentTarget.closest('figure')
-          if (figure) {
-            figure.setAttribute('hidden', 'true')
-          }
+        onError={() => {
+          setHidden(true)
         }}
       />
       {caption && <figcaption>{caption}</figcaption>}
