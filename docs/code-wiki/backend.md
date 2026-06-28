@@ -143,7 +143,6 @@ backend/
 | `minimax_api_key` | `MINIMAX_API_KEY` | MiniMax API key |
 | `stepfun_api_key` | `STEPFUN_API_KEY` | StepFun API key |
 | `database_url` | `DATABASE_URL` | Postgres 连接串 |
-| `secret_key` | `SECRET_KEY` | Session/安全密钥 |
 | `app_env` | `APP_ENV` | `development` / `production` |
 | `allowed_origins` | `ALLOWED_ORIGINS` | CORS 来源，逗号分隔 |
 
