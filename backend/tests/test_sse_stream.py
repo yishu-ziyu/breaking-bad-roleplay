@@ -1,0 +1,467 @@
+"""Cycle 40 — SSE stream endpoint tests (L2 continued).
+
+Covers ``GET /api/session/{id}/stream`` — the last critical API path that
+had no test coverage. This endpoint returns a ``text/event-stream`` response
+whose body is produced by an async generator that wraps
+``DirectorAgent.process()``.
+
+Mock strategy
+-------------
+- DB: ``app.dependency_overrides[get_db]`` returns a mock AsyncSession so
+  tests never touch real Postgres.
+- Director: ``app.dependency_overrides[get_director]`` returns a mock whose
+  ``process`` attribute is a real async generator function yielding
+  predefined ``AgentEvent`` objects. This keeps the test free of any real
+  LLM call while still exercising the SSE formatting + ordering in
+  ``routes.py``.
+- Lifespan: ``main.engine`` is patched to a no-op async context manager so
+  importing ``main`` (which constructs the lifespan) does not require a
+  real DATABASE_URL. ``httpx.ASGITransport`` does not run the ASGI lifespan,
+  so ``app.state.provider`` / ``app.state.director`` are never built; the
+  dependency overrides make the routes not look at ``app.state`` at all.
+
+Streaming assertions
+--------------------
+``httpx.AsyncClient`` + ``ASGITransport`` is used instead of the synchronous
+``TestClient`` because ``TestClient`` buffers the full response before
+returning, which loses the ability to assert event ordering semantics on a
+true streaming endpoint. With ``client.stream("GET", ...)`` we read the body
+chunk-by-chunk via ``aiter_text()`` and parse the SSE frames ourselves.
+
+SSE frame format (per routes.py):
+    event: <type>\n
+    data: <AgentEvent.model_dump_json()>\n
+    \n
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+# Settings() reads env vars at import time. Set fakes BEFORE importing main
+# so the module can be imported in CI without a .env file. ``setdefault``
+# avoids overriding real values when a .env file is present locally.
+os.environ.setdefault("MINIMAX_API_KEY", "test-key")
+os.environ.setdefault("STEPFUN_API_KEY", "test-key")
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://test:test@localhost:5432/test",
+)
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("ALLOWED_ORIGINS", "*")
+
+from api.routes import get_db, get_director, _session_queues  # noqa: E402
+from main import app  # noqa: E402
+from models.schemas import AgentEvent  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_db():
+    """Mock AsyncSession for route dependency injection."""
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.add = MagicMock()  # sync on real AsyncSession
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
+
+
+@pytest.fixture
+def mock_director():
+    """Mock DirectorAgent.
+
+    Tests assign ``mock_director.process = <async generator function>`` to
+    control the event stream. Using a real async generator function (rather
+    than AsyncMock) is required because routes.py consumes it with
+    ``async for event in director.process(...)``.
+    """
+    return MagicMock()
+
+
+@pytest.fixture
+async def client(mock_db, mock_director):
+    """``httpx.AsyncClient`` bound to the FastAPI app via ``ASGITransport``.
+
+    Both ``get_db`` and ``get_director`` are overridden so the routes never
+    touch real Postgres or the real Director singleton on ``app.state``.
+    ``main.engine`` is patched to neutralise lifespan DB init (defensive —
+    ASGITransport does not run lifespan, but the patch keeps import-time
+    references safe).
+    """
+    app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_director] = lambda: mock_director
+
+    @asynccontextmanager
+    async def _fake_engine_begin():
+        class _FakeConn:
+            async def run_sync(self, fn):
+                return None
+
+        yield _FakeConn()
+
+    fake_engine = MagicMock()
+    fake_engine.begin = _fake_engine_begin
+
+    try:
+        with patch("main.engine", fake_engine):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as c:
+                yield c
+    finally:
+        app.dependency_overrides.clear()
+        # Defensive: clear any leaked in-flight queues from a failed test.
+        _session_queues.clear()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _scalar_result(value):
+    """Build a mock SQLAlchemy Result whose ``scalar_one_or_none()`` returns
+    ``value`` (a Session row or None)."""
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(return_value=value)
+    return result
+
+
+def _make_session_row(
+    session_id: str = "sess-stream-1",
+    status: str = "active",
+    task_prompt: str = "Cook a batch in the RV",
+):
+    """Build a mock Session row that ``stream_session`` can read."""
+    session = MagicMock()
+    session.id = session_id
+    session.status = status
+    session.task_prompt = task_prompt
+    return session
+
+
+def parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    """Parse a raw SSE text body into a list of ``(event_type, data_dict)``.
+
+    Handles the exact frame format emitted by routes.py:
+        event: <type>\n
+        data: <json>\n
+        \n
+    Blank lines separate frames. Multi-line ``data:`` fields are not used by
+    routes.py, but we accumulate them just in case.
+    """
+    events: list[tuple[str, dict]] = []
+    current_event: str | None = None
+    current_data: list[str] = []
+
+    for line in text.split("\n"):
+        if line.startswith("event: "):
+            current_event = line[len("event: ") :].strip()
+        elif line.startswith("data: "):
+            current_data.append(line[len("data: ") :])
+        elif line == "":
+            # Frame boundary
+            if current_event is not None:
+                data_str = "\n".join(current_data)
+                try:
+                    data = json.loads(data_str) if data_str else {}
+                except json.JSONDecodeError:
+                    data = {"_raw": data_str}
+                events.append((current_event, data))
+                current_event = None
+                current_data = []
+        # Lines that are neither event:/data:/blank are ignored (e.g. stray
+        # whitespace or comments) — routes.py does not emit them.
+
+    # If the body did not end with a blank line, flush the last frame.
+    if current_event is not None:
+        data_str = "\n".join(current_data)
+        try:
+            data = json.loads(data_str) if data_str else {}
+        except json.JSONDecodeError:
+            data = {"_raw": data_str}
+        events.append((current_event, data))
+
+    return events
+
+
+async def _read_stream(resp: httpx.Response) -> str:
+    """Read a streaming response body to a string via ``aiter_text``."""
+    chunks: list[str] = []
+    async for chunk in resp.aiter_text():
+        chunks.append(chunk)
+    return "".join(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Predefined async generator functions used as ``mock_director.process``
+# ---------------------------------------------------------------------------
+
+
+async def _happy_path_process(
+    *args, **kwargs
+) -> AsyncIterator[AgentEvent]:
+    """Yield a representative full event sequence for one beat."""
+    yield AgentEvent(
+        type="status", data={"message": "Director is analysing the task…"}
+    )
+    yield AgentEvent(
+        type="outline",
+        data={"content": "1. RV in the desert — Walt and Jesse cook"},
+    )
+    yield AgentEvent(
+        type="scene_change",
+        data={
+            "from_scene": "unknown",
+            "to_scene": "RV in the desert",
+            "description": "Opening location.",
+        },
+    )
+    yield AgentEvent(
+        type="agent_think",
+        data={
+            "character_id": "Walter White",
+            "thought_content": "If the batch fails, I lose everything.",
+        },
+    )
+    yield AgentEvent(
+        type="agent_speak",
+        data={
+            "character_id": "Walter White",
+            "content": "Jesse, watch the temperature.",
+            "emotion_state": "tense",
+            "gif_search_query": "walter white tense serious",
+        },
+    )
+    yield AgentEvent(
+        type="beat_ready",
+        data={"beat_id": "beat_1", "beat_summary": "RV in the desert"},
+    )
+
+
+async def _failing_process(
+    *args, **kwargs
+) -> AsyncIterator[AgentEvent]:
+    """Yield one event, then raise — simulates a mid-stream LLM failure."""
+    yield AgentEvent(
+        type="status", data={"message": "Director is analysing the task…"}
+    )
+    raise RuntimeError("LLM provider exploded")
+
+
+# ---------------------------------------------------------------------------
+# Tests — happy path
+# ---------------------------------------------------------------------------
+
+
+class TestStreamHappyPath:
+    async def test_full_event_sequence_and_ordering(
+        self, client, mock_db, mock_director
+    ):
+        """Happy path: status → outline → scene_change → agent_think →
+        agent_speak → beat_ready, in that exact order."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _happy_path_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            assert resp.status_code == 200
+            body = await _read_stream(resp)
+
+        events = parse_sse_events(body)
+        event_types = [evt_type for evt_type, _ in events]
+        assert event_types == [
+            "status",
+            "outline",
+            "scene_change",
+            "agent_think",
+            "agent_speak",
+            "beat_ready",
+        ]
+        # beat_ready must be the final event in this happy path.
+        assert events[-1][0] == "beat_ready"
+
+    async def test_content_type_is_text_event_stream(
+        self, client, mock_db, mock_director
+    ):
+        """The Content-Type header must advertise SSE."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _happy_path_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            assert resp.status_code == 200
+            content_type = resp.headers.get("content-type", "")
+            assert "text/event-stream" in content_type
+            await resp.aread()  # drain so the stream closes cleanly
+
+    async def test_sse_frame_format_event_and_data_prefixes(
+        self, client, mock_db, mock_director
+    ):
+        """Each frame must start with ``event:`` and carry a JSON ``data:``
+        line whose payload round-trips through ``AgentEvent``."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _happy_path_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            assert resp.status_code == 200
+            body = await _read_stream(resp)
+
+        # Every frame boundary is a blank line; each frame has both prefixes.
+        frames = [f for f in body.split("\n\n") if f.strip()]
+        assert len(frames) >= 1
+        for frame in frames:
+            lines = frame.split("\n")
+            assert any(l.startswith("event: ") for l in lines), frame
+            data_lines = [l for l in lines if l.startswith("data: ")]
+            assert len(data_lines) == 1, frame
+            payload = json.loads(data_lines[0][len("data: ") :])
+            assert "type" in payload
+            assert "data" in payload
+
+    async def test_agent_speak_payload_carries_dialogue_fields(
+        self, client, mock_db, mock_director
+    ):
+        """The agent_speak event data must include character_id, content,
+        emotion_state, and gif_search_query (the fields the frontend
+        renders)."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _happy_path_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            body = await _read_stream(resp)
+
+        events = parse_sse_events(body)
+        speak_events = [d for t, d in events if t == "agent_speak"]
+        assert len(speak_events) == 1
+        speak = speak_events[0]["data"]
+        assert speak["character_id"] == "Walter White"
+        assert speak["content"] == "Jesse, watch the temperature."
+        assert speak["emotion_state"] == "tense"
+        assert speak["gif_search_query"] == "walter white tense serious"
+
+
+# ---------------------------------------------------------------------------
+# Tests — error paths
+# ---------------------------------------------------------------------------
+
+
+class TestStreamErrors:
+    async def test_director_raise_emits_error_event(
+        self, client, mock_db, mock_director
+    ):
+        """When ``director.process`` raises mid-stream, routes.py must catch
+        it and emit a sanitised ``error`` event (no raw exception text)."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _failing_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            assert resp.status_code == 200  # error is in-band, not HTTP 5xx
+            body = await _read_stream(resp)
+
+        events = parse_sse_events(body)
+        event_types = [t for t, _ in events]
+        # The status event yielded before the raise must still be present.
+        assert "status" in event_types
+        assert "error" in event_types
+        # The error event must be the last frame.
+        assert events[-1][0] == "error"
+        err_data = events[-1][1]["data"]
+        assert "message" in err_data
+        # Sanitisation: the raw exception text must NOT leak to the client.
+        assert "LLM provider exploded" not in err_data["message"]
+        assert "RuntimeError" not in err_data["message"]
+
+    async def test_missing_session_returns_404(self, client, mock_db):
+        """A session_id that does not exist in the DB must yield HTTP 404,
+        not an SSE error event (the check happens before the stream starts)."""
+        mock_db.execute = AsyncMock(return_value=_scalar_result(None))
+
+        resp = await client.get("/api/session/does-not-exist/stream")
+        assert resp.status_code == 404
+        assert "Session not found" in resp.json()["detail"]
+
+    async def test_empty_task_prompt_returns_400(
+        self, client, mock_db, mock_director
+    ):
+        """A session whose ``task_prompt`` is empty must yield HTTP 400 —
+        the Director has nothing to run on."""
+        session = _make_session_row(task_prompt="")
+        mock_db.execute = AsyncMock(return_value=_scalar_result(session))
+        mock_director.process = _happy_path_process  # should not be called
+
+        resp = await client.get("/api/session/sess-stream-1/stream")
+        assert resp.status_code == 400
+        assert "task_prompt" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Tests — session queue cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestStreamSessionQueueCleanup:
+    async def test_queue_cleared_after_normal_completion(
+        self, client, mock_db, mock_director
+    ):
+        """``_session_queues`` must not leak entries after a stream finishes
+        — routes.py pops the entry in a ``finally`` block."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _happy_path_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            await _read_stream(resp)
+
+        assert "sess-stream-1" not in _session_queues
+
+    async def test_queue_cleared_after_director_error(
+        self, client, mock_db, mock_director
+    ):
+        """The ``finally`` cleanup must also run on the error path."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        mock_director.process = _failing_process
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            await _read_stream(resp)
+
+        assert "sess-stream-1" not in _session_queues
