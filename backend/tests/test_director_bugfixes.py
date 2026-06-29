@@ -454,6 +454,24 @@ class _MockScalar:
         return self._value
 
 
+def _make_fake_session_factory(db):
+    """Return a factory whose ``async with factory() as session:`` yields ``db``.
+
+    Stand-in for ``api.routes.async_session_factory`` (Cycle 45 / H1) so
+    tests that call ``stream_session`` directly can drive the existence
+    check and per-event stop-signal check against a mock session without
+    touching a real DB.
+    """
+    class _SessionCM:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    return lambda: _SessionCM()
+
+
 # ===================================================================
 # Cycle 11: H3 — exception details must not leak to client
 # ===================================================================
@@ -897,7 +915,7 @@ class TestCycle17_ExceptionSanitization:
         mock_session.id = "s1"
         mock_session.task_prompt = "task"
 
-        # Mock db returns session on first execute
+        # Mock db returns session on first execute (existence check)
         db = MagicMock()
         db.execute = AsyncMock(
             return_value=_ExecuteResult([mock_session])
@@ -912,9 +930,14 @@ class TestCycle17_ExceptionSanitization:
 
         mock_director.process = _raising_process
 
-        response = await stream_session(
-            session_id="s1", db=db, director=mock_director
-        )
+        # Cycle 45 (H1): stream_session no longer takes a ``db`` parameter;
+        # it sources short-lived sessions from ``api.routes.async_session_factory``.
+        # Patch the factory so the existence check sees the mock session row.
+        fake_factory = _make_fake_session_factory(db)
+        with patch("api.routes.async_session_factory", fake_factory):
+            response = await stream_session(
+                session_id="s1", director=mock_director
+            )
 
         # Consume the StreamingResponse body
         chunks: list[bytes] = []

@@ -9,7 +9,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from db.session import get_db
+from db.session import get_db, async_session_factory
 from db.models import Session as SessionModel, Message as MessageModel
 from agents.provider import ProviderFacade
 from agents.director import DirectorAgent
@@ -176,40 +176,56 @@ async def session_action(
 @router.get("/session/{session_id}/stream")
 async def stream_session(
     session_id: str,
-    db: AsyncSession = Depends(get_db),
     director: DirectorAgent = Depends(get_director),
 ):
     """
     Stream narrative events from the Director agent as SSE.
 
     Loads the session's task_prompt and passes it to Director.process()
-    along with db and session_id so the Director can update dossiers.
+    along with ``session_factory`` and ``session_id`` so the Director can
+    update dossiers using short-lived DB sessions.
+
+    Cycle 45 (H1): this endpoint no longer takes a request-level DB
+    session via ``Depends(get_db)``. A ``StreamingResponse`` generator
+    only releases its dependency after the generator completes — so a
+    request-level session would stay open for the entire SSE stream (up
+    to 300s per beat), exhausting the connection pool under modest
+    concurrency (pool_size=5 + max_overflow=10 = 15 streams). Instead we
+    open a short-lived session from ``async_session_factory`` for the
+    existence check, pass the factory to the Director (which opens its
+    own short-lived sessions per beat), and re-open a session for each
+    per-event stop-signal check. No DB connection is held during the
+    inter-beat waits.
     """
-    result = await db.execute(
-        select(SessionModel).where(SessionModel.id == session_id)
-    )
-    session = result.scalar_one_or_none()
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if not session.task_prompt:
-        raise HTTPException(
-            status_code=400,
-            detail="Session has no task_prompt — create the session with a task description.",
+    # Existence check + task_prompt fetch — short-lived session so the
+    # connection returns to the pool before the SSE stream starts.
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(SessionModel).where(SessionModel.id == session_id)
         )
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
 
-    task = session.task_prompt
+        if not session.task_prompt:
+            raise HTTPException(
+                status_code=400,
+                detail="Session has no task_prompt — create the session with a task description.",
+            )
+
+        task = session.task_prompt
+        resolved_session_id = session.id
 
     async def event_generator() -> AsyncGenerator[bytes, None]:
         # Set up beat-pause queue
         beat_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
-        _session_queues[session.id] = {"queue": beat_queue, "beat_index": 0}
+        _session_queues[resolved_session_id] = {"queue": beat_queue, "beat_index": 0}
 
         try:
             async for event in director.process(
                 task=task,
-                db=db,
-                session_id=session.id,
+                session_factory=async_session_factory,
+                session_id=resolved_session_id,
                 action_queue=beat_queue,
             ):
                 # Stop-signal check: POST /session/{id}/action with
@@ -220,12 +236,16 @@ async def stream_session(
                 # continuing to burn LLM tokens after the user hit stop.
                 # ``continue`` flips status back to "active", so this
                 # check does not break the resume flow.
-                status_result = await db.execute(
-                    select(SessionModel.status).where(
-                        SessionModel.id == session.id
+                #
+                # Cycle 45 (H1): open a fresh short-lived session for
+                # each check — never hold a connection across yields.
+                async with async_session_factory() as chk_db:
+                    status_result = await chk_db.execute(
+                        select(SessionModel.status).where(
+                            SessionModel.id == resolved_session_id
+                        )
                     )
-                )
-                current_status = status_result.scalar_one_or_none()
+                    current_status = status_result.scalar_one_or_none()
                 if current_status in ("paused", "stopped"):
                     stop_evt = AgentEvent(
                         type="status",
@@ -248,7 +268,7 @@ async def stream_session(
             # Sanitize: never leak raw exception (may contain API keys,
             # internal paths, DB connection strings) to the client.
             # Full traceback is preserved in server logs.
-            logger.exception("SSE stream failed for session %s", session.id)
+            logger.exception("SSE stream failed for session %s", resolved_session_id)
             err = AgentEvent(
                 type="error",
                 data={"message": "Internal server error during stream."},
@@ -260,7 +280,7 @@ async def stream_session(
         finally:
             # Always clean up the session queue to prevent memory leaks.
             # Covers: normal completion, client disconnect, and error paths.
-            _session_queues.pop(session.id, None)
+            _session_queues.pop(resolved_session_id, None)
 
     return StreamingResponse(
         event_generator(),
