@@ -57,3 +57,26 @@ def mock_db():
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
+
+
+@pytest.fixture
+def mock_session_factory(mock_db):
+    """Factory returning an async context manager that yields ``mock_db``.
+
+    Mirrors the real ``async_session_factory`` usage pattern
+    ``async with session_factory() as session:`` so code paths exercised
+    by tests (Cycle 45 / H1: short-lived sessions in director + stream
+    endpoint) can be driven against the mock session without touching a
+    real DB. All "sessions" produced by this factory share the same
+    ``mock_db`` instance, so call-count assertions on ``mock_db.execute``
+    etc. aggregate across logical sessions just as they did when a single
+    request-level session was mocked.
+    """
+    class _SessionCM:
+        async def __aenter__(self):
+            return mock_db
+
+        async def __aexit__(self, *exc_info):
+            return False  # do not suppress exceptions
+
+    return lambda: _SessionCM()
