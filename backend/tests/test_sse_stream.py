@@ -465,3 +465,122 @@ class TestStreamSessionQueueCleanup:
             await _read_stream(resp)
 
         assert "sess-stream-1" not in _session_queues
+
+
+# ---------------------------------------------------------------------------
+# Predefined async generator functions — stop-signal fixtures (Cycle 42)
+# ---------------------------------------------------------------------------
+
+
+async def _three_beat_process(*args, **kwargs) -> AsyncIterator[AgentEvent]:
+    """Yield three distinguishable beats for stop-signal tests.
+
+    Distinct types make it easy to assert which beats were discarded
+    after the stop check fired.
+    """
+    yield AgentEvent(type="status", data={"message": "beat 1"})
+    yield AgentEvent(type="outline", data={"content": "beat 2 outline"})
+    yield AgentEvent(type="beat_ready", data={"beat_id": "beat_3"})
+
+
+async def _two_event_process(*args, **kwargs) -> AsyncIterator[AgentEvent]:
+    """Yield two events for the happy stop-signal test."""
+    yield AgentEvent(type="status", data={"message": "beat 1"})
+    yield AgentEvent(type="beat_ready", data={"beat_id": "beat_1"})
+
+
+# ---------------------------------------------------------------------------
+# Tests — stop signal (Cycle 42)
+# ---------------------------------------------------------------------------
+
+
+class TestStreamStopSignal:
+    """Cycle 42 — event_generator must terminate when session.status is
+    flipped to "paused"/"stopped" mid-stream by POST /action.
+
+    The status check re-reads ``session.status`` from the DB before each
+    yield, so a stop action issued in a separate request actually
+    terminates the SSE stream instead of letting it run on and burn LLM
+    tokens the user believed were cancelled.
+    """
+
+    async def test_stream_terminates_when_session_paused(
+        self, client, mock_db, mock_director
+    ):
+        """A mid-stream ``session.status`` flip to "paused" must stop the
+        stream: emit a terminal status event and break, discarding any
+        remaining director events."""
+        session = _make_session_row(status="active")
+        mock_director.process = _three_beat_process
+        # db.execute call sequence:
+        #   0: initial session load in stream_session        -> session row
+        #   1: status check before yielding beat 1           -> "active"
+        #   2: status check before yielding beat 2           -> "paused" (break)
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                _scalar_result(session),
+                _scalar_result("active"),
+                _scalar_result("paused"),
+            ]
+        )
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            assert resp.status_code == 200
+            body = await _read_stream(resp)
+
+        events = parse_sse_events(body)
+
+        # Beat 1 was yielded (status was active), then the stop check
+        # fired on beat 2 and broke the loop.
+        assert len(events) == 2, events
+        assert events[0][0] == "status"
+        assert events[0][1]["data"]["message"] == "beat 1"
+        # Terminal stop event.
+        assert events[1][0] == "status"
+        assert events[1][1]["data"].get("stopped") is True
+        # Beats 2 and 3 must NOT have been emitted.
+        all_types = [t for t, _ in events]
+        assert "outline" not in all_types
+        assert "beat_ready" not in all_types
+        # Queue cleanup still runs on the break path (finally block).
+        assert "sess-stream-1" not in _session_queues
+
+    async def test_stream_continues_when_status_active(
+        self, client, mock_db, mock_director
+    ):
+        """When ``session.status`` stays "active" throughout, the stop
+        check must not interfere — all director events are yielded in
+        order and no terminal stop event is emitted."""
+        session = _make_session_row(status="active")
+        mock_director.process = _two_event_process
+        # db.execute call sequence:
+        #   0: initial session load              -> session row
+        #   1: status check before beat 1        -> "active"
+        #   2: status check before beat_ready    -> "active"
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                _scalar_result(session),
+                _scalar_result("active"),
+                _scalar_result("active"),
+            ]
+        )
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            assert resp.status_code == 200
+            body = await _read_stream(resp)
+
+        events = parse_sse_events(body)
+        assert [t for t, _ in events] == ["status", "beat_ready"]
+        # No terminal stop event on the happy path.
+        for _, payload in events:
+            assert payload.get("data", {}).get("stopped") is not True
+        # The stop-signal check must actually run on every event —
+        # 1 initial session load + 2 per-event status checks. Without
+        # the fix this would be 1 (only the initial load), so this
+        # guards against the check being silently dropped.
+        assert mock_db.execute.await_count == 3
+        assert "sess-stream-1" not in _session_queues
