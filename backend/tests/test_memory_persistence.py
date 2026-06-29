@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 from db.models import CharacterDossier
-from agents.memory import update_dossiers
+from agents.memory import compute_dossier_delta, update_dossiers
 
 
 class _Scalars:
@@ -123,3 +124,55 @@ async def test_update_dossiers_accumulates_existing_world_memory():
     assert "Walter sees Jesse hesitate under pressure." in world_row.knowledge
     assert "Walter becomes more doubtful." in world_row.relationship_notes
     assert db.commit.await_count == 1
+
+
+async def test_compute_dossier_delta_logs_exception_on_provider_failure(caplog):
+    """H4: a provider failure is logged at ERROR with a traceback, not
+    silently swallowed. The function still returns empty deltas so the
+    calling beat can continue, but the failure is now visible in logs.
+    """
+    provider = MagicMock()
+    provider.call_model = AsyncMock(side_effect=RuntimeError("network timeout"))
+
+    with caplog.at_level(logging.ERROR, logger="agents.memory"):
+        result = await compute_dossier_delta(
+            provider=provider,
+            dossiers={},
+            beat_summary="RV argument",
+            beat_events=[],
+        )
+
+    assert result == {"deltas": []}
+    # logger.exception emits an ERROR record whose message is the format
+    # string and whose exc_info carries the traceback.
+    failure_records = [
+        r
+        for r in caplog.records
+        if r.levelname == "ERROR" and "compute_dossier_delta failed" in r.message
+    ]
+    assert failure_records, "expected an ERROR log record for the swallowed exception"
+    assert failure_records[0].exc_info is not None
+
+
+async def test_compute_dossier_delta_logs_exception_on_unexpected_error(caplog):
+    """H4: any Exception subclass (not just network errors) is logged,
+    so JSON bugs, provider coding errors, etc. surface in logs too."""
+    provider = MagicMock()
+    provider.call_model = AsyncMock(side_effect=ValueError("bad payload"))
+
+    with caplog.at_level(logging.ERROR, logger="agents.memory"):
+        result = await compute_dossier_delta(
+            provider=provider,
+            dossiers={"walter_white": {"trust_level": 5}},
+            beat_summary="beat",
+            beat_events=[{"type": "x"}],
+        )
+
+    assert result == {"deltas": []}
+    assert any(
+        r.levelname == "ERROR"
+        and "compute_dossier_delta failed" in r.message
+        and r.exc_info is not None
+        for r in caplog.records
+    )
+
