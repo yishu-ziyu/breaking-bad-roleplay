@@ -6,6 +6,7 @@
  */
 
 export type SceneId =
+  | 'blue-desert-rv'
   | 'abq-sunset'
   | 'lab-rv'
   | 'saul-neon'
@@ -25,6 +26,17 @@ export interface SceneRoute {
 }
 
 export const SCENES: SceneRoute[] = [
+  {
+    id: 'blue-desert-rv',
+    url: '/backgrounds/blue-desert-rv.jpg',
+    label: { en: 'Blue Desert RV', zh: '蓝调荒漠房车' },
+    keywords: [
+      'walter', 'jesse', 'heisenberg', 'breaking bad', '房车', 'rv',
+      '沙漠', 'desert', 'abq', 'albuquerque', '荒漠', '新墨西哥',
+      'new mexico', 'blue', '蓝色', '蓝调',
+    ],
+    weight: 1,
+  },
   {
     id: 'abq-sunset',
     url: '/backgrounds/abq-sunset.svg',
@@ -105,7 +117,7 @@ export const SCENES: SceneRoute[] = [
   },
 ]
 
-export const DEFAULT_SCENE: SceneRoute = SCENES[0] // abq-sunset
+export const DEFAULT_SCENE: SceneRoute = SCENES[0] // blue-desert-rv
 
 /**
  * 在最近 N 条消息中按权重打分选出最匹配的 scene。
