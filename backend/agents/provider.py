@@ -47,6 +47,10 @@ class ProviderFacade:
             ValueError: If provider prefix is unrecognised.
             httpx.HTTPStatusError: On non-2xx responses.
         """
+        if "/" not in model_route:
+            raise ValueError(
+                f"Invalid model_route '{model_route}'. Expected 'provider/model'."
+            )
         provider, model = model_route.split("/", 1)
         if provider == "minimax":
             return await self._call_minimax(messages, model, max_tokens)

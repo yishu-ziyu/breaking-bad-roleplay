@@ -2,8 +2,6 @@ import { defineRailway, github, postgres, preserve, project, service } from "rai
 
 export default defineRailway(() => {
   const Postgres = postgres("Postgres");
-  const PostgresAr9C = postgres("Postgres-Ar9C");
-  const PostgresVbCn = postgres("Postgres-vbCn");
   const breakingBadRoleplay = service("breaking-bad-roleplay", {
     source: github("yishu-ziyu/breaking-bad-roleplay"),
     replicas: 1,
@@ -16,11 +14,8 @@ export default defineRailway(() => {
       STEPFUN_API_KEY: preserve(),
     },
   });
-  const tenderHeart = service("tender-heart", {
-    replicas: 1,
-  });
 
   return project("breaking-bad-roleplay", {
-    resources: [Postgres, PostgresAr9C, PostgresVbCn, breakingBadRoleplay, tenderHeart],
+    resources: [Postgres, breakingBadRoleplay],
   });
 });

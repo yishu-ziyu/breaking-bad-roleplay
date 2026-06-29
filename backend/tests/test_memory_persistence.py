@@ -7,7 +7,13 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 from db.models import CharacterDossier
-from agents.memory import compute_dossier_delta, update_dossiers
+from agents.memory import (
+    MAX_KNOWLEDGE_ENTRIES,
+    MAX_RELATIONSHIP_NOTES_CHARS,
+    _apply_dossier_delta,
+    compute_dossier_delta,
+    update_dossiers,
+)
 
 
 class _Scalars:
@@ -175,4 +181,147 @@ async def test_compute_dossier_delta_logs_exception_on_unexpected_error(caplog):
         and r.exc_info is not None
         for r in caplog.records
     )
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 / M4 — unbounded growth caps
+# ---------------------------------------------------------------------------
+
+
+def _dossier_with_knowledge(n_entries: int) -> CharacterDossier:
+    """Build a dossier whose knowledge dict already has ``n_entries`` keys,
+    sorted lexicographically so the oldest is unambiguously first."""
+    knowledge = {
+        f"beat_2020-01-01T00:00:{i:02d}.000000": f"old fact {i}"
+        for i in range(n_entries)
+    }
+    return CharacterDossier(
+        session_id=None,
+        owner_id="walter_white",
+        subject_id="jesse_pinkman",
+        trust_level=5,
+        knowledge=json.dumps(knowledge, ensure_ascii=False),
+        relationship_notes="",
+    )
+
+
+class TestCycle46_KnowledgeGrowthCap:
+    """M4: ``_apply_dossier_delta`` previously appended a new timestamped
+    key to the knowledge dict on every beat without ever evicting. In a
+    long-running world-level dossier (session_id=None, shared across all
+    playthroughs) this could grow a single Text column to MB-scale. The
+    cap now keeps the most recent ``MAX_KNOWLEDGE_ENTRIES`` entries.
+    """
+
+    def test_knowledge_capped_at_max_entries_oldest_dropped(self):
+        """Given a dossier already at the cap, applying one more delta
+        drops the single oldest entry rather than letting the dict grow."""
+        dossier = _dossier_with_knowledge(MAX_KNOWLEDGE_ENTRIES)
+        # Sanity: pre-condition has exactly MAX entries.
+        pre = json.loads(dossier.knowledge)
+        assert len(pre) == MAX_KNOWLEDGE_ENTRIES
+
+        _apply_dossier_delta(
+            dossier,
+            trust_delta=0,
+            new_knowledge="fresh fact from this beat",
+            new_notes="",
+        )
+
+        post = json.loads(dossier.knowledge)
+        assert len(post) == MAX_KNOWLEDGE_ENTRIES, "cap must hold at MAX entries"
+        # The oldest pre-existing key must be gone.
+        oldest_key = "beat_2020-01-01T00:00:00.000000"
+        assert oldest_key not in post, "oldest entry must be evicted"
+        # The newest pre-existing key must survive.
+        newest_pre_key = f"beat_2020-01-01T00:00:{MAX_KNOWLEDGE_ENTRIES - 1:02d}.000000"
+        assert newest_pre_key in post, "newest pre-existing entry must survive"
+        # The freshly added entry must be present.
+        assert "fresh fact from this beat" in post.values()
+
+    def test_knowledge_below_cap_is_left_untouched(self):
+        """Regression guard: when the dict is below the cap, no entries
+        are evicted — the cap only trims on overflow."""
+        dossier = _dossier_with_knowledge(MAX_KNOWLEDGE_ENTRIES - 1)
+
+        _apply_dossier_delta(
+            dossier,
+            trust_delta=0,
+            new_knowledge="another fact",
+            new_notes="",
+        )
+
+        post = json.loads(dossier.knowledge)
+        assert len(post) == MAX_KNOWLEDGE_ENTRIES, "grows to exactly MAX, no trim yet"
+        oldest_key = "beat_2020-01-01T00:00:00.000000"
+        assert oldest_key in post, "no eviction when not overflowing"
+
+    def test_knowledge_empty_new_knowledge_leaves_dict_unchanged(self):
+        """Empty new_knowledge short-circuits — the dict is not touched
+        and certainly not trimmed (no overflow path entered)."""
+        dossier = _dossier_with_knowledge(MAX_KNOWLEDGE_ENTRIES)
+        pre_keys = set(json.loads(dossier.knowledge).keys())
+
+        _apply_dossier_delta(dossier, trust_delta=1, new_knowledge="", new_notes="")
+
+        post_keys = set(json.loads(dossier.knowledge).keys())
+        assert post_keys == pre_keys, "no knowledge write when new_knowledge is empty"
+
+
+class TestCycle46_RelationshipNotesGrowthCap:
+    """M4: ``relationship_notes`` previously concatenated one line per beat
+    forever. The cap now keeps only the trailing
+    ``MAX_RELATIONSHIP_NOTES_CHARS`` characters so a long-running dossier
+    row stays bounded.
+    """
+
+    def test_relationship_notes_truncated_to_cap_when_overflowing(self):
+        """Given notes already over the cap, applying a delta truncates
+        to the most recent ``MAX_RELATIONSHIP_NOTES_CHARS`` chars."""
+        # Start with notes well over the cap.
+        overflow_tail = "X" * (MAX_RELATIONSHIP_NOTES_CHARS + 500)
+        dossier = CharacterDossier(
+            session_id=None,
+            owner_id="walter_white",
+            subject_id="jesse_pinkman",
+            trust_level=5,
+            knowledge="{}",
+            relationship_notes=overflow_tail,
+        )
+
+        _apply_dossier_delta(
+            dossier,
+            trust_delta=0,
+            new_knowledge="",
+            new_notes="latest note",
+        )
+
+        assert len(dossier.relationship_notes) <= MAX_RELATIONSHIP_NOTES_CHARS
+        # The newest note must be visible in the truncated tail.
+        assert "latest note" in dossier.relationship_notes
+        # The truncation must have actually happened (we started above cap).
+        assert len(dossier.relationship_notes) < len(overflow_tail) + 100
+
+    def test_relationship_notes_below_cap_left_intact(self):
+        """Regression guard: short notes are not truncated."""
+        short_notes = "[00:00] first meeting"
+        dossier = CharacterDossier(
+            session_id=None,
+            owner_id="walter_white",
+            subject_id="jesse_pinkman",
+            trust_level=5,
+            knowledge="{}",
+            relationship_notes=short_notes,
+        )
+
+        _apply_dossier_delta(
+            dossier,
+            trust_delta=0,
+            new_knowledge="",
+            new_notes="second note",
+        )
+
+        assert short_notes in dossier.relationship_notes
+        assert "second note" in dossier.relationship_notes
+        assert len(dossier.relationship_notes) <= MAX_RELATIONSHIP_NOTES_CHARS
 
