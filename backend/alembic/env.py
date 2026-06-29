@@ -15,6 +15,7 @@ from alembic import context
 # registers every ORM class with Base.metadata so autogenerate sees them.
 from config import settings
 from db.session import Base
+from db.url import render_engine_url
 import db.models  # noqa: F401 — side effect: registers models on Base.metadata
 
 # this is the Alembic Config object, which provides
@@ -36,7 +37,7 @@ def _sync_url() -> str:
     url = make_url(settings.database_url)
     if url.get_backend_name() == "postgresql" and "+asyncpg" in url.drivername:
         url = url.set(drivername="postgresql+psycopg2")
-    return str(url)
+    return render_engine_url(url)
 
 
 # Make the URL available to both offline and online runners.

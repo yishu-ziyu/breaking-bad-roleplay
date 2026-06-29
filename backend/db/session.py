@@ -7,13 +7,14 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from config import settings
+from db.url import render_engine_url
 
 _db_url = make_url(settings.database_url)
 if _db_url.get_backend_name() == "postgresql" and "+asyncpg" not in _db_url.drivername:
     _db_url = _db_url.set(drivername="postgresql+asyncpg")
 
 engine = create_async_engine(
-    str(_db_url),
+    render_engine_url(_db_url),
     echo=settings.app_env == "development",
     pool_pre_ping=True,
     pool_size=5,
