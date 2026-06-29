@@ -27,6 +27,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -264,3 +265,141 @@ class TestSessionAction:
         )
         assert resp.status_code == 400
         assert "target_character" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# GET /api/session/{id}/messages  (Cycle 44 — H2/H3 fixes)
+# ---------------------------------------------------------------------------
+
+
+def _messages_result(messages):
+    """Build a mock SQLAlchemy Result whose ``scalars().all()`` returns
+    ``messages`` (a list of Message-like objects)."""
+    result = MagicMock()
+    scalars = MagicMock()
+    scalars.all = MagicMock(return_value=messages)
+    result.scalars = MagicMock(return_value=scalars)
+    return result
+
+
+def _make_message_row(
+    msg_id: str = "msg-1",
+    session_id: str = "sess-123",
+    role: str = "assistant",
+    content: str = "Walt enters the RV.",
+    character_name: str | None = "Walter White",
+    emotion_state: str | None = "tense",
+    gif_search_query: str | None = None,
+    beat_id: str | None = "beat-1",
+    created_at: datetime | None = None,
+):
+    """Build a lightweight Message row matching the MessageOut schema.
+
+    Uses SimpleNamespace for clean attribute access during FastAPI
+    response serialization (same access pattern as real ORM rows).
+    """
+    if created_at is None:
+        created_at = datetime(2025, 1, 1, 12, 0, 0)
+    return SimpleNamespace(
+        id=msg_id,
+        session_id=session_id,
+        role=role,
+        content=content,
+        character_name=character_name,
+        emotion_state=emotion_state,
+        gif_search_query=gif_search_query,
+        beat_id=beat_id,
+        created_at=created_at,
+    )
+
+
+class TestListSessionMessages:
+    """Cycle 44 — H2 (limit/offset) + H3 (select id) coverage.
+
+    The route issues two db.execute calls:
+      1. Existence check: select(SessionModel.id) — returns session id or None
+      2. Message query: select(MessageModel)...limit().offset() — returns rows
+
+    Tests use ``side_effect=[existence_result, messages_result]`` so each
+    call gets the right mock result. Statement-level limit/offset is
+    verified by inspecting the Select object passed to the second call.
+    """
+
+    def test_default_limit_returns_messages(self, client, mock_db):
+        """(a) Default call returns messages and applies limit=500."""
+        existence = _scalar_result("sess-123")
+        msgs = [
+            _make_message_row(msg_id="m1", content="first"),
+            _make_message_row(msg_id="m2", content="second"),
+        ]
+        messages_result = _messages_result(msgs)
+        mock_db.execute = AsyncMock(
+            side_effect=[existence, messages_result]
+        )
+
+        resp = client.get("/api/session/sess-123/messages")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 2
+        assert body[0]["id"] == "m1"
+        assert body[0]["content"] == "first"
+        assert body[1]["id"] == "m2"
+        # Two execute calls: existence check + message query.
+        assert mock_db.execute.await_count == 2
+        # The message query (second call) must carry limit=500 (default).
+        msg_stmt = mock_db.execute.call_args_list[1][0][0]
+        assert getattr(msg_stmt, "_limit", None) == 500
+
+    def test_custom_limit_respected(self, client, mock_db):
+        """(b) ?limit=N applies N to the message query."""
+        existence = _scalar_result("sess-123")
+        messages_result = _messages_result([])
+        mock_db.execute = AsyncMock(
+            side_effect=[existence, messages_result]
+        )
+
+        resp = client.get("/api/session/sess-123/messages?limit=5")
+
+        assert resp.status_code == 200
+        msg_stmt = mock_db.execute.call_args_list[1][0][0]
+        assert getattr(msg_stmt, "_limit", None) == 5
+
+    def test_limit_capped_at_500(self, client, mock_db):
+        """?limit=10000 is capped to 500 server-side (H2 constraint)."""
+        existence = _scalar_result("sess-123")
+        messages_result = _messages_result([])
+        mock_db.execute = AsyncMock(
+            side_effect=[existence, messages_result]
+        )
+
+        resp = client.get("/api/session/sess-123/messages?limit=10000")
+
+        assert resp.status_code == 200
+        msg_stmt = mock_db.execute.call_args_list[1][0][0]
+        assert getattr(msg_stmt, "_limit", None) == 500
+
+    def test_offset_respected(self, client, mock_db):
+        """(c) ?offset=N applies N to the message query."""
+        existence = _scalar_result("sess-123")
+        messages_result = _messages_result([])
+        mock_db.execute = AsyncMock(
+            side_effect=[existence, messages_result]
+        )
+
+        resp = client.get("/api/session/sess-123/messages?offset=10")
+
+        assert resp.status_code == 200
+        msg_stmt = mock_db.execute.call_args_list[1][0][0]
+        assert getattr(msg_stmt, "_offset", None) == 10
+
+    def test_unknown_session_returns_404(self, client, mock_db):
+        """(d) Non-existent session returns 404, no message query issued."""
+        mock_db.execute = AsyncMock(return_value=_scalar_result(None))
+
+        resp = client.get("/api/session/does-not-exist/messages")
+
+        assert resp.status_code == 404
+        assert "Session not found" in resp.json()["detail"]
+        # Only the existence check ran — message query must not fire.
+        assert mock_db.execute.await_count == 1
