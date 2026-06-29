@@ -267,7 +267,10 @@ textarea {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 11, 8, 0.72);
+  background:
+    linear-gradient(180deg, rgba(4, 8, 20, 0.28) 0%, rgba(4, 8, 20, 0.78) 100%),
+    linear-gradient(90deg, rgba(4, 8, 20, 0.64) 0%, rgba(4, 8, 20, 0.18) 48%, rgba(4, 8, 20, 0.72) 100%),
+    url('/backgrounds/blue-desert-rv.jpg') center / cover no-repeat;
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
 }
@@ -574,7 +577,9 @@ textarea {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(8,11,8,0.18) 0%, rgba(8,11,8,0.45) 100%);
+  background:
+    linear-gradient(180deg, rgba(4, 8, 20, 0.18) 0%, rgba(4, 8, 20, 0.62) 100%),
+    linear-gradient(90deg, rgba(4, 8, 20, 0.62) 0%, rgba(4, 8, 20, 0.12) 54%, rgba(4, 8, 20, 0.58) 100%);
   z-index: 1;
   pointer-events: none;
 }
