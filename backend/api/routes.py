@@ -118,6 +118,10 @@ async def session_action(
     action = payload.action
 
     if action == "continue":
+        # Resume the session in case a prior "stop" flipped status to
+        # "paused". Without this, a fresh /stream request after stop would
+        # terminate immediately on the stop-signal check in event_generator.
+        session.status = "active"
         # Signal the Director to advance to the next beat.
         session_id_to_signal = session.id
         session_data = _session_queues.get(session_id_to_signal)
@@ -208,6 +212,30 @@ async def stream_session(
                 session_id=session.id,
                 action_queue=beat_queue,
             ):
+                # Stop-signal check: POST /session/{id}/action with
+                # action=stop flips session.status to "paused" in a
+                # separate request. Re-read it here (column select, so
+                # it bypasses the identity map and sees the committed
+                # value) so the stream actually terminates instead of
+                # continuing to burn LLM tokens after the user hit stop.
+                # ``continue`` flips status back to "active", so this
+                # check does not break the resume flow.
+                status_result = await db.execute(
+                    select(SessionModel.status).where(
+                        SessionModel.id == session.id
+                    )
+                )
+                current_status = status_result.scalar_one_or_none()
+                if current_status in ("paused", "stopped"):
+                    stop_evt = AgentEvent(
+                        type="status",
+                        data={"message": "Stream stopped.", "stopped": True},
+                    )
+                    yield (
+                        f"event: status\n"
+                        f"data: {stop_evt.model_dump_json()}\n\n"
+                    ).encode("utf-8")
+                    break
                 payload = (
                     f"event: {event.type}\n"
                     f"data: {event.model_dump_json()}\n\n"
