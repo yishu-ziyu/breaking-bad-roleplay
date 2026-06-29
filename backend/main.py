@@ -54,9 +54,15 @@ def _parse_allowed_origins(raw: str, app_env: str) -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create DB tables (MVP — replace with Alembic later)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Schema management is handled exclusively by Alembic. The app does NOT
+    # create tables at startup — run `alembic upgrade head` before starting
+    # the server (dev and prod alike). create_all was removed because it
+    # only creates missing tables and never applies subsequent migrations,
+    # which caused schema drift versus the Alembic history.
+    logger.info(
+        "DB schema must be initialised via `alembic upgrade head` before "
+        "starting the app; startup no longer calls Base.metadata.create_all."
+    )
 
     # Initialise singletons so they share a single httpx client.
     from agents.provider import ProviderFacade
