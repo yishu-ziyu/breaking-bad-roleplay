@@ -292,6 +292,8 @@ class MessageOut(BaseModel):
 @router.get("/session/{session_id}/messages", response_model=list[MessageOut])
 async def list_session_messages(
     session_id: str,
+    limit: int = 500,
+    offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -300,17 +302,39 @@ async def list_session_messages(
     Used by the frontend to rebuild story history after a page refresh.
     Only agent_speak events are persisted by the Director, so this list
     represents the canonical dialogue history of the session.
+
+    ``limit`` is capped at 500 to prevent unbounded memory/bandwidth
+    consumption on long sessions. ``offset`` supports pagination for
+    clients that need to walk full history in chunks.
     """
-    result = await db.execute(
-        select(SessionModel).where(SessionModel.id == session_id)
+    if limit < 1:
+        raise HTTPException(
+            status_code=400, detail="limit must be >= 1"
+        )
+    if offset < 0:
+        raise HTTPException(
+            status_code=400, detail="offset must be >= 0"
+        )
+    # Cap limit at 500 regardless of what the client asks for.
+    effective_limit = min(limit, 500)
+
+    # H3: select only the primary-key column instead of the full row.
+    # ``Session.messages`` / ``character_states`` / ``character_dossiers``
+    # are configured lazy="selectin", so loading a full Session row would
+    # trigger 3 extra SELECTs pulling in all messages/states/dossiers —
+    # data we don't need just to verify the session exists.
+    existence = await db.execute(
+        select(SessionModel.id).where(SessionModel.id == session_id)
     )
-    if result.scalar_one_or_none() is None:
+    if existence.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
     rows = await db.execute(
         select(MessageModel)
         .where(MessageModel.session_id == session_id)
         .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+        .limit(effective_limit)
+        .offset(offset)
     )
     return rows.scalars().all()
 
