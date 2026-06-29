@@ -120,3 +120,53 @@ class TestCycle27_ProviderResponseParsing:
                 max_tokens=128,
             )
         assert "MiniMax API error: invalid api key" in str(exc_info.value)
+
+
+class TestCycle46_ModelRouteValidation:
+    """M3: call_model previously did ``provider, model = model_route.split("/", 1)``
+    which raises an opaque ``ValueError: not enough values to unpack`` when the
+    route contains no slash. Callers (director) wrapped this in a generic
+    ``except Exception`` and logged "Beat LLM call failed" — losing the actual
+    cause. The guard now raises a ValueError whose message names the bad route
+    and the expected shape, so operators can fix the config without digging
+    through tracebacks.
+    """
+
+    async def test_model_route_without_slash_raises_clear_value_error(self):
+        """Given a model_route with no '/', ValueError is raised with
+        'Invalid model_route' and the offending value in the message —
+        not a generic unpack error."""
+        provider = _make_provider()
+        with pytest.raises(ValueError) as exc_info:
+            await provider.call_model(
+                messages=[{"role": "user", "content": "hi"}],
+                model_route="stepfun-no-slash",
+            )
+        assert "Invalid model_route" in str(exc_info.value)
+        assert "stepfun-no-slash" in str(exc_info.value)
+
+    async def test_model_route_with_slash_still_routes(self):
+        """Regression guard: a well-formed route is unaffected by the new
+        validation — it still reaches the provider and returns content."""
+        provider = _make_provider()
+        provider._client.post = AsyncMock(
+            return_value=_mock_response(
+                {"choices": [{"message": {"content": "ok"}}]}
+            )
+        )
+        result = await provider.call_model(
+            messages=[{"role": "user", "content": "hi"}],
+            model_route="stepfun/step-3.7-flash",
+        )
+        assert result == "ok"
+
+    async def test_model_route_empty_string_raises_clear_value_error(self):
+        """Edge case: an empty string has no '/', so it must hit the new
+        guard rather than producing a confusing empty-provider error."""
+        provider = _make_provider()
+        with pytest.raises(ValueError) as exc_info:
+            await provider.call_model(
+                messages=[{"role": "user", "content": "hi"}],
+                model_route="",
+            )
+        assert "Invalid model_route" in str(exc_info.value)

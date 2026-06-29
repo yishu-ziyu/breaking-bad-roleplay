@@ -39,6 +39,8 @@ export function useAuth(): UseAuthReturn {
     // Initial session check
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null }; error: Error | null }) => {
       setState({ user: data.session?.user ?? null, session: data.session, loading: false, error: null })
+    }).catch(() => {
+      setState(s => ({ ...s, loading: false, error: 'Session check failed' }))
     })
 
     // Listen for auth changes
