@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Growth caps — prevent unbounded Text field expansion in long-running
+# world-level dossiers. Knowledge is a JSON dict keyed by timestamp; only
+# the most recent entries are retained. relationship_notes is a string that
+# accumulates one line per beat; it is truncated to a trailing window.
+# ---------------------------------------------------------------------------
+
+MAX_KNOWLEDGE_ENTRIES = 50
+MAX_RELATIONSHIP_NOTES_CHARS = 2000
+
+
+# ---------------------------------------------------------------------------
 # Dossier Delta Computation
 # ---------------------------------------------------------------------------
 
@@ -141,11 +152,23 @@ def _apply_dossier_delta(
     if new_knowledge:
         knowledge = _load_knowledge(dossier.knowledge)
         knowledge[f"beat_{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}"] = new_knowledge
+        # Cap the dict at MAX_KNOWLEDGE_ENTRIES — drop the oldest keys
+        # (timestamps sort lexicographically in chronological order).
+        if len(knowledge) > MAX_KNOWLEDGE_ENTRIES:
+            sorted_keys = sorted(knowledge.keys())
+            overflow = len(knowledge) - MAX_KNOWLEDGE_ENTRIES
+            for key in sorted_keys[:overflow]:
+                del knowledge[key]
         dossier.knowledge = json.dumps(knowledge, ensure_ascii=False)
     if new_notes:
-        dossier.relationship_notes = (
+        notes = (
             dossier.relationship_notes + f"\n[{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%H:%M')}] {new_notes}"
         ).strip()
+        # Cap the running log at the most recent MAX_RELATIONSHIP_NOTES_CHARS
+        # characters so a world-level dossier row cannot grow without bound.
+        if len(notes) > MAX_RELATIONSHIP_NOTES_CHARS:
+            notes = notes[-MAX_RELATIONSHIP_NOTES_CHARS:]
+        dossier.relationship_notes = notes
 
 
 def _new_dossier(
