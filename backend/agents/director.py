@@ -152,9 +152,10 @@ class DirectorAgent:
     async def process(
         self,
         task: str,
-        db: Any = None,
+        session_factory: Any = None,
         session_id: str | None = None,
         action_queue: Any = None,
+        db: Any = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         Main entry point.  Consumes a task description and yields
@@ -162,6 +163,13 @@ class DirectorAgent:
         Event types emitted:
           status, outline, scene_change, agent_act, agent_think,
           agent_speak, world_state_delta, beat_ready, complete, error
+
+        Cycle 45 (H1): ``session_factory`` is the preferred DB handle —
+        the director opens a short-lived session per DB operation via
+        ``async with session_factory() as session:`` so no connection is
+        held during the inter-beat 300s wait. The legacy ``db`` kwarg is
+        retained for unit tests that inject a mock session directly; when
+        both are supplied, ``session_factory`` wins.
         """
         yield AgentEvent(
             type="status", data={"message": "Director is analysing the task…"}
@@ -196,6 +204,7 @@ class DirectorAgent:
                 context={"previous_scene": previous_scene, "current_scene": current_scene},
                 scene_desc=scene_desc,
                 db=db,
+                session_factory=session_factory,
                 session_id=session_id,
                 active_character_id=active_character_id,
             ):
@@ -235,19 +244,31 @@ class DirectorAgent:
                         # Resolve target from signal first (routes.py:151 pushes
                         # {"target": ...}), fall back to db for session-resume.
                         target_raw = signal.get("target") if isinstance(signal, dict) else None
-                        if not target_raw and db is not None and session_id is not None:
+                        if not target_raw and session_id is not None and (session_factory is not None or db is not None):
                             try:
                                 from sqlalchemy import select
                                 # models.py:9 class is `Session`, routes.py:12
                                 # imports `Session as SessionModel`. Use the
                                 # alias form to match existing convention.
                                 from db.models import Session as SessionModel
-                                row = await db.execute(
-                                    select(SessionModel.active_character_id).where(
-                                        SessionModel.id == session_id
+                                # Cycle 45 (H1): prefer a short-lived session
+                                # from the factory so we don't pin the
+                                # request-level connection during the wait.
+                                if session_factory is not None:
+                                    async with session_factory() as sess:
+                                        row = await sess.execute(
+                                            select(SessionModel.active_character_id).where(
+                                                SessionModel.id == session_id
+                                            )
+                                        )
+                                        target_raw = row.scalar_one_or_none()
+                                else:
+                                    row = await db.execute(
+                                        select(SessionModel.active_character_id).where(
+                                            SessionModel.id == session_id
+                                        )
                                     )
-                                )
-                                target_raw = row.scalar_one_or_none()
+                                    target_raw = row.scalar_one_or_none()
                             except Exception as e:
                                 logger.error(
                                     "Error fetching active_character_id for session %s: %s",
@@ -377,6 +398,7 @@ class DirectorAgent:
         context: dict[str, str],
         scene_desc: str | None = None,
         db: Any = None,
+        session_factory: Any = None,
         session_id: str | None = None,
         active_character_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -490,6 +512,9 @@ class DirectorAgent:
             )
         # Process each event — substitute real character responses for agent_speak
         beat_events_for_dossier: list[dict[str, Any]] = []
+        # agent_speak event payloads collected during the loop; persisted
+        # after the loop in a single short-lived DB session (Cycle 45 / H1).
+        speak_events_to_persist: list[dict[str, Any]] = []
         for evt in events:
             evt_type = evt.get("type", "")
             evt_data = evt.get("data", {})
@@ -534,59 +559,121 @@ class DirectorAgent:
                 data=evt_data,
                 model_route=beat_model_route,
             )
-            # Persist agent_speak events as Message rows so story history
-            # survives page refresh. Other event types (agent_think, act,
-            # scene_change, world_state_delta) are not user-visible dialogue
-            # and are intentionally not persisted here.
-            if (
-                db is not None
-                and session_id is not None
-                and evt_type == "agent_speak"
-            ):
-                from db.models import Message
-
-                db.add(
-                    Message(
-                        session_id=session_id,
-                        role="assistant",
-                        content=evt_data.get("content", ""),
-                        character_name=evt_data.get("character_id"),
-                        emotion_state=evt_data.get("emotion_state"),
-                        gif_search_query=evt_data.get("gif_search_query"),
-                        beat_id=f"beat_{beat_index + 1}",
-                    )
-                )
+            # Collect agent_speak events to persist after the loop. Deferring
+            # the DB writes keeps the session open for the shortest possible
+            # window (Cycle 45 / H1: avoid holding a DB connection during the
+            # character sub-agent LLM calls). Other event types (agent_think,
+            # act, scene_change, world_state_delta) are not user-visible
+            # dialogue and are intentionally not persisted here.
+            if evt_type == "agent_speak":
+                speak_events_to_persist.append(evt_data)
             beat_events_for_dossier.append(evt)
-        # Update dossiers after the beat
-        if db is not None and session_id is not None:
-            try:
-                # L5 fix: commit the agent_speak Messages (db.add'd in the
-                # loop above) BEFORE calling update_dossiers. If update_dossiers
-                # fails below, db.rollback() will only undo the dossier changes
-                # — the already-committed Messages survive so dialogue does not
-                # "disappear" on page refresh after a dossier failure.
-                await db.commit()
-                deltas = await update_dossiers(
-                    db=db,
-                    session_id=session_id,
-                    beat_summary=scene_desc,
-                    beat_events=beat_events_for_dossier,
-                    provider=self.provider,
-                    model_route=beat_model_route,
-                )
-                if deltas:
-                    yield AgentEvent(
-                        type="world_state_delta",
-                        data={"deltas": deltas, "model_route": beat_model_route},
+        # Persist agent_speak Messages + update dossiers. All writes share
+        # ONE session because:
+        #  - Messages are committed before update_dossiers (L5 fix) so they
+        #    survive a dossier-failure rollback.
+        #  - update_dossiers calls db.add/commit internally and must see
+        #    the same transaction state.
+        # Cycle 45 (H1): when session_factory is provided, open a fresh
+        # short-lived session so no DB connection is held during the LLM
+        # sub-agent calls or the inter-beat 300s wait. The legacy ``db``
+        # path is retained for unit tests that pass a mock session directly.
+        has_db = (
+            session_id is not None
+            and (session_factory is not None or db is not None)
+            and len(speak_events_to_persist) > 0
+        )
+        # Even with no agent_speak events, we still call update_dossiers if
+        # a session is available — dossier deltas can derive from non-speak
+        # events (agent_act, scene_change) in beat_events_for_dossier.
+        if not has_db and session_id is not None and (session_factory is not None or db is not None):
+            has_db = True
+        deltas: list[dict[str, Any]] | None = None
+        if has_db:
+            if session_factory is not None:
+                async with session_factory() as session:
+                    deltas = await self._persist_beat_writes(
+                        session=session,
+                        session_id=session_id,
+                        beat_index=beat_index,
+                        speak_events=speak_events_to_persist,
+                        beat_events_for_dossier=beat_events_for_dossier,
+                        scene_desc=scene_desc,
+                        beat_model_route=beat_model_route,
                     )
-            except Exception:
-                logger.exception(
-                    "Dossier update failed for session %s", session_id
+            else:
+                deltas = await self._persist_beat_writes(
+                    session=db,
+                    session_id=session_id,
+                    beat_index=beat_index,
+                    speak_events=speak_events_to_persist,
+                    beat_events_for_dossier=beat_events_for_dossier,
+                    scene_desc=scene_desc,
+                    beat_model_route=beat_model_route,
                 )
-                # Rollback partial dossier changes to prevent inconsistent state
-                await db.rollback()
+            if deltas:
+                yield AgentEvent(
+                    type="world_state_delta",
+                    data={"deltas": deltas, "model_route": beat_model_route},
+                )
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
+
+    async def _persist_beat_writes(
+        self,
+        session: Any,
+        session_id: str,
+        beat_index: int,
+        speak_events: list[dict[str, Any]],
+        beat_events_for_dossier: list[dict[str, Any]],
+        scene_desc: str,
+        beat_model_route: str,
+    ) -> list[dict[str, Any]] | None:
+        """Persist agent_speak Messages and update dossiers in one session.
+
+        Returns the dossier deltas (None if update_dossiers failed).
+        L5: Messages are committed BEFORE update_dossiers so a dossier
+        failure rollback does not undo the already-committed dialogue —
+        story history survives page refresh even when the dossier layer
+        errors out.
+        """
+        from db.models import Message
+
+        for evt_data in speak_events:
+            session.add(
+                Message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=evt_data.get("content", ""),
+                    character_name=evt_data.get("character_id"),
+                    emotion_state=evt_data.get("emotion_state"),
+                    gif_search_query=evt_data.get("gif_search_query"),
+                    beat_id=f"beat_{beat_index + 1}",
+                )
+            )
+        # L5 fix: commit the agent_speak Messages BEFORE calling
+        # update_dossiers. If update_dossiers fails below, session.rollback()
+        # only undoes the dossier changes — the already-committed Messages
+        # survive so dialogue does not "disappear" on page refresh after a
+        # dossier failure.
+        await session.commit()
+        try:
+            deltas = await update_dossiers(
+                db=session,
+                session_id=session_id,
+                beat_summary=scene_desc,
+                beat_events=beat_events_for_dossier,
+                provider=self.provider,
+                model_route=beat_model_route,
+            )
+            return deltas
+        except Exception:
+            logger.exception(
+                "Dossier update failed for session %s", session_id
+            )
+            # Rollback partial dossier changes to prevent inconsistent state.
+            await session.rollback()
+            return None
     @staticmethod
     def _beat_ready_event(beat_index: int, summary: str) -> AgentEvent:
         return AgentEvent(

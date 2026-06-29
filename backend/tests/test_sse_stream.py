@@ -69,7 +69,18 @@ from models.schemas import AgentEvent  # noqa: E402
 
 @pytest.fixture
 def mock_db():
-    """Mock AsyncSession for route dependency injection."""
+    """Mock AsyncSession for route dependency injection.
+
+    Note (Cycle 45 / H1): ``stream_session`` no longer takes a request-
+    level DB session via ``Depends(get_db)``. Instead it imports
+    ``async_session_factory`` at module level and opens short-lived
+    sessions for the existence check and per-event stop-signal check.
+    The ``client`` fixture patches ``api.routes.async_session_factory``
+    with a factory yielding this mock_db, so the existing per-test
+    ``mock_db.execute`` side_effect / return_value setup continues to
+    work. ``get_db`` is still overridden for any non-stream endpoint
+    that happens to be exercised, but the stream path no longer uses it.
+    """
     db = MagicMock()
     db.execute = AsyncMock()
     db.add = MagicMock()  # sync on real AsyncSession
@@ -92,11 +103,34 @@ def mock_director():
 
 
 @pytest.fixture
-async def client(mock_db, mock_director):
+def mock_session_factory(mock_db):
+    """Factory whose ``async with factory() as session:`` yields mock_db.
+
+    Stand-in for ``api.routes.async_session_factory`` so the stream
+    endpoint's short-lived session blocks (existence check + per-event
+    stop-signal check) run against the mock. All "sessions" produced by
+    this factory share the same ``mock_db`` instance, preserving the
+    existing ``mock_db.execute`` call-order / count assertions.
+    """
+    class _SessionCM:
+        async def __aenter__(self):
+            return mock_db
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    return lambda: _SessionCM()
+
+
+@pytest.fixture
+async def client(mock_db, mock_director, mock_session_factory):
     """``httpx.AsyncClient`` bound to the FastAPI app via ``ASGITransport``.
 
-    Both ``get_db`` and ``get_director`` are overridden so the routes never
-    touch real Postgres or the real Director singleton on ``app.state``.
+    ``get_director`` is overridden so the route never touches the real
+    Director singleton on ``app.state``. ``get_db`` is also overridden
+    for any non-stream endpoint. The stream endpoint sources its DB
+    sessions from ``api.routes.async_session_factory`` (Cycle 45 / H1),
+    so we patch that module attribute with ``mock_session_factory``.
     ``main.engine`` is patched to neutralise lifespan DB init (defensive —
     ASGITransport does not run lifespan, but the patch keeps import-time
     references safe).
@@ -116,12 +150,13 @@ async def client(mock_db, mock_director):
     fake_engine.begin = _fake_engine_begin
 
     try:
-        with patch("main.engine", fake_engine):
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as c:
-                yield c
+        with patch("api.routes.async_session_factory", mock_session_factory):
+            with patch("main.engine", fake_engine):
+                transport = httpx.ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as c:
+                    yield c
     finally:
         app.dependency_overrides.clear()
         # Defensive: clear any leaked in-flight queues from a failed test.
