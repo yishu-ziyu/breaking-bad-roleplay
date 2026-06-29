@@ -110,6 +110,7 @@ async def compute_dossier_delta(
         response = await provider.call_model(messages, model_route)
         return _extract_json(response)
     except Exception:
+        logger.exception("compute_dossier_delta failed")
         return {"deltas": []}
 
 
