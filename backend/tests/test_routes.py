@@ -170,6 +170,8 @@ class TestCreateSession:
         assert body["status"] == "active"
         # created_at is ISO-format (Pydantic serialises datetime → ISO string)
         datetime.fromisoformat(body["created_at"])
+        added_session = mock_db.add.call_args.args[0]
+        assert added_session.current_mode == "story"
         # DB was touched: one add, one commit, one refresh
         assert mock_db.add.call_count == 1
         assert mock_db.commit.await_count == 1

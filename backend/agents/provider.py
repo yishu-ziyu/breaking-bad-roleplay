@@ -1,4 +1,5 @@
 import httpx
+from pathlib import Path
 from typing import Literal
 from config import settings
 
@@ -12,7 +13,7 @@ class ProviderFacade:
         provider = ProviderFacade(settings)
         reply = await provider.call_model(
             messages=[{"role": "user", "content": "Hello"}],
-            model_route="minimax/MiniMax-M1-80k",
+            model_route="minimax/MiniMax-M3",
         )
     """
 
@@ -22,9 +23,30 @@ class ProviderFacade:
             settings = _settings
         self.minimax_key = settings.minimax_api_key
         self.stepfun_key = settings.stepfun_api_key
+        self.cli_proxy_base_url = settings.cli_proxy_base_url.rstrip("/")
+        self.cli_proxy_key = settings.cli_proxy_api_key or self._load_cli_proxy_api_key()
+        self.cli_proxy_default_model = settings.cli_proxy_default_model
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0)
         )
+
+    def _load_cli_proxy_api_key(self) -> str:
+        config_path = Path.home() / ".cli-proxy-api" / "config.yaml"
+        if not config_path.exists():
+            return ""
+        in_api_keys = False
+        for line in config_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped == "api-keys:":
+                in_api_keys = True
+                continue
+            if not in_api_keys:
+                continue
+            if stripped.startswith("- "):
+                return stripped[2:].strip().strip('"').strip("'")
+            if stripped and not line.startswith(" "):
+                return ""
+        return ""
 
     async def call_model(
         self,
@@ -56,7 +78,9 @@ class ProviderFacade:
             return await self._call_minimax(messages, model, max_tokens)
         if provider == "stepfun":
             return await self._call_stepfun(messages, model)
-        raise ValueError(f"Unknown provider '{provider}'. Use 'minimax' or 'stepfun'.")
+        if provider == "cliproxy":
+            return await self._call_cli_proxy(messages, model, max_tokens)
+        raise ValueError(f"Unknown provider '{provider}'. Use 'minimax', 'stepfun', or 'cliproxy'.")
 
     async def _call_minimax(
         self, messages: list[dict], model: str, max_tokens: int
@@ -116,6 +140,59 @@ class ProviderFacade:
             raise RuntimeError(f"StepFun API returned empty content: {data}")
         return content
 
+    async def _call_cli_proxy(
+        self, messages: list[dict], model: str, max_tokens: int
+    ) -> str:
+        if not self.cli_proxy_key:
+            raise RuntimeError("CLIProxy API key is not configured")
+
+        system_parts: list[str] = []
+        anthropic_messages: list[dict] = []
+        for message in messages:
+            role = message.get("role")
+            content = message.get("content", "")
+            if role == "system":
+                system_parts.append(str(content))
+            elif role in ("user", "assistant"):
+                anthropic_messages.append({"role": role, "content": str(content)})
+
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": anthropic_messages,
+        }
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
+
+        resp = await self._client.post(
+            f"{self.cli_proxy_base_url}/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "x-api-key": self.cli_proxy_key,
+            },
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            error = data["error"]
+            if isinstance(error, dict):
+                error_msg = error.get("message", str(error))
+            else:
+                error_msg = str(error)
+            raise RuntimeError(f"CLIProxy API error: {error_msg}")
+
+        content_blocks = data.get("content", [])
+        content = "".join(
+            str(block.get("text") or block.get("thinking") or "")
+            for block in content_blocks
+            if block.get("type") in ("text", "thinking")
+        )
+        if not content:
+            raise RuntimeError(f"CLIProxy API returned empty content: {data}")
+        return content
+
     async def close(self) -> None:
         await self._client.aclose()
 
@@ -130,7 +207,7 @@ class ProviderFacade:
         characters: list[str],
     ) -> str:
         """
-        Always returns stepfun/step-3.7-flash.
-        MiniMax routing is disabled until a valid API key is available.
+        Chat defaults to CLIProxy for local development. The frontend can
+        still override the provider prefix for Direct/Crew chat.
         """
-        return "stepfun/step-3.7-flash"
+        return f"cliproxy/{self.cli_proxy_default_model}"

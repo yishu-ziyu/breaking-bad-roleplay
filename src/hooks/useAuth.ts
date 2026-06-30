@@ -2,8 +2,9 @@
    ABQ Roleplay Lab — useAuth hook (Supabase Auth)
    ================================================================= */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '../lib/supabaseClient'
+import { clearStoredPrivacyKey, deriveAndStorePrivacyKey } from '../lib/privacyVault'
 import type { Session, User } from '@supabase/supabase-js'
 
 type AuthState = {
@@ -20,21 +21,18 @@ type UseAuthReturn = AuthState & {
 }
 
 export function useAuth(): UseAuthReturn {
+  const supabase = useMemo(() => createClient(), [])
   const [state, setState] = useState<AuthState>({
     user: null,
     session: null,
-    loading: true,
+    loading: Boolean(supabase),
     error: null,
   })
-  const clientRef = useRef<ReturnType<typeof createClient> | null>(null)
 
   useEffect(() => {
-    const supabase = createClient()
     if (!supabase) {
-      setState(s => ({ ...s, loading: false }))
       return
     }
-    clientRef.current = supabase
 
     // Initial session check
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null }; error: Error | null }) => {
@@ -49,25 +47,39 @@ export function useAuth(): UseAuthReturn {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [supabase])
 
   const signIn = async (email: string, password: string) => {
-    const supabase = clientRef.current
     if (!supabase) throw new Error('Supabase not configured')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
+    const privacyUser = data.user ?? data.session?.user
+    if (privacyUser) {
+      await deriveAndStorePrivacyKey({ id: privacyUser.id, email: privacyUser.email ?? email }, password)
+    }
+    if (data.session) {
+      setState({ user: data.session.user, session: data.session, loading: false, error: null })
+    }
   }
 
   const signUp = async (email: string, password: string) => {
-    const supabase = clientRef.current
     if (!supabase) throw new Error('Supabase not configured')
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
+    const privacyUser = data.user ?? data.session?.user
+    if (privacyUser) {
+      await deriveAndStorePrivacyKey({ id: privacyUser.id, email: privacyUser.email ?? email }, password)
+    }
+    if (data.session) {
+      setState({ user: data.session.user, session: data.session, loading: false, error: null })
+    }
   }
 
   const signOut = async () => {
-    const supabase = clientRef.current
     if (!supabase) return
+    if (state.user) {
+      clearStoredPrivacyKey(state.user.id)
+    }
     await supabase.auth.signOut()
   }
 

@@ -418,6 +418,62 @@ class TestCycle4_PerspectiveSemantics:
         assert "Active perspective character: Jesse Pinkman" in user_prompt
         assert "FIRST agent_speak" in user_prompt
 
+    def test_prepare_beat_events_trims_unplayable_noise(self, director):
+        """Director output is capped to a concise playable beat."""
+        events = [
+            {"type": "scene_change", "data": {"description": "duplicate"}},
+            {
+                "type": "agent_speak",
+                "data": {"character_id": "Walter White", "content": "one"},
+            },
+            {
+                "type": "agent_speak",
+                "data": {"character_id": "Walter White", "content": "repeat"},
+            },
+            {
+                "type": "agent_speak",
+                "data": {"character_id": "Gus Fring", "content": "two"},
+            },
+            {
+                "type": "agent_speak",
+                "data": {"character_id": "Jesse Pinkman", "content": "too much"},
+            },
+            {
+                "type": "world_state_delta",
+                "data": {
+                    "deltas": [
+                        {"target": "", "field": "", "old_value": "∅", "new_value": "∅"},
+                        {
+                            "target": "Walter White",
+                            "field": "leverage",
+                            "old_value": "hidden",
+                            "new_value": "exposed",
+                        },
+                    ]
+                },
+            },
+        ]
+
+        prepared = director._prepare_beat_events(events)
+
+        assert [event["type"] for event in prepared] == [
+            "agent_speak",
+            "agent_speak",
+            "world_state_delta",
+        ]
+        assert [event["data"]["character_id"] for event in prepared[:2]] == [
+            "Walter White",
+            "Gus Fring",
+        ]
+        assert prepared[2]["data"]["deltas"] == [
+            {
+                "target": "Walter White",
+                "field": "leverage",
+                "old_value": "hidden",
+                "new_value": "exposed",
+            }
+        ]
+
     async def test_filter_reorders_first_agent_speak_to_target(self, director, mock_provider):
         """Given LLM returns walter-first events but active=jesse, filter
         hoists jesse speak to first agent_speak position."""

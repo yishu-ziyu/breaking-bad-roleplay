@@ -72,6 +72,7 @@ async def create_session(
         id=session_id,
         title=payload.title,
         status="active",
+        current_mode="story",
         task_prompt=payload.task_prompt,
         active_character_id=payload.active_character_id,
         created_at=now,

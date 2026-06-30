@@ -1,5 +1,64 @@
 # Breaking Bad Roleplay — 开发日志
 
+## 2026-07-01 Privacy model + encrypted cloud profile ✅
+
+### 背景
+- 用户追问“怎么确保开发者不会看到用户隐私”。
+- 结论：RLS 只能防普通用户互看，不能防持有 service role / DB admin 的开发者读取明文。
+- 产品承诺必须分清：用户隔离、日志克制、云端密文、运行时明文处理这四个层次。
+
+### 改动
+- `docs/PRIVACY_MODEL.md` — 新增隐私模型，明确当前承诺、不能承诺的边界、日志红线和已知缺口。
+- `src/lib/privacyVault.ts` — 新增客户端隐私库：
+  - email/password 登录后派生 AES-GCM key；
+  - 本机保存派生密钥用于 session 恢复；
+  - 云端密文 envelope 前缀为 `abqenc:v1:`。
+- `src/hooks/useAuth.ts` — sign-in/sign-up 成功后派生并保存隐私密钥；sign-out 清理本机隐私密钥。
+- `src/lib/supabasePersistence.ts` — 新增 private persistence：
+  - `persistPrivateChatMessage`
+  - `persistPrivateChatMessages`
+  - `persistPrivateCharacterMemory`
+  - load 路径自动解密新 envelope，并兼容旧明文数据。
+- `src/App.tsx` — 云同步只在隐私密钥可用时运行；如果已有 session 但密钥缺失，进入 `privacy-locked`，不继续上传明文。
+- `src/components/AuthSection.tsx` — 新增 `privacy-locked` 用户提示。
+- `tests/privacy-guard.spec.ts` — 禁止生产日志记录 raw userInput/history/memory/prompt/response 等敏感字段。
+- `src/lib/privacyVault.test.ts` / `src/lib/supabasePersistence.test.ts` — 覆盖加密、解密、错误密钥失败、云端写入不是明文。
+- Code Wiki 更新 Supabase 字段说明：`message` / `summary` / `key_facts` 新写入为客户端加密 envelope。
+
+### 隐私边界
+- 已做到：Supabase 中新的聊天与角色记忆不再以明文保存。
+- 已验证：RLS 真实项目验收通过，普通用户无法读写他人行。
+- 仍不能承诺：后端和 LLM provider 在生成时完全不处理明文；这是当前 AI 回复链路的必然条件。
+- 已知缺口：FastAPI Story/session 表尚未客户端加密；密码变更后的旧密文重加密流程尚未实现。
+
+### 验证
+- `npm test` — 36 passed
+- `AUTH_E2E=1 ... npx playwright test tests/e2e/auth-profile.spec.ts --workers=1` — 1 passed，验证云端回填为 `abqenc:v1:` 密文
+- `npm run verify:rls` — live Supabase RLS passed
+- `npm run lint`
+- `npm run build`
+- `npx playwright test` — 23 passed, 1 skipped
+- `cd backend && uv run pytest` — 99 passed, 1 existing StarletteDeprecationWarning
+
+---
+
+## 2026-06-30 Lint baseline + E2E guardrail ✅
+
+### 改动
+- 修复前端 ESLint 基线：去掉 render/effect 同步 setState、空 catch、`any` 测试类型逃逸。
+- `GifCard` / `Silhouette` 改为按失败资源记录 fallback，避免为重置状态额外触发 effect。
+- `useAuth` 稳定 Supabase client 生命周期，保持未配置 Supabase 时的匿名可用路径。
+- `first-immersive` AC-8 测试收窄到“每条 Crew debate 回复各自有 GIF”，避免把开场消息 GIF 算入辩论回复数量。
+
+### 验证
+- `npm run lint`
+- `npm test` — 21 passed
+- `npm run build`
+- `uv run pytest` — 98 passed, 1 existing StarletteDeprecationWarning
+- `npm run e2e` — 19 passed
+
+---
+
 ## 2026-06-26 Vercel 部署成功 ✅
 
 ### 最终部署方案

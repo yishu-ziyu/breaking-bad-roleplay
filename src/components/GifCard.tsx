@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 
 export interface GifCardProps {
@@ -8,20 +8,16 @@ export interface GifCardProps {
 }
 
 export function GifCard({ src, alt, caption }: GifCardProps) {
-  const [hidden, setHidden] = useState(false)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
 
-  useEffect(() => {
-    setHidden(false)
-  }, [src])
-
-  if (!src) return null
+  if (!src || src === failedSrc) return null
   return (
-    <figure className="gif-card" hidden={hidden}>
+    <figure className="gif-card">
       <img
         src={src}
         alt={alt || ''}
         onError={() => {
-          setHidden(true)
+          setFailedSrc(src)
         }}
       />
       {caption && <figcaption>{caption}</figcaption>}

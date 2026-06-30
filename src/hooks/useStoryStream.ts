@@ -394,6 +394,14 @@ export function useStoryStream(): UseStoryStreamReturn {
         // Roll back optimistic state so user can retry from beat_paused
         // (action !== 'stop' here — stop returned early above)
         setConnectionState('beat_paused')
+        return
+      }
+
+      // A restored session has message history but no live EventSource.
+      // After the action succeeds, open a fresh stream so Continue,
+      // Redirect, and Switch Perspective can actually receive new events.
+      if (!esRef.current) {
+        connectStream(sid)
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
@@ -413,7 +421,7 @@ export function useStoryStream(): UseStoryStreamReturn {
         abortControllerRef.current = null
       }
     }
-  }, [closeEventSource])
+  }, [closeEventSource, connectStream])
 
   const reconnect = useCallback(() => {
     const sid = sessionRef.current

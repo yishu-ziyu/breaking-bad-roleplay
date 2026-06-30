@@ -1,154 +1,388 @@
-# 前端模块说明
+# Frontend Code Wiki
 
-## 1. 目录结构
+前端位于 [src](../../src)，是一个 React + TypeScript + Vite 单页应用。它有两个主视图：
 
-```
+- Chat view：普通角色聊天，支持 direct 和 crew 两种模式。
+- Story view：Director Agent 驱动的实时剧情流，使用 EventSource 接收后端 SSE。
+
+## 目录结构
+
+```text
 src/
-├── App.tsx                 # 应用根组件
-├── main.tsx                # React 渲染入口
-├── index.css / App.css     # 全局与应用样式
-├── assets/                 # 静态图片
-├── components/
-│   └── AuthSection.tsx     # 登录/注册/登出 UI
-├── hooks/
-│   ├── useAuth.ts          # Supabase 认证
-│   ├── useStoryStream.ts   # 剧情流状态
-│   └── useCharacterMemory.ts # 单角色记忆
-├── lib/
-│   ├── persistedState.ts   # localStorage 持久化 state hook
-│   ├── sceneBackgrounds.ts # 根据对话内容选择场景背景
-│   ├── silhouette.tsx      # 角色剪影 SVG 组件
-│   ├── supabaseClient.ts   # Supabase 客户端初始化
-│   ├── supabasePersistence.ts # Supabase 聊天/记忆持久化
-│   └── voiceExamples.ts    # 角色语音示例映射
-├── styles/
-│   └── tokens.css          # CSS 设计 token
-├── roleAssets.ts           # 角色头像/背景资源映射
-└── roleProfiles.ts         # 角色档案数据
-
-public/
-├── avatars/                # 角色头像 SVG
-├── backgrounds/            # 场景背景 SVG
-├── favicon.svg
-└── icons.svg
+  App.tsx                         # 应用主入口与大部分 UI 编排
+  App.css                         # 主界面样式
+  index.css                       # 全局样式
+  styles/tokens.css               # 设计 token
+  roleProfiles.ts                 # 角色关系、语气、验收标准数据
+  roleAssets.ts                   # 角色 GIF 素材 registry
+  components/
+    AuthSection.tsx               # Supabase 登录/注册/退出 UI
+    GifCard.tsx                   # GIF 渲染与失败隐藏
+    VoicePlayer.tsx               # Web Speech 播放按钮
+  hooks/
+    useAuth.ts                    # Supabase auth hook
+    useCharacterMemory.ts         # 前端滑窗记忆
+    useStoryStream.ts             # Story session/SSE 状态机
+  lib/
+    gifResolver.ts                # 角色 GIF 选择
+    persistedState.ts             # localStorage state hooks
+    sceneBackgrounds.ts           # 聊天场景背景路由
+    silhouette.tsx                # 角色头像/剪影渲染
+    supabaseClient.ts             # Supabase browser client
+    supabasePersistence.ts        # Supabase chat/memory CRUD
+    voiceExamples.ts              # 角色开场/语音参考文本
+    voicePlayerHelpers.ts         # Web Speech voice selection + pure helpers
 ```
 
-## 2. 核心组件
+## 应用入口：[src/App.tsx](../../src/App.tsx)
 
-### 2.1 App.tsx
+`App` 同时管理侧边栏控制和主内容区。
 
-文件：`[src/App.tsx](../../src/App.tsx)`
+### 主要类型
 
-`App` 是单页应用的根组件，负责：
+| 类型 | 值 |
+|---|---|
+| `ChatMode` | `direct` / `crew` |
+| `Language` | `en` / `zh` |
+| `View` | `chat` / `story` |
+| `CharacterId` | `walter` / `jesse` / `skyler` / `saul` / `mike` / `gus` |
+| `ChatMessage` | `{ id, sender, text, emotion, gifQuery, gifUrl, thinking, toolExecuted, toolLog }` |
 
-- 侧边栏：角色选择、语言切换、视图切换、关系选择、模式选择、模型后端选择。
-- 主面板：根据 `view` 渲染聊天视图或剧情视图。
-- 聊天视图：消息列表、输入框、场景背景、GIF 卡片、工具信息。
-- 剧情视图：任务输入 → 大纲确认 → beat 回放与决策按钮。
+### 主要状态
 
-关键状态：
+| state | 持久化 | 说明 |
+|---|---|---|
+| `selectedCharId` | localStorage `abq_character` | 当前角色 |
+| `language` | `abq_language` | UI 和 prompt 目标语言 |
+| `relationByChar` | `abq_relation` | 每个角色独立关系锚点 |
+| `view` | `abq_view` | Chat / Story |
+| `mode` | `abq_mode` | direct / crew |
+| `llmProvider` | `abq_llm-v2` | 当前模型后端；默认 `cliproxy` |
+| `messagesByChar` | `abq_messages` | 普通聊天消息 |
+| `memoryByChar` | `abq_memory` | 前端聊天记忆 |
+| `storyTask` | React state | Story 任务输入 |
 
-| 状态 | 说明 |
-|------|------|
-| `selectedCharId` | 当前选中的角色 |
-| `language` | `en` / `zh` |
-| `view` | `chat` / `story` |
-| `mode` | `direct` / `crew` |
-| `llmProvider` | `agnes` / `stepfun` / `deepseek` / `minimax` |
-| `messagesByChar` | 每个角色的聊天历史 |
-| `storyTask` / `story` | 剧情模式输入与流状态 |
+### 侧边栏
 
-### 2.2 AuthSection
+侧边栏负责：
 
-文件：`[src/components/AuthSection.tsx](../../src/components/AuthSection.tsx)`
+- 品牌和 tagline。
+- `AuthSection`。
+- 六个角色按钮。
+- 语言切换。
+- Chat/Story 视图切换。
+- 当前角色的关系锚点选择。
+- Chat 模式下的 direct/crew 切换。
+- 模型后端选择。
 
-- 接收 `auth` 对象与 `syncStatus`。
-- 渲染登录表单或用户信息。
+当前模型下拉：
 
-## 3. 自定义 Hooks
+```text
+cliproxy -> CLIProxy gemini-pro-agent
+minimax  -> MiniMax M3
+```
 
-### 3.1 useAuth
+后端仍支持 `stepfun`，但前端 UI 当前没有暴露。
 
-文件：`[src/hooks/useAuth.ts](../../src/hooks/useAuth.ts)`
+## Chat View 流程
 
-| 名称 | 说明 |
-|------|------|
-| `user` | 当前 Supabase 用户 |
-| `session` | 当前 session |
-| `loading` | 初始化中 |
-| `signIn(email, password)` | 登录 |
-| `signUp(email, password)` | 注册 |
-| `signOut()` | 登出 |
+### 初始化
 
-### 3.2 useStoryStream
+App 在角色、语言、关系或登录用户变化时执行一次合并逻辑：
 
-文件：`[src/hooks/useStoryStream.ts](../../src/hooks/useStoryStream.ts)`
+1. 如果已登录，调用：
+   - `loadChatMessages(userId, selectedCharId)`
+   - `loadCharacterMemory(userId, selectedCharId)`
+2. 将云端消息和本地消息按 `{sender,text}` 去重合并。
+3. 如果合并后为空，插入角色 opener。
+4. 如果云端有 memory，写入 `memoryByChar`。
 
-| 名称 | 说明 |
-|------|------|
-| `events` | 已渲染的 SSE 事件列表 |
-| `outline` | 剧情大纲文本 |
-| `beatIndex` / `totalBeats` | 当前 beat 进度 |
-| `confirmed` | 用户是否已确认大纲 |
-| `isGenerating` | 是否加载中 |
-| `sessionId` | 当前 session ID |
-| `startStory(task, character, provider)` | 调用 `/api/story` 获取大纲与 beats |
-| `confirmStory()` | 确认大纲，开始播放第一个 beat |
-| `sendAction(action)` | 继续 / 停止 动作 |
+### 发送消息
 
-注意：当前实现为本地回放模式，调用 `/api/story` 一次性返回大纲与 beats，前端按 beat 逐步展示。
+`handleSend`：
 
-### 3.3 useCharacterMemory
+```text
+user submits composer
+  -> append user ChatMessage locally
+  -> charMemory.addTurn(user)
+  -> POST /api/chat
+      {
+        characterId,
+        userInput,
+        relation,
+        mode,
+        history: last 10 messages,
+        language,
+        llmProvider,
+        voiceExample,
+        memorySummary,
+        keyFacts
+      }
+  -> if direct:
+       append one character reply
+       update memory with character reply
+       persist reply + memory to Supabase when logged in
+     if crew:
+       append each debate log as a character reply
+```
 
-文件：`[src/hooks/useCharacterMemory.ts](../../src/hooks/useCharacterMemory.ts)`
+注意：
 
-- 提供 `addTurn(role, text, memory)` 方法。
-- 维护每个角色的 `summary` 与 `keyFacts`。
-- 聊天时传给后端作为上下文。
+- `memorySummary` 和 `keyFacts` 当前由前端发送，但 FastAPI `ChatRequest` 未声明这些字段；Pydantic 默认忽略 extra，所以后端目前没有使用它们。
+- 普通聊天只在登录后把角色回复同步到 Supabase；用户消息当前只保存在 localStorage。
+- `GifCard` 的 URL 由 `resolveGifUrl(character, emotion, gifQuery)` 在前端决定。
 
-## 4. 工具库
+## Story View 流程
 
-### 4.1 persistedState
+Story 由 [src/hooks/useStoryStream.ts](../../src/hooks/useStoryStream.ts) 管理。
 
-文件：`[src/lib/persistedState.ts](../../src/lib/persistedState.ts)`
+### State
 
-- `usePersistedState<T>(key, defaultValue)`：基于 `localStorage` 的持久化 state hook。
+| state | 说明 |
+|---|---|
+| `events` | 已接收事件，最多保留 `MAX_EVENTS = 200` |
+| `outline` | Director 生成的剧情大纲 |
+| `sessionId` | 当前后端 session id |
+| `connectionState` | `idle` / `connecting` / `streaming` / `beat_paused` / `complete` / `error` |
+| `currentBeatId` | 当前暂停 beat id |
+| `beatIndex` | 前端累计 beat 数 |
+| `isSendingByChar` | per-character action loading |
+| `errorByChar` | per-character 或 session error |
+| `autoContinued` | 5 分钟无操作自动继续提示 |
+| `isResuming` | 正在从 saved session 恢复 |
 
-### 4.2 supabaseClient
+### `startStory(taskPrompt, characterId='walter')`
 
-文件：`[src/lib/supabaseClient.ts](../../src/lib/supabaseClient.ts)`
+```text
+reset local Story state
+  -> POST /api/session/create
+      { title, task_prompt, active_character_id }
+  -> save session_id to localStorage key abq_story_session_id
+  -> connectStream(session_id)
+```
 
-- 读取 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`。
-- 创建 Supabase 客户端。
+### `connectStream(sid)`
 
-### 4.3 supabasePersistence
+创建：
 
-文件：`[src/lib/supabasePersistence.ts](../../src/lib/supabasePersistence.ts)`
+```ts
+new EventSource(`/api/session/${sid}/stream`)
+```
 
-- `loadChatMessages(userId, characterId)`
-- `persistChatMessage(userId, message)`
-- `loadCharacterMemory(userId, characterId)`
-- `persistCharacterMemory(userId, memory)`
+监听事件：
 
-### 4.4 sceneBackgrounds
+| SSE event | 前端行为 |
+|---|---|
+| `outline` | 设置 `outline`，状态变 `streaming` |
+| `status` | 普通 status 追加到 events；自动继续 status 设置 `autoContinued` |
+| `scene_change` | 追加事件 |
+| `agent_act` | 追加事件 |
+| `agent_think` | 追加事件 |
+| `agent_speak` | 追加事件，渲染 dialogue、VoicePlayer、GifCard |
+| `world_state_delta` | 追加事件，渲染 delta list |
+| `beat_ready` | 设置 `currentBeatId`、`beatIndex + 1`、状态变 `beat_paused` |
+| `complete` | 追加 complete，状态变 `complete`，关闭 EventSource |
+| `error` | 如果有 `e.data`，视作后端 fatal error；否则让 EventSource 原生重试 |
 
-文件：`[src/lib/sceneBackgrounds.ts](../../src/lib/sceneBackgrounds.ts)`
+dedup：
 
-- `pickSceneUrl(recentTexts)`：根据最近对话关键词选择背景图 URL。
+- `agent_speak` 用 `character_id + content`。
+- `beat_ready` 用 `beat_id`。
+- 其他事件允许重复，避免误删。
 
-### 4.5 silhouette
+### `resumeSession(sid)`
 
-文件：`[src/lib/silhouette.tsx](../../src/lib/silhouette.tsx)`
+页面加载时如果存在 `abq_story_session_id`：
 
-- `<Silhouette characterId name size />`：渲染角色剪影 SVG。
+```text
+GET /api/session/{sid}/messages
+  -> 404: 清空 localStorage，回到 idle
+  -> 200: 把 MessageOut[] 映射为 agent_speak events
+  -> 状态设为 beat_paused
+```
 
-## 5. 样式系统
+恢复后不会自动连接 SSE。用户需要点击 Continue，避免刷新后自动继续消耗 LLM。
 
-文件：`[src/styles/tokens.css](../../src/styles/tokens.css)`
+### `sendAction(action, params, characterId)`
 
-定义 CSS 变量：颜色、间距、字体、阴影等设计 token。
+动作：
 
-## 6. 静态资源
+| action | 前端行为 |
+|---|---|
+| `stop` | POST action 后关闭 EventSource、清空 story state、清除 saved session |
+| `continue` | optimistic 设置 `streaming`，POST action |
+| `redirect` | optimistic 设置 `streaming`，POST `{ redirect_prompt }` |
+| `switch_perspective` | optimistic 设置 `streaming`，POST `{ target_character }` |
 
-- 头像：`public/avatars/{walter,jesse,skyler,saul,mike,gus}.svg`
-- 背景：`public/backgrounds/{abq-sunset,dea-office,lab-rv,los-pollos,rv-interior,saul-neon,skyler-living}.svg`
+实现细节：
+
+- 每次 action 前 abort 上一次未完成的 action request。
+- action 失败会把状态回滚到 `beat_paused`。
+- 组件 unmount 时关闭 EventSource 并 abort in-flight request。
+
+## 前端持久化
+
+### localStorage
+
+由 [src/lib/persistedState.ts](../../src/lib/persistedState.ts) 管理的 key 自动加 `abq_` 前缀。
+
+| key | 内容 |
+|---|---|
+| `abq_character` | 当前角色 |
+| `abq_language` | 当前语言 |
+| `abq_relation` | 每个角色的关系锚点 |
+| `abq_view` | 当前视图 |
+| `abq_mode` | Chat mode |
+| `abq_llm-v2` | 当前 LLM provider |
+| `abq_messages` | 普通聊天消息 |
+| `abq_memory` | 普通聊天记忆 |
+| `abq_story_session_id` | Story 后端 session id；由 `useStoryStream` 直接管理 |
+| `abq_recent_gifs` | GIF cooldown 最近使用 URL；由 `gifResolver` 管理 |
+
+### Supabase
+
+[src/lib/supabaseClient.ts](../../src/lib/supabaseClient.ts) 读取：
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+```
+
+如果未配置，`createClient()` 返回 `null`，UI 仍可 guest 使用。
+
+[src/lib/supabasePersistence.ts](../../src/lib/supabasePersistence.ts) 提供 Supabase 读写；[src/lib/privacyVault.ts](../../src/lib/privacyVault.ts) 提供客户端 AES-GCM 加密。
+
+| 函数 | 表 | 说明 |
+|---|---|---|
+| `loadChatMessages(userId, characterId, { privacyKey })` | `chat_messages` | 加载普通聊天，自动解密 `abqenc:v1:` envelope |
+| `persistPrivateChatMessage(userId, msg, privacyKey)` | `chat_messages` | 加密后插入普通聊天消息 |
+| `persistPrivateChatMessages(userId, msgs, privacyKey)` | `chat_messages` | 加密后批量插入普通聊天消息 |
+| `loadCharacterMemory(userId, characterId, { privacyKey })` | `character_memory` | 加载并解密 summary/key facts |
+| `persistPrivateCharacterMemory(userId, memory, privacyKey)` | `character_memory` | 加密后 upsert memory |
+
+明文 `persistChatMessage` / `persistCharacterMemory` 仍保留给低层测试和迁移兼容，但 App 云同步路径必须使用 private 版本。
+
+## 角色数据
+
+### [src/roleProfiles.ts](../../src/roleProfiles.ts)
+
+定义：
+
+- `CharacterId`
+- `RelationshipState`
+- `RoleProfile`
+- `baselineRelationshipState`
+- `roleProfiles`
+
+每个角色包含：
+
+- `roleKernel`
+- `voiceRules`
+- `relationshipRules`
+- `emotionTags`
+- `visualTags`
+- `acceptanceChecks`
+
+这些数据当前主要用于前端/产品表达，后端角色 prompt 在 `backend/agents/characters` 中另有一套。
+
+### [src/roleAssets.ts](../../src/roleAssets.ts)
+
+定义角色 GIF registry：
+
+- `RoleAssetCharacterId`
+- `RoleGifTag`
+- `RoleGifAsset`
+- `RoleAssetRegistryEntry`
+- `roleAssets`
+
+每个 GIF 包含：
+
+- `id`
+- `source`
+- `url`
+- `tags`
+- `usageNotes`
+- `safetyNotes`
+- `copyrightNotes`
+
+## 视觉与媒体模块
+
+| 文件 | 职责 |
+|---|---|
+| [src/lib/gifResolver.ts](../../src/lib/gifResolver.ts) | 通过 emotion/gifQuery 匹配 tag，避开最近两次使用的 GIF |
+| [src/components/GifCard.tsx](../../src/components/GifCard.tsx) | 渲染 GIF；图片加载失败后隐藏该 src |
+| [src/lib/sceneBackgrounds.ts](../../src/lib/sceneBackgrounds.ts) | 根据最近 8 条聊天文本关键词选择背景图 |
+| [src/lib/silhouette.tsx](../../src/lib/silhouette.tsx) | 角色头像渲染，当前支持公共 avatars |
+| [src/components/VoicePlayer.tsx](../../src/components/VoicePlayer.tsx) | Web Speech 播放按钮；无 speechSynthesis 时 disabled |
+| [src/lib/voicePlayerHelpers.ts](../../src/lib/voicePlayerHelpers.ts) | 角色 pitch/rate、voice 选择、播放/停止纯函数 |
+| [src/lib/voiceExamples.ts](../../src/lib/voiceExamples.ts) | 角色/关系开场与风格参考 |
+
+## 组件说明
+
+### `AuthSection`
+
+Props：
+
+```ts
+{
+  auth: ReturnType<typeof useAuth>
+  language: 'en' | 'zh'
+  syncStatus: string | null
+}
+```
+
+状态：
+
+- `signin` / `signup`
+- email/password
+- form error
+- guest hint
+
+行为：
+
+- Supabase 未配置时不阻塞 guest 使用。
+- 登录后显示 email、sign out、cloud sync 状态。
+
+### `GifCard`
+
+简单展示组件：
+
+- `src` 为空返回 `null`。
+- `onError` 后记录 `failedSrc`，避免破图反复渲染。
+
+### `VoicePlayer`
+
+行为：
+
+- 使用 `globalThis.speechSynthesis`。
+- 根据角色和语言选择 voice。
+- 根据角色 profile 设置 pitch/rate。
+- speaking 时点击会 cancel。
+- unmount 时 cancel，避免音频继续播放或 setState on unmounted。
+
+## 前端测试
+
+现有测试：
+
+- [src/lib/gifResolver.test.ts](../../src/lib/gifResolver.test.ts)
+- [src/components/VoicePlayer.test.ts](../../src/components/VoicePlayer.test.ts)
+- [tests/bugfix.spec.ts](../../tests/bugfix.spec.ts)
+- [test/tool-safety.test.js](../../test/tool-safety.test.js)
+- [tests/e2e](../../tests/e2e) Playwright E2E
+
+常用命令：
+
+```bash
+npm test
+npm run lint
+npm run build
+npm run e2e
+```
+
+## 前端开发注意事项
+
+- Story event schema 变更时必须同步 `useStoryStream`、`App.tsx` 渲染和后端 `models/schemas.py`。
+- localStorage key 已经有 `abq_` 前缀，新增持久化 state 应继续使用 `usePersistedState`。
+- Supabase 未配置是允许场景，不要让 auth/persistence failure 阻塞 guest chat。
+- GIF URL 是外部 Giphy 链接，正式生产前需要重新确认授权和可用性。
+- `sceneBackgrounds.ts` 引用了 `/backgrounds/blue-desert-rv.jpg`；如果部署包缺这个文件，会回退为浏览器 404 背景，不影响 API 但影响视觉。

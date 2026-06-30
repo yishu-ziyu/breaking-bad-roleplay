@@ -10,6 +10,7 @@
     "test": "tsx --test 'tests/*.spec.ts' 'test/**/*.test.js' 'src/**/*.test.ts'",
     "preview": "vite preview",
     "e2e": "playwright test",
+    "verify:rls": "node scripts/verify-supabase-rls.mjs",
     "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
