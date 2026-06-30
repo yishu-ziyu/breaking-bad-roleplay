@@ -103,12 +103,12 @@ async function mockChatCrew(
 }
 
 /* ------------------------------------------------------------------ */
-/*  AC-1: Fresh incognito → "Try without login" visible                */
+/*  AC-1: Fresh incognito → guest entry CTA visible                    */
 /* ------------------------------------------------------------------ */
 
-test('AC-1: fresh session shows "Try without login" CTA', async ({ page }) => {
+test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
   await gotoFresh(page)
-  const cta = page.getByRole('button', { name: /Try without login|无需登录，先试试/ })
+  const cta = page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })
   await expect(cta).toBeVisible()
 })
 
@@ -228,7 +228,7 @@ test('AC-6: VoicePlayer renders enabled play button when speechSynthesis availab
 test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavailable', async ({ page }) => {
   // Remove speechSynthesis so VoicePlayer falls back to disabled state
   await page.addInitScript(() => {
-    delete (window as any).speechSynthesis
+    delete (window as Window & { speechSynthesis?: SpeechSynthesis }).speechSynthesis
   })
   await seedStorage(page, chatState('walter', [
     { id: 'opener-walter', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
@@ -259,13 +259,18 @@ test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }
   ])
 
   await gotoFresh(page)
-  await expect(page.locator('header.chat-header p')).toContainText(/Crew Debate|多人剧情辩论|宏观辩论/)
+  await expect(page.locator('header.chat-header p')).toContainText(/Crew Debate|群像会谈/)
   await sendChatMessage(page, 'What is the plan?')
 
-  const gifCards = page.locator('.msg--char .gif-card img')
-  await expect(gifCards).toHaveCount(2)
-  for (let i = 0; i < 2; i++) {
-    const src = await gifCards.nth(i).getAttribute('src')
+  const debateReplies = [
+    page.locator('.msg--char', { hasText: 'We need to be careful.' }),
+    page.locator('.msg--char', { hasText: 'Everything is under control.' }),
+  ]
+
+  for (const reply of debateReplies) {
+    const gifCard = reply.locator('.gif-card img')
+    await expect(gifCard).toHaveCount(1)
+    const src = await gifCard.getAttribute('src')
     expect(src).toMatch(/^https:\/\//)
   }
 })

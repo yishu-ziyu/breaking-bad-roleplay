@@ -4,8 +4,15 @@
 
 import { createBrowserClient } from '@supabase/ssr'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
+const viteEnv = (import.meta as ImportMeta & {
+  env?: {
+    VITE_SUPABASE_URL?: string
+    VITE_SUPABASE_PUBLISHABLE_KEY?: string
+  }
+}).env ?? {}
+
+const SUPABASE_URL = viteEnv.VITE_SUPABASE_URL
+const SUPABASE_PUBLISHABLE_KEY = viteEnv.VITE_SUPABASE_PUBLISHABLE_KEY
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   // Dev fallback — no-op client so UI doesn't crash before env is set

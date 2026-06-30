@@ -28,7 +28,9 @@ function saveRecent(map: Record<string, string[]>) {
   if (!storageAvailable()) return
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(map))
-  } catch {}
+  } catch {
+    // GIF cooldown is best-effort; storage failures should not block chat.
+  }
 }
 
 function pushRecent(characterId: string, url: string) {

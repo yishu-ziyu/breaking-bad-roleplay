@@ -116,7 +116,7 @@ class TestCycle27_ProviderResponseParsing:
         with pytest.raises(RuntimeError) as exc_info:
             await provider._call_minimax(
                 messages=[{"role": "user", "content": "hi"}],
-                model="MiniMax-M1",
+                model="MiniMax-M3",
                 max_tokens=128,
             )
         assert "MiniMax API error: invalid api key" in str(exc_info.value)

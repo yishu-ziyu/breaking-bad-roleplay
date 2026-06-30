@@ -1,124 +1,213 @@
-# 整体架构
+# Architecture
 
-## 1. 技术栈概览
+ABQ Roleplay Lab 是一个前后端分离但可通过 Docker 合并部署的互动叙事应用。前端负责角色选择、聊天体验、SSE 事件渲染、GIF/语音/场景视觉；后端负责 API、LLM provider 路由、Director Agent、角色 Agent、PostgreSQL 持久化。
 
-| 层级 | 技术 |
-|------|------|
-| 前端 | React 19 + TypeScript + Vite |
-| 前端状态 | 本地 `localStorage` + Supabase Auth/持久化 |
-| 后端 | Python 3.11 + FastAPI + SQLAlchemy 2.0 (async) |
-| 数据库 | PostgreSQL / Supabase |
-| LLM 提供商 | MiniMax、StepFun、Agnes AI（ProviderFacade 统一封装）|
-| 部署 | Docker + Railway / Fly.io / Render / Vercel |
+## 技术栈
 
-## 2. 分层架构
+| 层 | 技术 | 主要文件 |
+|---|---|---|
+| 浏览器应用 | React 19 + TypeScript + Vite | [src/App.tsx](../../src/App.tsx) |
+| 前端状态 | React hooks + localStorage + Supabase | [src/hooks](../../src/hooks), [src/lib](../../src/lib) |
+| 后端 API | FastAPI + StreamingResponse | [backend/main.py](../../backend/main.py), [backend/api/routes.py](../../backend/api/routes.py) |
+| Agent 编排 | DirectorAgent + character agents | [backend/agents/director.py](../../backend/agents/director.py), [backend/agents/characters](../../backend/agents/characters) |
+| LLM 抽象 | httpx AsyncClient + provider prefix routing | [backend/agents/provider.py](../../backend/agents/provider.py) |
+| 后端数据库 | PostgreSQL + SQLAlchemy async + Alembic | [backend/db](../../backend/db), [backend/alembic](../../backend/alembic) |
+| 前端云同步 | Supabase Auth + RLS tables | [supabase/migrations](../../supabase/migrations) |
+| 部署 | Docker multi-stage, Render/Railway/Fly | [Dockerfile](../../Dockerfile), [render.yaml](../../render.yaml) |
 
-```mermaid
-flowchart TB
-    subgraph Frontend["Frontend (React + Vite)"]
-        A[App.tsx]
-        H1[useAuth]
-        H2[useStoryStream]
-        H3[useCharacterMemory]
-        C[AuthSection]
-        S[Supabase Client]
-    end
+## 逻辑分层
 
-    subgraph Backend["Backend (FastAPI)"]
-        R[api/routes.py]
-        D[DirectorAgent]
-        P[ProviderFacade]
-        M[Memory Layer]
-        DB[(PostgreSQL)]
-        CA[Character Agents]
-    end
+```text
+Browser
+  src/App.tsx
+  ├─ Chat view
+  │   ├─ useAuth / Supabase persistence
+  │   ├─ useCharacterMemory
+  │   ├─ sceneBackgrounds / gifResolver / VoicePlayer
+  │   └─ POST /api/chat
+  └─ Story view
+      ├─ useStoryStream
+      ├─ POST /api/session/create
+      ├─ GET /api/session/{id}/stream
+      └─ POST /api/session/{id}/action
 
-    subgraph External["External Services"]
-        LLM[LLM APIs]
-        SUP[Supabase]
-    end
+FastAPI
+  backend/main.py
+  └─ backend/api/routes.py
+      ├─ chat endpoint
+      ├─ session lifecycle
+      ├─ SSE stream
+      └─ message history recovery
 
-    A -->|HTTP /api/chat| R
-    A -->|HTTP /api/story| R
-    A -->|SSE /api/session/{id}/stream| R
-    R --> D
-    D --> CA
-    D --> P
-    D --> M
-    M --> DB
-    P --> LLM
-    S --> SUP
+Agent layer
+  DirectorAgent
+  ├─ outline generation
+  ├─ beat planning
+  ├─ direct chat
+  ├─ crew chat
+  ├─ character sub-agent calls
+  └─ dossier update
+
+Persistence + providers
+  ├─ SQLAlchemy async sessions
+  ├─ Alembic migrations
+  ├─ Supabase client-side tables
+  └─ MiniMax / StepFun / CLIProxy
 ```
 
-## 3. 核心模块职责
+## 主流程 1：Direct Chat
 
-| 模块 | 职责 |
-|------|------|
-| `src/App.tsx` | 单页应用根组件，承载角色选择、聊天、剧情三大视图 |
-| `src/hooks/useStoryStream.ts` | 剧情流状态管理：大纲确认、beat 回放、继续/停止动作 |
-| `src/hooks/useAuth.ts` | Supabase 认证状态与登录/注册/登出 |
-| `src/hooks/useCharacterMemory.ts` | 单角色记忆滑动窗口（摘要 + 关键事实） |
-| `backend/main.py` | FastAPI 应用初始化、生命周期、CORS、静态文件 |
-| `backend/api/routes.py` | REST 路由：健康检查、session 创建、action、SSE stream、聊天 |
-| `backend/agents/director.py` | 导演 Agent：生成大纲、逐 beat 调度角色、产出 SSE 事件 |
-| `backend/agents/provider.py` | 统一 LLM 调用门面，处理 MiniMax/StepFun/Agnes 协议差异 |
-| `backend/agents/memory.py` | 双层记忆：session 内对话历史 + 跨 session 角色 dossiers |
-| `backend/db/models.py` | SQLAlchemy ORM 模型：Session、Message、CharacterState、CharacterDossier |
-| `backend/models/schemas.py` | Pydantic 请求/响应模型与 SSE 事件结构 |
+入口：用户在 Chat view 选择角色、关系锚点、语言和模型后发送消息。
 
-## 4. 两种运行模式
-
-### 4.1 聊天模式（Chat）
-
-- **Direct**：玩家以特定关系与单个角色私聊。
-- **Crew**：玩家发起话题，Director 调度 2-3 个角色进行辩论式对话。
-
-入口：`POST /api/chat`（后端 FastAPI）或 `api/chat.py`（Vercel serverless 遗留）。
-
-### 4.2 剧情模式（Story）
-
-- 玩家输入自然语言任务。
-- `DirectorAgent` 生成粗大纲（outline）。
-- 每个 beat 依次渲染：scene_change → agent_act/think/speak → world_state_delta → beat_ready。
-- 玩家在 beat_ready 时选择：继续 / 停止 / 改方向 / 切换视角。
-
-入口：`POST /api/session/create` → `GET /api/session/{id}/stream`。
-
-## 5. 数据流
-
-### 5.1 聊天请求流
-
-```
-用户输入
-  → App.tsx handleSend
-  → POST /api/chat
-  → DirectorAgent.handle_chat_message
-  → BaseCharacter.respond_structured / _handle_crew_chat
-  → ProviderFacade.call_model
-  → 返回 JSON → 前端渲染消息
+```text
+App.handleSend
+  -> fetch('/api/chat', { mode: 'direct', characterId, relation, history, language, llmProvider, voiceExample })
+  -> routes.chat
+  -> DirectorAgent.handle_chat_message
+  -> DirectorAgent._handle_direct_chat
+  -> concrete BaseCharacter.respond_structured
+  -> ProviderFacade.call_model
+  -> upstream model
+  -> structured JSON reply
+  -> App renders text + emotion + thinking/tool metadata + GIF + optional voice
 ```
 
-### 5.2 剧情请求流
+关键点：
 
+- 角色 ID 在前端使用短 id：`walter`、`jesse`、`skyler`、`saul`、`mike`、`gus`。
+- 后端 `FRONTEND_TO_BACKEND_ID` 映射到完整角色名，如 `Walter White`。
+- `BaseCharacter.respond_structured()` 要求 LLM 返回 `reply_text`、`emotion_state`、`gif_search_query`、`thinking`、`tool_executed`、`tool_log`。
+- 前端聊天历史保存在 localStorage；用户登录后，普通聊天消息和角色记忆同步到 Supabase。
+
+## 主流程 2：Crew Debate
+
+入口仍是 `/api/chat`，但 `mode='crew'`。
+
+```text
+App.handleSend
+  -> POST /api/chat mode=crew
+  -> DirectorAgent._handle_crew_chat
+  -> choose participants: selected character + mentioned relevant characters, max 3
+  -> CREW_CHAT_SYSTEM_PROMPT asks for JSON array of turns
+  -> ProviderFacade.call_model
+  -> _parse_crew_debate_logs
+  -> frontend id mapping
+  -> App appends multiple character messages
 ```
-用户输入任务
-  → App.tsx handleStartStory
-  → POST /api/session/create
-  → GET /api/session/{id}/stream
-  → DirectorAgent.process
-  → _generate_outline → _generate_beat (per scene)
-  → 角色 Sub-agent agent_speak
-  → update_dossiers 更新记忆
-  → SSE AgentEvent 推送到前端
+
+关键点：
+
+- crew mode 不逐个调用每个角色 Agent，而是由 Director 的 crew prompt 一次性生成 2-3 个角色回合。
+- participants 先包含当前角色，再根据用户文本中的 `saul`、`mike`、`gus`、`skyler`、`jesse` 等关键词补充。
+- 解析失败会返回空 debate logs；provider 调用失败时后端会生成带 model error 文本的 fallback 角色回合。
+
+## 主流程 3：Story / Director SSE
+
+Story 是项目的核心长期开发方向。它是后端有状态流程，不是 legacy `/api/story` 单次返回。
+
+```text
+App.handleStartStory
+  -> useStoryStream.startStory(taskPrompt, characterId)
+  -> POST /api/session/create
+      creates sessions row: status=active, current_mode=story, task_prompt, active_character_id
+  -> EventSource('/api/session/{id}/stream')
+  -> routes.stream_session
+      short DB session loads task_prompt, then releases connection
+  -> DirectorAgent.process
+      yields status
+      generates outline
+      parses scenes
+      for each scene:
+        _generate_beat
+        emit scene_change if needed
+        Director LLM plans events
+        trim noisy events with _prepare_beat_events
+        character sub-agents rewrite agent_speak
+        persist Message rows
+        update CharacterDossier rows
+        emit beat_ready
+      waits for action_queue between beats
+  -> browser renders event feed and BeatControls
 ```
 
-## 6. 关键设计决策
+用户动作：
 
-| 决策 | 选择 | 说明 |
-|------|------|------|
-| 后端语言 | Python | 便于 LLM Agent 编排与 async 调用 |
-| 持久化 | Postgres + SQLAlchemy async | 支持双层记忆与跨 session 状态 |
-| LLM 协议 | ProviderFacade 统一 | 屏蔽 MiniMax/StepFun/OpenAI 协议差异 |
-| 前端通信 | HTTP + SSE | 聊天用同步 HTTP，剧情用 SSE 实时流 |
-| 角色实现 | 继承 BaseCharacter | 每个角色独立 system_prompt，便于扩展 |
-| 部署 | 多平台配置 | Railway/Fly/Render/Vercel 各有独立配置文件 |
+| Action | 前端 | 后端效果 |
+|---|---|---|
+| `continue` | 继续下一 beat | session `status=active`，向 `_session_queues[session_id]` 投递 continue |
+| `stop` | 停止本地流并清空 saved session | session `status=paused` |
+| `redirect` | 提交新剧情方向 | 替换 `task_prompt`，向 Director 投递 redirect，重新生成 outline |
+| `switch_perspective` | 切换主视角角色 | 更新 `active_character_id`，Director 下一 beat 尝试让目标角色先说话 |
+
+连接与恢复：
+
+- `useStoryStream` 把 session id 保存在 localStorage key `abq_story_session_id`。
+- 页面刷新后先调用 `GET /api/session/{id}/messages` 恢复已持久化的 `agent_speak` 消息。
+- 恢复后默认进入 `beat_paused`，等待用户点击 Continue；不会自动重连 SSE。
+- SSE 每个事件没有 server-side id，前端用内容合成 dedup key，避免重连时重复显示部分事件。
+
+## 持久化架构
+
+后端 Story 持久化：
+
+```text
+sessions
+  -> messages
+  -> character_states
+  -> character_dossiers
+```
+
+用途：
+
+- `sessions`：剧情任务、状态、主视角。
+- `messages`：Story 模式中已生成的 `agent_speak` 对话，供刷新恢复。
+- `character_dossiers`：角色对角色的 session-level 和 world-level 关系记忆。
+- `character_states`：预留角色位置/情绪/状态模型。
+
+前端 Supabase 持久化：
+
+```text
+auth.users
+  -> chat_messages
+  -> character_memory
+  -> story_sessions
+```
+
+用途：
+
+- `chat_messages`：普通 Chat view 的云同步消息。
+- `character_memory`：普通 Chat view 的摘要与 key facts。
+- `story_sessions`：Supabase 侧旧/预留 story 表；当前 FastAPI Story 主路径没有直接使用它。
+
+## LLM Provider 路由
+
+`ProviderFacade.call_model(messages, model_route)` 使用 `provider/model` 字符串路由：
+
+| Prefix | 上游协议 | 例子 |
+|---|---|---|
+| `minimax/` | Anthropic-compatible messages | `minimax/MiniMax-M3` |
+| `stepfun/` | OpenAI-compatible chat completions | `stepfun/step-3.7-flash` |
+| `cliproxy/` | 本地 Anthropic-compatible proxy | `cliproxy/gemini-pro-agent` |
+
+当前行为：
+
+- Story Director 默认使用 `minimax/MiniMax-M3`。
+- Chat 默认 resolver 返回 CLIProxy；前端 `llmProvider` 可覆盖到 MiniMax。
+- 后端仍保留 StepFun 支持，尽管当前前端下拉没有暴露 StepFun 选项。
+
+## 当前主路径与遗留路径
+
+| 类型 | 路径 | 状态 |
+|---|---|---|
+| FastAPI `/api/chat` | [backend/api/routes.py](../../backend/api/routes.py) | 当前 Chat 主路径 |
+| FastAPI session/SSE | [backend/api/routes.py](../../backend/api/routes.py) | 当前 Story 主路径 |
+| Vercel `/api/chat` | [api/chat.py](../../api/chat.py) | 遗留 serverless 兼容路径 |
+| Vercel `/api/story` | [api/story.py](../../api/story.py) | 遗留一次性 story 路径 |
+| `backend/scripts/setup_db.py` | [backend/scripts/setup_db.py](../../backend/scripts/setup_db.py) | 本地应急 create_all 脚本；长期 schema 以 Alembic 为准 |
+
+## 主要风险与维护点
+
+- Alembic 初始迁移的 `sessions` 表没有 `current_mode` 字段，而当前 ORM 模型有 `current_mode nullable=False`。如果目标数据库是新库或干净库，继续开发前应补一条 Alembic migration 或确认已有数据库已手工对齐。
+- `README.md` 仍有旧 API 名称；Code Wiki 以当前代码为准。
+- `api/chat.py` 和 FastAPI `/api/chat` 的 provider/env 语义不同，改动时不要混淆。
+- Story SSE 会进行长连接和 LLM 调用；`routes.stream_session` 已避免长时间持有 DB connection，后续改动应保持这个约束。

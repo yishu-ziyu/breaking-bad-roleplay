@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
@@ -6,7 +6,14 @@ import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream, type StoryEvent } from './hooks/useStoryStream'
 import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMemory'
 import { useAuth } from './hooks/useAuth'
-import { loadChatMessages, loadCharacterMemory, persistChatMessage, persistCharacterMemory } from './lib/supabasePersistence'
+import {
+  loadChatMessages,
+  loadCharacterMemory,
+  persistPrivateCharacterMemory,
+  persistPrivateChatMessage,
+  persistPrivateChatMessages,
+} from './lib/supabasePersistence'
+import { loadStoredPrivacyKey, PRIVACY_KEY_UPDATED_EVENT } from './lib/privacyVault'
 import { AuthSection } from './components/AuthSection'
 import { GifCard } from './components/GifCard'
 import { VoicePlayer } from './components/VoicePlayer'
@@ -191,42 +198,42 @@ const uiText = {
     paused: 'Paused',
   },
   zh: {
-    tagline: '《绝命毒师》微观智能体引擎，后台 Plan-Reflect 认知循环与文件记忆库。',
-    character: '主控角色',
+    tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
+    character: '角色档案',
     language: '语言',
-    relation: '关系锚点',
-    view: '视图',
-    chat: '对话',
-    story: '剧情',
-    mode: '模式',
-    direct: '微观私聊',
-    crew: '宏观辩论',
-    model: '模型后端',
+    relation: '身份关系',
+    view: '游玩模式',
+    chat: '角色会谈',
+    story: '剧情任务',
+    mode: '会谈形式',
+    direct: '单人场景',
+    crew: '群像会谈',
+    model: '引擎线路',
     storyTitle: 'ABQ Roleplay Lab',
-    setStage: '布置任务',
-    setStageHint: '用一段自然语言描述你想要的故事走向。Agent 将自主演绎剧情，每个节点停下来等你决策。',
+    setStage: '任务简报',
+    setStageHint: '写下这局的目标、风险和想看到的冲突。导演会分镜推进剧情，并在关键节点等待你的选择。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
-    startStory: '开始剧情',
-    directing: '正在编排…',
-    narrativeStream: '剧情流',
-    eventFeed: '细粒度事件驱动叙事',
-    directorDecision: '导演等待你的决策：',
-    switchToChat: '切换到对话',
+    startStory: '开始任务',
+    directing: '导演正在分镜…',
+    narrativeStream: '任务现场',
+    eventFeed: '实时剧情事件',
+    directorDecision: '关键节点：选择下一步',
+    switchToChat: '返回会谈',
     you: '你',
     send: '发送',
-    sending: '深度思考中…',
-    messagePlaceholder: '以 {relation} 的身份向 {character} 展开对话…',
-    privateScene: '私密拉扯场景',
-    crewScene: '多人剧情辩论',
-    schema: 'Director 驱动',
-    gifTrigger: 'GIF 触发',
-    connected: '剧情流在线',
-    connecting: '连接中…',
+    sending: '生成回应…',
+    messagePlaceholder: '以{relation}身份对 {character} 说…',
+    privateScene: '单人场景',
+    crewScene: '群像会谈',
+    schema: '导演系统',
+    gifTrigger: '镜头参考',
+    connected: '现场已连接',
+    connecting: '连接现场…',
     disconnected: '已断开',
-    storyComplete: '剧情结束。所有 beat 已渲染。',
+    storyComplete: '任务结束。所有剧情节点已完成。',
     continue: '继续',
     stop: '停止',
-    storyOutline: '故事大纲',
+    storyOutline: '任务大纲',
     paused: '已暂停',
   },
 } satisfies Record<Language, Record<string, string>>
@@ -366,17 +373,68 @@ function App() {
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
-  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm', 'stepfun')
+  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm-v2', 'cliproxy')
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
-  const messages = messagesByChar[selectedCharId] ?? []
+  const messages = useMemo(() => messagesByChar[selectedCharId] ?? [], [messagesByChar, selectedCharId])
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Auth state
   const auth = useAuth()
+  const [cloudPrivacy, setCloudPrivacy] = useState<{
+    status: 'guest' | 'loading' | 'ready' | 'locked'
+    key: CryptoKey | null
+  }>({ status: 'guest', key: null })
+
+  useEffect(() => {
+    let cancelled = false
+    const userId = auth.user?.id
+
+    const setCloudPrivacyAsync = (next: typeof cloudPrivacy) => {
+      queueMicrotask(() => {
+        if (!cancelled) setCloudPrivacy(next)
+      })
+    }
+
+    const loadPrivacyKey = () => {
+      if (!userId) {
+        setCloudPrivacyAsync({ status: 'guest', key: null })
+        return
+      }
+
+      setCloudPrivacyAsync({ status: 'loading', key: null })
+      loadStoredPrivacyKey(userId)
+        .then(key => {
+          if (cancelled) return
+          setCloudPrivacy(key ? { status: 'ready', key } : { status: 'locked', key: null })
+        })
+        .catch(() => {
+          if (cancelled) return
+          setCloudPrivacy({ status: 'locked', key: null })
+        })
+    }
+
+    if (!auth.user) {
+      loadPrivacyKey()
+      return () => { cancelled = true }
+    }
+
+    const handlePrivacyKeyUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string }>).detail
+      if (detail?.userId === userId) loadPrivacyKey()
+    }
+
+    loadPrivacyKey()
+    window.addEventListener(PRIVACY_KEY_UPDATED_EVENT, handlePrivacyKeyUpdated)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener(PRIVACY_KEY_UPDATED_EVENT, handlePrivacyKeyUpdated)
+    }
+  }, [auth.user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Story state
   const story = useStoryStream()
@@ -385,10 +443,14 @@ function App() {
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
   const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('memory', {})
-  const currentMemory = memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] }
+  const currentMemory = useMemo(
+    () => memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] },
+    [memoryByChar, selectedCharId],
+  )
 
   // Cloud sync: persist to Supabase when authenticated
   const [syncStatus, setSyncStatus] = useState<string | null>(null)
+  const backfilledCloudKeysRef = useRef<Set<string>>(new Set())
 
   /* ---- Unified init: cloud sync (merge) + first-visit opener ----
      M2: Cloud sync MERGES cloud messages with local (dedup by sender+text)
@@ -406,16 +468,21 @@ function App() {
       let cloudMem: CharacterMemory | null = null
 
       if (auth.user) {
-        try {
-          const [msgs, mem] = await Promise.all([
-            loadChatMessages(auth.user.id, selectedCharId),
-            loadCharacterMemory(auth.user.id, selectedCharId),
-          ])
-          cloudMsgs = msgs as ChatMessage[]
-          cloudMem = mem as unknown as CharacterMemory
-          setSyncStatus('synced')
-        } catch {
-          setSyncStatus('sync-failed')
+        if (cloudPrivacy.status === 'loading') return
+        if (cloudPrivacy.status !== 'ready' || !cloudPrivacy.key) {
+          setSyncStatus('privacy-locked')
+        } else {
+          try {
+            setSyncStatus('syncing')
+            const [msgs, mem] = await Promise.all([
+              loadChatMessages(auth.user.id, selectedCharId, { privacyKey: cloudPrivacy.key }),
+              loadCharacterMemory(auth.user.id, selectedCharId, { privacyKey: cloudPrivacy.key }),
+            ])
+            cloudMsgs = msgs as ChatMessage[]
+            cloudMem = mem as unknown as CharacterMemory
+          } catch {
+            setSyncStatus('sync-failed')
+          }
         }
       } else {
         setSyncStatus(null)
@@ -426,6 +493,29 @@ function App() {
         const cloudKeys = new Set(cloudMsgs.map(m => JSON.stringify({ sender: m.sender, text: m.text })))
         const localOnly = local.filter(m => !cloudKeys.has(JSON.stringify({ sender: m.sender, text: m.text })))
         const merged = [...localOnly, ...cloudMsgs]
+
+        if (auth.user && cloudPrivacy.key && localOnly.length > 0) {
+          const messagesToBackfill = localOnly.filter(m => {
+            const key = `${auth.user!.id}:${selectedCharId}:${m.sender}:${m.text}`
+            if (backfilledCloudKeysRef.current.has(key)) return false
+            backfilledCloudKeysRef.current.add(key)
+            return true
+          })
+          if (messagesToBackfill.length > 0) {
+            persistPrivateChatMessages(auth.user.id, messagesToBackfill.map(m => ({
+              character_id: selectedCharId,
+              message: m.text,
+              sender: m.sender,
+              emotion: m.emotion ?? null,
+            })), cloudPrivacy.key)
+              .then(() => setSyncStatus('synced'))
+              .catch(() => setSyncStatus('sync-failed'))
+          } else {
+            setSyncStatus('synced')
+          }
+        } else if (auth.user && cloudPrivacy.key) {
+          setSyncStatus('synced')
+        }
 
         if (merged.length === 0) {
           return {
@@ -449,7 +539,7 @@ function App() {
         setMemoryByChar(prev => ({ ...prev, [selectedCharId]: cloudMem }))
       }
     })()
-  }, [auth.user, selectedCharId, language, relation]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.user, selectedCharId, language, relation, cloudPrivacy.status, cloudPrivacy.key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Scene background cross-fade (chat view) ---- */
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
@@ -460,11 +550,14 @@ function App() {
   useEffect(() => {
     const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
     if (next !== currentSceneUrl) {
-      setSceneReady(false)
-      setPrevSceneUrl(currentSceneUrl)
-      setCurrentSceneUrl(next)
+      const id = window.setTimeout(() => {
+        setSceneReady(false)
+        setPrevSceneUrl(currentSceneUrl)
+        setCurrentSceneUrl(next)
+      }, 0)
+      return () => window.clearTimeout(id)
     }
-  }, [messages])
+  }, [messages, currentSceneUrl])
 
   useEffect(() => {
     const id = setTimeout(() => setSceneReady(true), 50)
@@ -497,7 +590,7 @@ function App() {
       ...prev,
       [selectedCharId]: updater(prev[selectedCharId] ?? []),
     }))
-  }, [selectedCharId])
+  }, [selectedCharId, setMessagesByChar])
 
   const handleSend = useCallback(async (e: FormEvent) => {
     e.preventDefault()
@@ -517,6 +610,20 @@ function App() {
 
     // Update memory with user turn
     const updatedAfterUser = charMemory.addTurn(selectedCharId, 'user', userText, currentMemory)
+
+    if (auth.user && cloudPrivacy.key) {
+      setSyncStatus('syncing')
+      persistPrivateChatMessage(auth.user.id, {
+        character_id: selectedCharId,
+        message: userText,
+        sender: 'user',
+        emotion: null,
+      }, cloudPrivacy.key)
+        .then(() => setSyncStatus('synced'))
+        .catch(() => setSyncStatus('sync-failed'))
+    } else if (auth.user) {
+      setSyncStatus('privacy-locked')
+    }
 
     try {
       const res = await fetch('/api/chat', {
@@ -560,6 +667,20 @@ function App() {
           })
         }
         updateMessages(current => [...current, ...debateReplies])
+
+        if (auth.user && cloudPrivacy.key && debateReplies.length > 0) {
+          setSyncStatus('syncing')
+          persistPrivateChatMessages(auth.user.id, debateReplies.map(reply => ({
+            character_id: selectedCharId,
+            message: reply.text,
+            sender: reply.sender,
+            emotion: reply.emotion ?? null,
+          })), cloudPrivacy.key)
+            .then(() => setSyncStatus('synced'))
+            .catch(() => setSyncStatus('sync-failed'))
+        } else if (auth.user) {
+          setSyncStatus('privacy-locked')
+        }
       } else {
         const reply: ChatMessage = {
           id: crypto.randomUUID(),
@@ -579,18 +700,25 @@ function App() {
         setMemoryByChar(prev => ({ ...prev, [selectedCharId]: finalMemory }))
 
         // Persist to Supabase if authenticated
-        if (auth.user) {
-          persistChatMessage(auth.user.id, {
+        if (auth.user && cloudPrivacy.key) {
+          setSyncStatus('syncing')
+          persistPrivateChatMessage(auth.user.id, {
             character_id: selectedCharId,
             message: reply.text,
             sender: selectedCharId,
             emotion: reply.emotion ?? null,
-          }).catch(() => {})
-          persistCharacterMemory(auth.user.id, {
+          }, cloudPrivacy.key)
+            .then(() => setSyncStatus('synced'))
+            .catch(() => setSyncStatus('sync-failed'))
+          persistPrivateCharacterMemory(auth.user.id, {
             character_id: selectedCharId,
             summary: finalMemory.summary,
             key_facts: finalMemory.keyFacts as unknown as Array<Record<string, unknown>>,
-          }).catch(() => {})
+          }, cloudPrivacy.key)
+            .then(() => setSyncStatus('synced'))
+            .catch(() => setSyncStatus('sync-failed'))
+        } else if (auth.user) {
+          setSyncStatus('privacy-locked')
         }
       }
     } catch (e) {
@@ -598,7 +726,7 @@ function App() {
     } finally {
       setIsSending(false)
     }
-  }, [message, isSending, messages, selectedCharId, relation, mode, language, llmProvider, updateMessages, auth, currentMemory, charMemory, setMemoryByChar])
+  }, [message, isSending, messages, selectedCharId, relation, mode, language, llmProvider, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key])
 
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {
@@ -636,7 +764,7 @@ function App() {
                 onClick={() => handleCharChange(c.id)}
                 style={{ '--char-color': c.color } as CSSProperties}
               >
-                <Silhouette characterId={c.id} name={c.name} size={30} />
+                <Silhouette characterId={c.id} name={c.name} size={42} />
                 <strong>{c.name}</strong>
               </button>
             ))}
@@ -690,10 +818,8 @@ function App() {
         <section>
           <label htmlFor="llmProvider">{t.model}</label>
           <select id="llmProvider" value={llmProvider} onChange={e => setLlmProvider(e.target.value)}>
-            <option value="agnes">Agnes AI (free)</option>
-            <option value="stepfun">StepFun step-3.7-flash</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="minimax">MiniMax</option>
+            <option value="cliproxy">CLIProxy gemini-pro-agent</option>
+            <option value="minimax">MiniMax M3</option>
           </select>
         </section>
       </aside>
@@ -887,13 +1013,13 @@ function App() {
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
               <h2>
                 {language === 'zh'
-                  ? `${selectedChar.name} 与其${getRelationLabel(relation, language)}`
+                  ? `${selectedChar.name} 与${getRelationLabel(relation, language)}`
                   : `${selectedChar.name} with their ${getRelationLabel(relation, language)}`}
               </h2>
               {showSavePrompt && (
                 <div className="save-prompt">
                   {language === 'zh'
-                    ? '登录以保存这段对话到云端。'
+                    ? '同步档案后，可在云端保存这段会谈。'
                     : 'Sign in to save this conversation to the cloud.'}
                 </div>
               )}

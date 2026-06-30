@@ -5,8 +5,10 @@
  * 用法：<Silhouette characterId="walter" name="Walter" size={42} />
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
+
+const portraitAvatarIds = new Set<CharacterId>(['walter', 'jesse', 'skyler', 'saul', 'gus', 'mike'])
 
 interface SilhouetteProps {
   characterId: CharacterId
@@ -15,13 +17,14 @@ interface SilhouetteProps {
 }
 
 export function Silhouette({ characterId, name, size = 42 }: SilhouetteProps) {
-  const [showFallback, setShowFallback] = useState(false)
+  const [failedSrcs, setFailedSrcs] = useState<string[]>([])
+  const primarySrc = portraitAvatarIds.has(characterId)
+    ? `/avatars/${characterId}.png`
+    : `/avatars/${characterId}.svg`
+  const fallbackSrc = `/avatars/${characterId}.svg`
+  const src = failedSrcs.includes(primarySrc) ? fallbackSrc : primarySrc
 
-  useEffect(() => {
-    setShowFallback(false)
-  }, [characterId])
-
-  if (showFallback) {
+  if (failedSrcs.includes(primarySrc) && failedSrcs.includes(fallbackSrc)) {
     return (
       <span className="silhouette-fallback" style={{ width: size, height: size }}>
         {name.slice(0, 1)}
@@ -31,13 +34,13 @@ export function Silhouette({ characterId, name, size = 42 }: SilhouetteProps) {
 
   return (
     <img
-      src={`/avatars/${characterId}.svg`}
+      src={src}
       alt={name}
       className="silhouette-avatar"
       width={size}
       height={size}
       onError={() => {
-        setShowFallback(true)
+        setFailedSrcs(prev => prev.includes(src) ? prev : [...prev, src])
       }}
     />
   )
