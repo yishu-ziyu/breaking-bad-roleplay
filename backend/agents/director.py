@@ -18,6 +18,8 @@ from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 
 logger = logging.getLogger(__name__)
+DEFAULT_DIRECTOR_MODEL_ROUTE = "minimax/MiniMax-M3"
+MAX_AGENT_SPEAK_PER_BEAT = 2
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
 # ---------------------------------------------------------------------------
@@ -70,7 +72,7 @@ BEAT PLANNING
 1. Decide which characters are present and what each one does.
 2. Decide if the location changes (emit a scene_change event).
 3. Decide what emotional beat this moment carries.
-4. Choose the model for this scene (always "stepfun/step-3.7-flash").
+4. Choose the model for this scene (always "minimax/MiniMax-M3").
 THINKING
 - Have characters think before they act — emit agent_think events to reveal
   their inner conflict and motivation.  Breaking Bad tension lives in what
@@ -97,14 +99,14 @@ has a "type" field and a "data" field matching one of these shapes:
 NOTE: This JSON event format is for BEAT events only. When asked for an outline
 (overall plot structure), output a plain text numbered list instead.
 IMPORTANT: Every beat event object MUST include a "recommended_model" field
-set to "stepfun/step-3.7-flash".
+set to "minimax/MiniMax-M3".
 Example output:
 [
-  { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "stepfun/step-3.7-flash" },
-  { "type": "agent_act", "data": { "character_id": "Walter White", "action": "sits down at the table", "target": null }, "recommended_model": "stepfun/step-3.7-flash" },
-  { "type": "agent_think", "data": { "character_id": "Walter White", "thought_content": "If Skyler finds out about the lab, I lose everything." }, "recommended_model": "stepfun/step-3.7-flash" },
-  { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "stepfun/step-3.7-flash" },
-  { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "stepfun/step-3.7-flash" }
+  { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "minimax/MiniMax-M3" },
+  { "type": "agent_act", "data": { "character_id": "Walter White", "action": "sits down at the table", "target": null }, "recommended_model": "minimax/MiniMax-M3" },
+  { "type": "agent_think", "data": { "character_id": "Walter White", "thought_content": "If Skyler finds out about the lab, I lose everything." }, "recommended_model": "minimax/MiniMax-M3" },
+  { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "minimax/MiniMax-M3" },
+  { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "minimax/MiniMax-M3" }
 ]
 RULES:
 - Always emit at least one agent_think or agent_speak per character per beat.
@@ -114,7 +116,7 @@ RULES:
 - world_state_delta must always appear as the last event in a beat.
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
   "Saul Goodman", "Mike Ehrmantraut", or "Gus Fring" — no variations.
-- recommended_model must be "stepfun/step-3.7-flash" on every event.
+- recommended_model must be "minimax/MiniMax-M3" on every event.
 """
 # ---------------------------------------------------------------------------
 # Director agent
@@ -143,7 +145,7 @@ class DirectorAgent:
     def __init__(
         self,
         provider: ProviderFacade,
-        model_route: str = "stepfun/step-3.7-flash",
+        model_route: str = DEFAULT_DIRECTOR_MODEL_ROUTE,
         system_prompt: str = DIRECTOR_SYSTEM_PROMPT,
     ):
         self.provider = provider
@@ -387,7 +389,7 @@ class DirectorAgent:
     def _extract_model_route(event_dict: dict[str, Any]) -> str | None:
         """Pull recommended_model from a raw event dict emitted by the LLM."""
         raw = event_dict.get("recommended_model")
-        if raw and isinstance(raw, str) and raw.startswith(("minimax/", "stepfun/")):
+        if raw and isinstance(raw, str) and raw.startswith(("minimax/", "stepfun/", "cliproxy/")):
             return raw
         return None
     async def _generate_beat(
@@ -448,11 +450,11 @@ class DirectorAgent:
             )
         beat_prompt += (
             "Generate the events for this beat as a JSON array. "
-            "Include at least one agent_think or agent_speak per character present. "
-            "Include agent_act for physical actions. "
-            "End with a world_state_delta. "
+            "Keep the beat concise: include at most two agent_speak events total. "
+            "Include only one scene_change if needed. Include brief agent_act and agent_think events. "
+            "End with one world_state_delta containing only concrete changed facts. "
             "Every event object must include a 'recommended_model' field set to "
-            "'stepfun/step-3.7-flash'."
+            f"'{self.model_route}'."
         )
         messages = [
             {"role": "system", "content": self.system_prompt},
@@ -496,6 +498,7 @@ class DirectorAgent:
             if idx_target_speak is not None and idx_target_speak != idx_first_speak:
                 target_evt = events.pop(idx_target_speak)
                 events.insert(idx_first_speak, target_evt)
+        events = self._prepare_beat_events(events)
         # Resolve per-beat model route: prefer LLM-suggested, fall back to rule-based
         llm_suggested: str | None = None
         for evt in events:
@@ -618,6 +621,70 @@ class DirectorAgent:
                 )
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
+
+    @staticmethod
+    def _prepare_beat_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Trim noisy Director output into a playable beat.
+
+        MiniMax can over-produce repeated dialogue turns when asked for a
+        cinematic beat. We keep the first concrete action/thought/state
+        events, drop duplicate scene changes (the server already emits one),
+        cap rewritten dialogue calls, and remove empty dossier-style deltas
+        like ``∅ -> ∅`` that add noise to the UI.
+        """
+        prepared: list[dict[str, Any]] = []
+        speak_count = 0
+        spoken_characters: set[str] = set()
+
+        for evt in events:
+            evt_type = evt.get("type")
+            evt_data = evt.get("data")
+            if not isinstance(evt_data, dict):
+                evt_data = {}
+                evt["data"] = evt_data
+
+            if evt_type == "scene_change":
+                continue
+
+            if evt_type == "agent_speak":
+                character_id = str(evt_data.get("character_id") or "")
+                if speak_count >= MAX_AGENT_SPEAK_PER_BEAT:
+                    continue
+                if character_id and character_id in spoken_characters:
+                    continue
+                speak_count += 1
+                if character_id:
+                    spoken_characters.add(character_id)
+
+            if evt_type == "world_state_delta":
+                deltas = evt_data.get("deltas")
+                if not isinstance(deltas, list):
+                    continue
+                concrete_deltas = [
+                    delta for delta in deltas
+                    if DirectorAgent._is_concrete_delta(delta)
+                ]
+                if not concrete_deltas:
+                    continue
+                evt_data = {**evt_data, "deltas": concrete_deltas}
+                evt = {**evt, "data": evt_data}
+
+            prepared.append(evt)
+
+        return prepared
+
+    @staticmethod
+    def _is_concrete_delta(delta: Any) -> bool:
+        if not isinstance(delta, dict):
+            return False
+        old_value = str(delta.get("old_value") or "").strip()
+        new_value = str(delta.get("new_value") or "").strip()
+        field = str(delta.get("field") or "").strip()
+        target = str(delta.get("target") or "").strip()
+        empty_values = {"", "∅", "none", "null", "n/a"}
+        if old_value.lower() in empty_values and new_value.lower() in empty_values:
+            return False
+        return bool(field or target or old_value or new_value)
 
     async def _persist_beat_writes(
         self,
@@ -767,9 +834,12 @@ class DirectorAgent:
             characters=list(CHARACTER_AGENTS.keys()),
         )
         # Override provider prefix from frontend selection
-        provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
-        _, model_name = model_route.split("/", 1)
-        model_route = f"{provider_prefix}/{model_name}"
+        if llm_provider == "minimax":
+            model_route = "minimax/MiniMax-M3"
+        elif llm_provider == "stepfun":
+            model_route = "stepfun/step-3.7-flash"
+        else:
+            model_route = f"cliproxy/{self.provider.cli_proxy_default_model}"
         # Build context messages from history
         history: list[dict] = context.get("history", [])
         ctx_messages: list[dict] = []
@@ -812,7 +882,9 @@ class DirectorAgent:
     ) -> dict[str, Any]:
         """Crew mode: generate a multi-character debate turn."""
         llm_provider: str = context.get("llmProvider", "stepfun")
-        provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
+        provider_prefix = "minimax" if llm_provider == "minimax" else (
+            "stepfun" if llm_provider == "stepfun" else "cliproxy"
+        )
         # Determine participants — start with the active character, then add
         # characters that are contextually relevant.
         backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
@@ -867,8 +939,15 @@ class DirectorAgent:
             scene_context=primary_context,
             characters=participants_backend,
         )
-        _, model_name = model_route.split("/", 1)
-        model_route = f"{provider_prefix}/{model_name}"
+        if provider_prefix == "cliproxy":
+            model_route = f"cliproxy/{self.provider.cli_proxy_default_model}"
+        elif provider_prefix == "stepfun":
+            model_route = "stepfun/step-3.7-flash"
+        elif provider_prefix == "minimax":
+            model_route = "minimax/MiniMax-M3"
+        else:
+            _, model_name = model_route.split("/", 1)
+            model_route = f"{provider_prefix}/{model_name}"
         try:
             raw = await self.provider.call_model(messages, model_route)
         except Exception as exc:

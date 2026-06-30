@@ -18,6 +18,10 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
  */
 async function installMockEventSource(page: Page) {
   await page.addInitScript(() => {
+    type MockWindow = Window & {
+      __mockSSE: { emit: (type: string, data: unknown) => void } | null
+    }
+
     class MockEventSource {
       url: string
       handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
@@ -30,7 +34,7 @@ async function installMockEventSource(page: Page) {
       static CLOSED = 2
       constructor(url: string) {
         this.url = url
-        ;(window as any).__mockSSE = this
+        ;(window as MockWindow).__mockSSE = this
       }
       addEventListener(type: string, fn: (e: MessageEvent) => void) {
         if (!this.handlers.has(type)) this.handlers.set(type, [])
@@ -54,8 +58,8 @@ async function installMockEventSource(page: Page) {
         if (type === 'message' && this.onmessage) this.onmessage(ev)
       }
     }
-    ;(window as any).EventSource = MockEventSource
-    ;(window as any).__mockSSE = null
+    ;(window as Window & { EventSource: typeof EventSource }).EventSource = MockEventSource as unknown as typeof EventSource
+    ;(window as MockWindow).__mockSSE = null
   })
 }
 
@@ -90,7 +94,7 @@ async function mockActionEndpoint(
 async function emitSSE(page: Page, type: string, data: unknown) {
   await page.evaluate(
     ({ type, data }) => {
-      const sse = (window as any).__mockSSE
+      const sse = (window as Window & { __mockSSE?: { emit: (type: string, data: unknown) => void } }).__mockSSE
       if (sse) sse.emit(type, data)
     },
     { type, data },
@@ -144,7 +148,7 @@ async function driveToBeatPaused(
   await page.locator('.story-setup button').click()
 
   // Wait for MockEventSource to be instantiated by connectStream
-  await page.waitForFunction(() => (window as any).__mockSSE !== null)
+  await page.waitForFunction(() => (window as Window & { __mockSSE?: unknown }).__mockSSE !== null)
   // Small buffer to ensure all addEventListener calls have run
   await page.waitForTimeout(30)
 

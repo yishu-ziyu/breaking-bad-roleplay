@@ -1,158 +1,319 @@
-# 后端模块说明
+# Backend Code Wiki
 
-## 1. 目录结构
+后端位于 [backend](../../backend)，是当前项目的主 API 和 Story Agent 运行时。它使用 FastAPI 暴露 `/api/*`，使用 SQLAlchemy async 连接 PostgreSQL，使用 Alembic 管理 schema，使用 `ProviderFacade` 统一调用 LLM。
 
-```
+## 目录结构
+
+```text
 backend/
-├── main.py                 # FastAPI 应用入口与生命周期
-├── config.py               # Pydantic Settings 环境变量
-├── api/
-│   ├── __init__.py
-│   └── routes.py           # REST + SSE 路由
-├── agents/
-│   ├── __init__.py
-│   ├── director.py         # 导演 Agent
-│   ├── provider.py         # LLM Provider Facade
-│   ├── memory.py           # 记忆与 dossier 管理
-│   └── characters/
-│       ├── base.py         # 角色基类
-│       ├── walter.py
-│       ├── jesse.py
-│       ├── skyler.py
-│       ├── saul.py
-│       ├── mike.py
-│       └── gus.py
-├── db/
-│   ├── __init__.py
-│   ├── session.py          # SQLAlchemy engine + session
-│   └── models.py           # ORM 模型
-├── models/
-│   ├── __init__.py
-│   └── schemas.py          # Pydantic 模型
-├── scripts/
-│   ├── setup_db.py         # 数据库初始化脚本
-│   └── smoke_test.sh       # 部署后冒烟测试
-├── tests/                  # pytest 测试
-├── pyproject.toml
-├── requirements.txt
-└── .env.example
+  main.py                  # FastAPI app、lifespan、CORS、生产静态文件托管
+  config.py                # Pydantic settings / env validation
+  api/
+    routes.py              # REST + SSE routes
+  agents/
+    director.py            # Story Director、direct chat、crew chat
+    provider.py            # MiniMax / StepFun / CLIProxy facade
+    memory.py              # session/world dossier 更新
+    characters/
+      base.py              # BaseCharacter + structured output parser
+      walter.py            # WalterWhite prompt
+      jesse.py             # JessePinkman prompt
+      skyler.py            # SkylerWhite prompt
+      saul.py              # SaulGoodman prompt
+      mike.py              # MikeEhrmantraut prompt
+      gus.py               # GusFring prompt
+  db/
+    session.py             # Async engine/session factory/get_db
+    models.py              # SQLAlchemy ORM models
+    url.py                 # render_engine_url helper
+  models/
+    schemas.py             # Pydantic API/SSE schemas
+  alembic/
+    versions/              # DB migrations
+  tests/                   # backend pytest suite
 ```
 
-## 2. 核心类与函数
+## App 入口：[backend/main.py](../../backend/main.py)
 
-### 2.1 FastAPI 应用入口
+主要职责：
 
-文件：`[backend/main.py](../../backend/main.py)`
+- 配置 logging。
+- 解析 `ALLOWED_ORIGINS` 并安装 `CORSMiddleware`。
+- 在 lifespan 中初始化全局单例：
+  - `ProviderFacade(settings)`
+  - `DirectorAgent(provider)`
+- 关闭时释放 provider 内部 `httpx.AsyncClient`。
+- 注册 `backend/api/routes.py`，统一挂载到 `/api`。
+- 生产环境下，如果存在 `dist/`，通过 `StaticFiles` 托管构建后的 React SPA。
 
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| `lifespan` | async contextmanager | 启动时创建表、初始化 ProviderFacade / DirectorAgent 单例；关闭时释放 HTTP 客户端 |
-| `app` | FastAPI | 应用实例，挂载 CORS、API 路由、生产环境静态文件 |
+关键函数：
 
-### 2.2 路由层
+| 函数 | 作用 |
+|---|---|
+| `_parse_allowed_origins(raw, app_env)` | 将 `ALLOWED_ORIGINS` 解析为 CORS origin list；生产空值会写 warning |
+| `lifespan(app)` | 初始化/清理 Provider 和 Director 单例 |
 
-文件：`[backend/api/routes.py](../../backend/api/routes.py)`
+重要约束：
 
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| `_session_queues` | dict | 运行中 session 的 beat 暂停队列 |
-| `get_provider` | Depends | 从 app.state 获取 ProviderFacade |
-| `get_director` | Depends | 从 app.state 获取 DirectorAgent |
-| `api_health` | GET `/api/health` | 健康检查 |
-| `create_session` | POST `/api/session/create` | 创建剧情 session |
-| `session_action` | POST `/api/session/{id}/action` | 处理玩家动作：continue/stop/redirect/switch_perspective |
-| `stream_session` | GET `/api/session/{id}/stream` | SSE 剧情事件流 |
-| `chat` | POST `/api/chat` | 统一聊天端点（direct/crew） |
+- app 启动时**不再**执行 `Base.metadata.create_all()`。
+- schema 必须通过 `alembic upgrade head` 初始化或升级。
+- Docker CMD 已在启动 FastAPI 前执行 Alembic migration。
 
-### 2.3 导演 Agent
+## 配置：[backend/config.py](../../backend/config.py)
 
-文件：`[backend/agents/director.py](../../backend/agents/director.py)`
+`Settings` 从 `backend/.env` 和环境变量加载配置。
 
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| `FRONTEND_TO_BACKEND_ID` | dict | 前端 `walter` → 后端 `Walter White` 映射 |
-| `BACKEND_TO_FRONTEND_ID` | dict | 反向映射 |
-| `CHARACTER_AGENTS` | dict | 角色名到类映射 |
-| `DirectorAgent` | class | 剧情编排核心 |
-| `DirectorAgent.__init__` | method | 注入 provider、model_route、system_prompt |
-| `DirectorAgent.process` | async generator | 主流程：生成大纲 → 逐 beat 渲染 → 等待玩家动作 |
-| `DirectorAgent._generate_outline` | async method | 调用 LLM 生成场景大纲 |
-| `DirectorAgent._parse_outline` | static method | 解析编号列表或 JSON 数组为大纲 |
-| `DirectorAgent._generate_beat` | async generator | 生成单个 beat 的 SSE 事件 |
-| `DirectorAgent._parse_beat_events` | static method | 从 LLM 输出解析 JSON 事件数组 |
-| `DirectorAgent.handle_chat_message` | async method | 聊天模式入口 |
-| `DirectorAgent._handle_direct_chat` | async method | 单角色私聊 |
-| `DirectorAgent._handle_crew_chat` | async method | 多角色辩论 |
-| `DirectorAgent._parse_crew_debate_logs` | static method | 解析 crew 返回的 JSON 数组 |
+| setting | env | 默认值 | 说明 |
+|---|---|---|---|
+| `minimax_api_key` | `MINIMAX_API_KEY` | `""` | MiniMax key |
+| `stepfun_api_key` | `STEPFUN_API_KEY` | `""` | StepFun key |
+| `cli_proxy_base_url` | `CLI_PROXY_BASE_URL` | `http://127.0.0.1:8317` | 本地 CLIProxy base URL |
+| `cli_proxy_api_key` | `CLI_PROXY_API_KEY` | `""` | CLIProxy key；为空时 provider 会尝试读取 `~/.cli-proxy-api/config.yaml` |
+| `cli_proxy_default_model` | `CLI_PROXY_DEFAULT_MODEL` | `gemini-pro-agent` | CLIProxy 默认模型 |
+| `database_url` | `DATABASE_URL` | required | PostgreSQL 连接串 |
+| `app_env` | `APP_ENV` | `development` | 控制 dev/prod 行为 |
+| `allowed_origins` | `ALLOWED_ORIGINS` | `""` | CORS origin 列表，逗号分隔 |
+| `log_level` | `LOG_LEVEL` | `INFO` | Python logging level |
 
-### 2.4 Provider Facade
+validator 规则：
 
-文件：`[backend/agents/provider.py](../../backend/agents/provider.py)`
+- `DATABASE_URL` 必须存在。
+- `MINIMAX_API_KEY`、`STEPFUN_API_KEY`、`CLI_PROXY_API_KEY` 至少设置一个；否则后端无法调用任何 LLM provider。
 
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| `ProviderFacade` | class | 统一 LLM 调用层 |
-| `__init__` | method | 读取 API key，初始化 httpx.AsyncClient |
-| `call_model` | async method | 根据 `model_route` 分发到 MiniMax / StepFun |
-| `_call_minimax` | async method | Anthropic-compatible messages API |
-| `_call_stepfun` | async method | OpenAI-compatible chat completions |
-| `close` | async method | 关闭 HTTP 客户端 |
-| `resolve_model_route` | method | 当前固定返回 `stepfun/step-3.7-flash` |
+## 路由层：[backend/api/routes.py](../../backend/api/routes.py)
 
-### 2.5 记忆层
+路由层通过 `request.app.state.provider/director` 读取 lifespan 创建的单例。
 
-文件：`[backend/agents/memory.py](../../backend/agents/memory.py)`
+| 路由 | 函数 | 说明 |
+|---|---|---|
+| `GET /api/health` | `api_health` | 健康检查 |
+| `POST /api/session/create` | `create_session` | 创建 Story session |
+| `POST /api/session/{session_id}/action` | `session_action` | 控制 beat 流：continue/stop/redirect/switch_perspective |
+| `GET /api/session/{session_id}/stream` | `stream_session` | SSE 事件流 |
+| `GET /api/session/{session_id}/messages` | `list_session_messages` | 刷新后恢复已持久化 dialogue |
+| `POST /api/chat` | `chat` | Direct/Crew 普通聊天 |
 
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| `load_world_state` | async function | 加载角色跨 session 的世界状态 |
-| `compute_dossier_delta` | async function | 调用 LLM 分析本 beat 中关系变化 |
-| `update_dossiers` | async function | 应用并持久化 dossier 变化 |
-| `_apply_dossier_delta` | function | 更新单个 dossier 的信任度/知识/备注 |
-| `_new_dossier` | function | 创建新 dossier |
+### `_session_queues`
 
-### 2.6 角色基类
+模块级 dict：
 
-文件：`[backend/agents/characters/base.py](../../backend/agents/characters/base.py)`
+```python
+_session_queues: dict[str, dict] = {}
+```
 
-| 名称 | 类型 | 说明 |
-|------|------|------|
-| `BaseCharacter` | ABC | 所有角色 Agent 的抽象基类 |
-| `system_prompt` | abstract method | 返回角色 system prompt |
-| `respond` | abstract method | 生成角色回复文本 |
-| `respond_structured` | method | 追加 JSON 输出指令并解析结构化字段 |
-| `_extract_structured` | function | 从 LLM 输出提取 JSON envelope |
+用途：
 
-### 2.7 具体角色
+- 每个活跃 SSE stream 绑定一个 `asyncio.Queue(maxsize=1)`。
+- `session_action` 把 continue/redirect/switch_perspective 信号投递给对应 Director。
+- `stream_session` finally 中清理 queue，避免内存泄漏。
 
-文件：`[backend/agents/characters/walter.py](../../backend/agents/characters/walter.py)` 等
+### `stream_session`
 
-每个角色类继承 `BaseCharacter`，实现：
+这是最敏感的后端路径。它刻意避免 request-level DB session 持续覆盖整个 SSE 生命周期：
 
-- `system_prompt()`：返回该角色的性格、语气、规则 prompt。
-- `respond()`：调用 `provider.call_model()` 生成回复。
+1. 用短生命周期 DB session 检查 session 是否存在并读取 `task_prompt`。
+2. 关闭 DB session 后创建 `StreamingResponse`。
+3. Director 每个 beat 自己通过 `async_session_factory` 开短 session 写入 messages/dossiers。
+4. 每个 SSE 事件前用短 session 读取 `Session.status`，判断用户是否 stop。
+5. backend exception 对客户端只返回 `"Internal server error during stream."`，真实 traceback 留在日志中。
 
-现有角色：WalterWhite、JessePinkman、SkylerWhite、SaulGoodman、MikeEhrmantraut、GusFring。
+维护原则：
 
-## 3. 配置
+- 不要在 SSE generator 外层注入 `Depends(get_db)` 并跨 yield 持有连接。
+- 不要把原始异常、API key、DB URL、文件路径直接发给浏览器。
+- 修改 event 格式时同步更新 [api.md](./api.md)、[frontend.md](./frontend.md) 和 `src/hooks/useStoryStream.ts`。
 
-文件：`[backend/config.py](../../backend/config.py)`
+## Director Agent：[backend/agents/director.py](../../backend/agents/director.py)
 
-| 字段 | 环境变量 | 说明 |
-|------|----------|------|
-| `minimax_api_key` | `MINIMAX_API_KEY` | MiniMax API key |
-| `stepfun_api_key` | `STEPFUN_API_KEY` | StepFun API key |
-| `database_url` | `DATABASE_URL` | Postgres 连接串 |
-| `app_env` | `APP_ENV` | `development` / `production` |
-| `allowed_origins` | `ALLOWED_ORIGINS` | CORS 来源，逗号分隔 |
+`DirectorAgent` 是后端核心。它同时负责 Story 模式和普通 chat 模式。
 
-## 4. 数据库会话
-
-文件：`[backend/db/session.py](../../backend/db/session.py)`
+### 常量与映射
 
 | 名称 | 说明 |
-|------|------|
-| `engine` | async SQLAlchemy engine，自动将 `postgresql` 替换为 `postgresql+asyncpg` |
-| `async_session_factory` | session 工厂 |
-| `Base` | DeclarativeBase 基类 |
-| `get_db` | FastAPI Depends，自动 commit/rollback/close |
+|---|---|
+| `DEFAULT_DIRECTOR_MODEL_ROUTE = "minimax/MiniMax-M3"` | Story Director 默认模型 |
+| `MAX_AGENT_SPEAK_PER_BEAT = 2` | 每个 beat 最多保留两个 speak event |
+| `FRONTEND_TO_BACKEND_ID` | `walter` -> `Walter White` 等映射 |
+| `BACKEND_TO_FRONTEND_ID` | 完整角色名 -> 前端短 id |
+| `CHARACTER_AGENTS` | 完整角色名 -> 角色 Agent class |
+
+### Story 方法
+
+| 方法 | 作用 |
+|---|---|
+| `process(task, session_factory, session_id, action_queue, db)` | Story 主 async generator；生成 outline，逐 beat 产生 SSE events，并在 beat 间等待 action |
+| `_generate_outline(task)` | 调 LLM 生成 plain-text numbered outline |
+| `_extract_text_from_json_outline(raw)` | LLM 误返回 JSON 时转换成可读 outline |
+| `_parse_outline(text)` | 将 numbered list / JSON fallback 转成 scene list |
+| `_short_scene_name(scene_desc)` | 从 scene 描述中提取场景名 |
+| `_generate_beat(...)` | 单个 beat 编排、事件解析、角色 sub-agent 调用、持久化和 `beat_ready` |
+| `_prepare_beat_events(events)` | 去掉重复 scene_change、限制 speak 数、过滤空 world deltas |
+| `_extract_model_route(event_dict)` | 从 LLM event 的 `recommended_model` 提取 `provider/model` |
+| `_parse_beat_events(text)` | 从 fenced/raw JSON 中解析 event array |
+| `_persist_beat_writes(...)` | 保存 `Message`，再调用 `update_dossiers`；message commit 先于 dossier 更新 |
+| `_beat_ready_event(beat_index, summary)` | 构造 `beat_ready` |
+
+### Chat 方法
+
+| 方法 | 作用 |
+|---|---|
+| `handle_chat_message(character_id, user_message, context)` | 根据 `context.mode` 分发 direct/crew |
+| `_handle_direct_chat(...)` | 调具体角色 Agent，返回单条结构化回复 |
+| `_handle_crew_chat(...)` | 选择 1-3 个参与者，一次性生成多人 debate |
+| `_parse_crew_debate_logs(raw, participants)` | 解析 crew JSON array，过滤非法角色 |
+
+### Story 事件生命周期
+
+```text
+status: Director is analysing...
+outline: content
+status: outlined N beats...
+for each beat:
+  scene_change?         # server-side computed if scene name changed
+  agent_act*
+  agent_think*
+  agent_speak*          # Director draft -> concrete character Agent rewrite
+  world_state_delta*    # Director concrete deltas and/or memory applied deltas
+  beat_ready
+  wait action_queue up to 300s
+complete
+```
+
+`active_character_id` 语义：
+
+- 前端传短 id，如 `jesse`。
+- `session_action` 写入 DB 并投递信号。
+- Director 将短 id 映射为完整角色名。
+- 下一 beat prompt 要求该角色第一个 `agent_speak`。
+- 如果 LLM 未遵守，Director 会尝试把该角色的首次 speak hoist 到首个 speak 位置。
+
+## Character Agents：[backend/agents/characters](../../backend/agents/characters)
+
+所有角色继承 `BaseCharacter`。
+
+### `BaseCharacter`
+
+| 项 | 说明 |
+|---|---|
+| `system_prompt()` | abstract method，具体角色返回自己的 persona prompt |
+| `respond_structured(context, user_message, model_route)` | 拼接 system prompt + `STRUCTURED_OUTPUT_PROMPT`，调用 provider，解析结构化输出 |
+| `_extract_structured(text)` | 从 fenced/raw JSON 中提取 `reply_text`、`emotion_state` 等字段；失败时把原文作为 reply |
+
+结构化输出字段：
+
+```json
+{
+  "reply_text": "...",
+  "emotion_state": "calm|tense|angry|fearful|manipulative|guilty|resigned|desperate",
+  "gif_search_query": "english visual query",
+  "thinking": "...",
+  "tool_executed": null,
+  "tool_log": null
+}
+```
+
+### 具体角色
+
+| 文件 | class | 角色特点 |
+|---|---|---|
+| [walter.py](../../backend/agents/characters/walter.py) | `WalterWhite` | 精确、控制、骄傲、以家庭责任合理化 |
+| [jesse.py](../../backend/agents/characters/jesse.py) | `JessePinkman` | 情绪化、街头感、愧疚、忠诚冲突 |
+| [skyler.py](../../backend/agents/characters/skyler.py) | `SkylerWhite` | 克制、具体追问、家庭风险意识 |
+| [saul.py](../../backend/agents/characters/saul.py) | `SaulGoodman` | 快速法律风险 framing、喜剧服务于逃生计算 |
+| [mike.py](../../backend/agents/characters/mike.py) | `MikeEhrmantraut` | 简短、专业、保护性、低情绪表达 |
+| [gus.py](../../backend/agents/characters/gus.py) | `GusFring` | 礼貌、控制、商业标准式威胁 |
+
+## ProviderFacade：[backend/agents/provider.py](../../backend/agents/provider.py)
+
+`ProviderFacade` 把不同上游统一成 `call_model(messages, model_route, max_tokens=4096) -> str`。
+
+| 方法 | 说明 |
+|---|---|
+| `call_model(messages, model_route, max_tokens)` | 检查 `provider/model` 格式并分发 |
+| `_call_minimax(messages, model, max_tokens)` | Anthropic-compatible `/anthropic/v1/messages` |
+| `_call_stepfun(messages, model)` | OpenAI-compatible `/v1/chat/completions` |
+| `_call_cli_proxy(messages, model, max_tokens)` | 本地 Anthropic-compatible `/v1/messages` |
+| `_load_cli_proxy_api_key()` | 从 `~/.cli-proxy-api/config.yaml` 读取第一条 api key |
+| `resolve_model_route(scene_context, characters)` | 当前统一返回 `cliproxy/{cli_proxy_default_model}` |
+| `close()` | 关闭内部 `httpx.AsyncClient` |
+
+路由格式：
+
+```text
+minimax/MiniMax-M3
+stepfun/step-3.7-flash
+cliproxy/gemini-pro-agent
+```
+
+## Memory Layer：[backend/agents/memory.py](../../backend/agents/memory.py)
+
+记忆层维护两种 dossier：
+
+- session-level：`CharacterDossier.session_id = 当前 session id`
+- world-level：`CharacterDossier.session_id IS NULL`
+
+关键函数：
+
+| 函数 | 作用 |
+|---|---|
+| `compute_dossier_delta(provider, dossiers, beat_summary, beat_events, model_route)` | 调 LLM 分析关系变化 |
+| `update_dossiers(db, session_id, beat_summary, beat_events, provider, model_route)` | 加载当前 session + world dossiers，应用 deltas，commit |
+| `_apply_dossier_delta(dossier, trust_delta, new_knowledge, new_notes)` | 更新 trust、knowledge JSON、relationship notes |
+| `_new_dossier(session_id, owner, subject, trust_delta, new_knowledge, new_notes)` | 创建 dossier 行 |
+| `_normalize_character_id(value)` | LLM 角色名规范化为 row id |
+| `_load_knowledge(value)` | 安全解析 `knowledge` JSON |
+
+容量控制：
+
+- `MAX_KNOWLEDGE_ENTRIES = 50`
+- `MAX_RELATIONSHIP_NOTES_CHARS = 2000`
+
+持久化顺序：
+
+1. `_persist_beat_writes` 先保存 `Message` rows 并 commit。
+2. 再调用 `update_dossiers`。
+3. 如果 dossier 更新失败，只 rollback dossier partial changes，不回滚已提交的 dialogue messages。
+
+## DB Session：[backend/db/session.py](../../backend/db/session.py)
+
+主要行为：
+
+- 读取 `settings.database_url`。
+- 如果 URL 是 `postgresql://...`，自动转成 `postgresql+asyncpg://...`。
+- 使用 `render_engine_url(..., hide_password=False)` 避免 SQLAlchemy URL 字符串隐藏密码后传给 engine。
+- engine 配置：
+  - `pool_pre_ping=True`
+  - `pool_size=5`
+  - `max_overflow=10`
+  - dev 环境 `echo=True`
+- `get_db()` 是 FastAPI dependency，正常结束 commit，异常 rollback。
+
+## 测试
+
+后端测试位于 [backend/tests](../../backend/tests)。
+
+常用命令：
+
+```bash
+cd backend
+uv sync
+uv run pytest
+uv run ruff check .
+```
+
+重点测试覆盖：
+
+- config validation 和 CORS parsing
+- provider response parsing / model route validation
+- route validation / session action / message endpoint
+- Director beat parsing、错误脱敏、action queue、perspective semantics
+- memory persistence、message 与 dossier commit 顺序
+- SSE stream 行为
+
+## 后端开发注意事项
+
+- 修改 Story event schema 时，同时改 Pydantic schema、前端 `useStoryStream` 和 Code Wiki API 文档。
+- 修改 DB model 后必须补 Alembic migration，不要依赖 `setup_db.py` 的 create_all。
+- 修改 provider fallback 时注意不要把原始 exception 暴露给前端。
+- 任何会增加 SSE 持续时间或并发的改动，都要重新检查 DB connection 是否会跨 await/yield 长时间持有。
+- 角色 prompt 变更只影响新 LLM 调用；旧 persisted messages 不会回填。
