@@ -18,7 +18,7 @@ from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 
 logger = logging.getLogger(__name__)
-DEFAULT_DIRECTOR_MODEL_ROUTE = "minimax/MiniMax-M3"
+DEFAULT_DIRECTOR_MODEL_ROUTE = "stepfun/step-2-16k"
 MAX_AGENT_SPEAK_PER_BEAT = 2
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
@@ -72,7 +72,7 @@ BEAT PLANNING
 1. Decide which characters are present and what each one does.
 2. Decide if the location changes (emit a scene_change event).
 3. Decide what emotional beat this moment carries.
-4. Choose the model for this scene (always "minimax/MiniMax-M3").
+4. Choose the model for this scene (always "stepfun/step-2-16k").
 THINKING
 - Have characters think before they act — emit agent_think events to reveal
   their inner conflict and motivation.  Breaking Bad tension lives in what
@@ -99,14 +99,14 @@ has a "type" field and a "data" field matching one of these shapes:
 NOTE: This JSON event format is for BEAT events only. When asked for an outline
 (overall plot structure), output a plain text numbered list instead.
 IMPORTANT: Every beat event object MUST include a "recommended_model" field
-set to "minimax/MiniMax-M3".
+set to "stepfun/step-2-16k".
 Example output:
 [
-  { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "minimax/MiniMax-M3" },
-  { "type": "agent_act", "data": { "character_id": "Walter White", "action": "sits down at the table", "target": null }, "recommended_model": "minimax/MiniMax-M3" },
-  { "type": "agent_think", "data": { "character_id": "Walter White", "thought_content": "If Skyler finds out about the lab, I lose everything." }, "recommended_model": "minimax/MiniMax-M3" },
-  { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "minimax/MiniMax-M3" },
-  { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "minimax/MiniMax-M3" }
+  { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "stepfun/step-2-16k" },
+  { "type": "agent_act", "data": { "character_id": "Walter White", "action": "sits down at the table", "target": null }, "recommended_model": "stepfun/step-2-16k" },
+  { "type": "agent_think", "data": { "character_id": "Walter White", "thought_content": "If Skyler finds out about the lab, I lose everything." }, "recommended_model": "stepfun/step-2-16k" },
+  { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "stepfun/step-2-16k" },
+  { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "stepfun/step-2-16k" }
 ]
 RULES:
 - Always emit at least one agent_think or agent_speak per character per beat.
@@ -116,7 +116,7 @@ RULES:
 - world_state_delta must always appear as the last event in a beat.
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
   "Saul Goodman", "Mike Ehrmantraut", or "Gus Fring" — no variations.
-- recommended_model must be "minimax/MiniMax-M3" on every event.
+- recommended_model must be "stepfun/step-2-16k" on every event.
 """
 # ---------------------------------------------------------------------------
 # Director agent
