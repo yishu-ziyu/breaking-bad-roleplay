@@ -84,6 +84,7 @@ type Character = {
   id: CharacterId
   name: string
   color: string
+  oneLiner: Record<Language, string>
   relationOptions: string[]
   opener: Record<Language, string>
 }
@@ -95,31 +96,32 @@ type Character = {
 const characters: Character[] = [
   {
     id: 'walter', name: 'Walter', color: '#d7e36f',
+    oneLiner: { en: 'A chemistry teacher turned empire builder. Precision, pride, and terrible secrets.', zh: '化学老师转型帝国建造者。精确、骄傲，和见不得人的秘密。' },
     relationOptions: ['former student', 'family member', 'lab partner', 'DEA liability', 'old colleague'],
     opener: { en: 'Choose your words carefully. The situation is already more delicate than you understand.', zh: '说话谨慎一点。这个局面已经比你理解的更微妙。' },
-  },
-  {
+  }, {
     id: 'jesse', name: 'Jesse', color: '#93d7ff',
+    oneLiner: { en: 'A cook with a conscience. Street-smart, impulsive, and desperately loyal.', zh: '有良知的制作者。街头聪明、冲动，却又极度忠诚。' },
     relationOptions: ['partner', 'old friend', 'dealer contact', 'younger sibling figure', 'person he disappointed'],
     opener: { en: 'Yo, if this is another lecture, I need like five seconds to emotionally leave the room first.', zh: 'Yo，如果这又是一场说教，我需要五秒钟先从精神上离开这个房间。' },
-  },
-  {
+  }, {
     id: 'skyler', name: 'Skyler', color: '#f3d9a2',
+    oneLiner: { en: 'The wife who found the cracks. Protective, sharp, and running out of patience.', zh: '发现了裂痕的妻子。护家心切、敏锐，耐心快要耗尽。' },
     relationOptions: ['spouse', 'family member', 'bookkeeping client', 'neighbor', 'person hiding something'],
     opener: { en: 'I am going to ask this once plainly, and I would appreciate a plain answer.', zh: '我只会直说一次，也希望你给我一个直白的答案。' },
-  },
-  {
+  }, {
     id: 'saul', name: 'Saul', color: '#f7ce46',
+    oneLiner: { en: 'A criminal lawyer who sees every problem as a business opportunity.', zh: '把每个问题都看成商机的刑事律师。' },
     relationOptions: ['client', 'witness', 'business partner', 'problem to solve', 'person with cash'],
     opener: { en: 'Good news: you came to the right office. Bad news: that usually means something went very wrong.', zh: '好消息是：你找对办公室了。坏消息是：这通常说明事情已经非常不对劲。' },
-  },
-  {
+  }, {
     id: 'mike', name: 'Mike', color: '#b9c0a5',
+    oneLiner: { en: 'A former cop who cleaned up after everyone. Quiet, lethal, and exhausted by incompetence.', zh: '为所有人善后的前警探。安静、致命，厌倦了愚蠢。' },
     relationOptions: ['asset', 'employer', 'person under protection', 'loose end', 'rookie'],
     opener: { en: 'Sit down. Talk less. Start with the part you think I do not already know.', zh: '坐下。少说废话。从你以为我还不知道的部分开始。' },
-  },
-  {
+  }, {
     id: 'gus', name: 'Gus', color: '#b2f09a',
+    oneLiner: { en: 'A restaurant owner with absolute control. Every gesture is calculated, every silence is a threat.', zh: '拥有绝对控制权的餐厅老板。每个动作都经过计算，每段沉默都是威胁。' },
     relationOptions: ['employee', 'supplier', 'rival', 'guest', 'person being evaluated'],
     opener: { en: 'Please, take a seat. A calm conversation prevents unfortunate misunderstandings.', zh: '请坐。冷静的谈话可以避免一些不幸的误会。' },
   },
@@ -160,6 +162,10 @@ const relationLabels: Record<string, Record<Language, string>> = {
 const uiText = {
   en: {
     tagline: 'Stateful Breaking Bad autonomous agents running Plan-Reflect cognitive loops.',
+    landingSubtitle: 'Pick a character. Choose your relationship. Start a conversation that matters.',
+    landingStep1: 'Choose',
+    landingStep2: 'Anchor',
+    landingStep3: 'Chat',
     character: 'Active Profile',
     language: 'Language',
     relation: 'Relation',
@@ -199,6 +205,10 @@ const uiText = {
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
+    landingSubtitle: '选一个角色。确定你的关系。开始一段有分量的对话。',
+    landingStep1: '选择',
+    landingStep2: '锚定',
+    landingStep3: '对话',
     character: '角色档案',
     language: '语言',
     relation: '身份关系',
@@ -364,11 +374,16 @@ const DEFAULT_STORY_PROMPT: string = "Gus Fring sits across from Walter White in
 /* ------------------------------------------------------------------ */
 
 function App() {
-  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
-  const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
-  const [language, setLanguage] = usePersistedState<Language>('language', 'zh')
+  // Language: use browser preference on first visit, then persist
+  const defaultLanguage: Language = navigator.language.startsWith('zh') ? 'zh' : 'en'
+  const [storedLanguage, setLanguage] = usePersistedState<Language | null>('language', null)
+  const language: Language = storedLanguage ?? defaultLanguage
   const t = uiText[language]
 
+  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
+  const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
+
+  const [hasEnteredWorld, setHasEnteredWorld] = useState(false)
   const [autoPlayMode, setAutoPlayMode] = useState(false)
 
   // Relation per character (persist across character switches)
@@ -590,6 +605,7 @@ function App() {
 
   /* ---- Auto-play mode (triggered by landing screen) ---- */
   const handleEnterWorld = useCallback(() => {
+    setHasEnteredWorld(true)
     setAutoPlayMode(true)
   }, [])
 
@@ -763,7 +779,7 @@ function App() {
   }, [setSelectedCharId, setRelationByChar])
 
   /* ---- Render ---- */
-  if (!autoPlayMode) {
+  if (!hasEnteredWorld) {
     return (
       <div className="landing-screen">
         <div className="landing-screen__content">
@@ -771,10 +787,26 @@ function App() {
             BREAKING BAD
             <span className="landing-screen__title-accent">World Lines</span>
           </h1>
+          <p className="landing-screen__description">{t.landingSubtitle}</p>
           <div className="landing-screen__divider" />
-          <p className="landing-screen__description">What if you could rewrite the story?</p>
+          <div className="landing-screen__steps">
+            <div className="landing-step">
+              <span className="landing-step__num">1</span>
+              <span className="landing-step__label">{t.landingStep1}</span>
+            </div>
+            <div className="landing-screen__step-arrow">&rsaquo;</div>
+            <div className="landing-step">
+              <span className="landing-step__num">2</span>
+              <span className="landing-step__label">{t.landingStep2}</span>
+            </div>
+            <div className="landing-screen__step-arrow">&rsaquo;</div>
+            <div className="landing-step">
+              <span className="landing-step__num">3</span>
+              <span className="landing-step__label">{t.landingStep3}</span>
+            </div>
+          </div>
           <button className="landing-screen__enter" onClick={handleEnterWorld} type="button">
-            ENTER THE WORLD
+            {language === 'zh' ? '进入世界' : 'ENTER THE WORLD'}
             <span className="landing-screen__enter-arrow">&rarr;</span>
           </button>
         </div>
@@ -808,9 +840,13 @@ function App() {
                 className={`char-card ${c.id === selectedCharId ? 'selected' : ''}`}
                 onClick={() => handleCharChange(c.id)}
                 style={{ '--char-color': c.color } as CSSProperties}
+                title={c.oneLiner[language]}
               >
                 <Silhouette characterId={c.id} name={c.name} size={42} />
-                <strong>{c.name}</strong>
+                <div className="char-card__info">
+                  <strong>{c.name}</strong>
+                  <span className="char-card__hint">{c.oneLiner[language]}</span>
+                </div>
               </button>
             ))}
           </div>

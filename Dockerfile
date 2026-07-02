@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install frontend dependencies first for better Docker layer caching.
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci --no-audit --no-fund
 
 # Copy only the files needed to build the Vite frontend.
 COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
@@ -22,7 +22,7 @@ WORKDIR /app
 
 # Install Python runtime dependencies.
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements.txt
 
 # Copy backend code and runtime entry point.
 COPY backend/ ./backend/
@@ -36,6 +36,5 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-# Apply Alembic migrations before starting the web server. This is suitable
-# for the single-instance Render deployment defined in render.yaml.
+# Apply Alembic migrations before starting the web server.
 CMD ["sh", "-c", "cd /app/backend && alembic upgrade head && cd /app && python3 start.py"]
