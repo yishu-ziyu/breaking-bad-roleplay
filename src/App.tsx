@@ -357,6 +357,8 @@ function BeatControls({ t, language, characters, onContinue, onStop, onRedirect,
   )
 }
 
+const DEFAULT_STORY_PROMPT: string = "Gus Fring sits across from Walter White in the Los Pollos Hermanos office. The air is still. Gus studies Walt with calm precision. Walt's pride wars with his fear. Jesse is waiting in the parking lot, not knowing this meeting could change everything."
+
 /* ------------------------------------------------------------------ */
 /*  App                                                               */
 /* ------------------------------------------------------------------ */
@@ -366,6 +368,8 @@ function App() {
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
   const [language, setLanguage] = usePersistedState<Language>('language', 'zh')
   const t = uiText[language]
+
+  const [autoPlayMode, setAutoPlayMode] = useState(false)
 
   // Relation per character (persist across character switches)
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
@@ -584,6 +588,28 @@ function App() {
     }
   }, [storyTask, story, selectedCharId])
 
+  /* ---- Auto-play mode (triggered by landing screen) ---- */
+  const handleEnterWorld = useCallback(() => {
+    setAutoPlayMode(true)
+  }, [])
+
+  useEffect(() => {
+    if (!autoPlayMode) return
+    setAutoPlayMode(false)
+    setStoryTask(DEFAULT_STORY_PROMPT)
+    setView('story')
+    const timer = setTimeout(async () => {
+      setError(null)
+      try {
+        await story.startStory(DEFAULT_STORY_PROMPT, selectedCharId)
+        setStoryTask('')
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [autoPlayMode, story, selectedCharId])
+
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
     setMessagesByChar(prev => ({
@@ -737,6 +763,25 @@ function App() {
   }, [setSelectedCharId, setRelationByChar])
 
   /* ---- Render ---- */
+  if (!autoPlayMode) {
+    return (
+      <div className="landing-screen">
+        <div className="landing-screen__content">
+          <h1 className="landing-screen__title">
+            BREAKING BAD
+            <span className="landing-screen__title-accent">World Lines</span>
+          </h1>
+          <div className="landing-screen__divider" />
+          <p className="landing-screen__description">What if you could rewrite the story?</p>
+          <button className="landing-screen__enter" onClick={handleEnterWorld} type="button">
+            ENTER THE WORLD
+            <span className="landing-screen__enter-arrow">&rarr;</span>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <main className="app-shell">
       {/* ===================== SIDEBAR ===================== */}

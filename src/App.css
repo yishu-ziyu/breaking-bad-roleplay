@@ -2,6 +2,126 @@
    ABQ Roleplay Lab — App Styles
    ================================================================= */
 
+/* ==========================================
+   Landing Screen
+   ========================================== */
+.landing-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 40%, rgba(215, 227, 111, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 20% 80%, rgba(142, 169, 63, 0.06) 0%, transparent 60%),
+    linear-gradient(160deg, #080c08 0%, #0d140a 35%, #0a0f08 65%, #060a06 100%);
+  color: #f5f4eb;
+  cursor: default;
+}
+
+.landing-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 25%, rgba(142, 169, 63, 0.05), transparent 28rem),
+    radial-gradient(circle at 82% 70%, rgba(247, 206, 70, 0.04), transparent 24rem);
+  pointer-events: none;
+}
+
+.landing-screen__content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 28px;
+  text-align: center;
+  padding: 40px 28px;
+  max-width: 560px;
+  animation: landingFadeIn 1.4s ease-out;
+}
+
+.landing-screen__title {
+  margin: 0;
+  font-size: clamp(42px, 8vw, 72px);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f5f4eb;
+}
+
+.landing-screen__title-accent {
+  display: block;
+  color: #f7ce46;
+}
+
+.landing-screen__subtitle {
+  margin: 0;
+  font-size: clamp(15px, 2.5vw, 20px);
+  font-weight: 300;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: rgba(142, 169, 63, 0.85);
+}
+
+.landing-screen__divider {
+  width: 48px;
+  height: 2px;
+  margin: 0 auto;
+  background: linear-gradient(90deg, transparent, #8ea93f, transparent);
+}
+
+.landing-screen__description {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.6;
+  color: rgba(245, 244, 235, 0.72);
+  font-style: italic;
+}
+
+.landing-screen__enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 16px 44px;
+  border: 2px solid #f7ce46;
+  border-radius: 6px;
+  background: rgba(247, 206, 70, 0.08);
+  color: #f7ce46;
+  font: 900 15px/1 var(--font-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+
+.landing-screen__enter:hover {
+  background: #f7ce46;
+  color: #0a0f0a;
+  box-shadow: 0 0 40px rgba(247, 206, 70, 0.25);
+  transform: translateY(-1px);
+}
+
+.landing-screen__enter:active {
+  transform: translateY(1px);
+}
+
+.landing-screen__enter-arrow {
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+
+.landing-screen__enter:hover .landing-screen__enter-arrow {
+  transform: translateX(3px);
+}
+
+@keyframes landingFadeIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ----- Shell ----- */
 .app-shell {
   min-height: 100vh;
