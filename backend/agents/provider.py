@@ -77,7 +77,12 @@ class ProviderFacade:
         if provider == "minimax":
             return await self._call_minimax(messages, model, max_tokens)
         if provider == "stepfun":
-            return await self._call_stepfun(messages, model)
+            try:
+                return await self._call_stepfun(messages, model)
+            except httpx.HTTPStatusError:
+                if not self.minimax_key:
+                    raise
+                return await self._call_minimax(messages, "MiniMax-M3", max_tokens)
         if provider == "cliproxy":
             return await self._call_cli_proxy(messages, model, max_tokens)
         raise ValueError(f"Unknown provider '{provider}'. Use 'minimax', 'stepfun', or 'cliproxy'.")
