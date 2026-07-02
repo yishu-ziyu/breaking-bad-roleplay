@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from agents.provider import ProviderFacade
@@ -159,6 +160,27 @@ class TestCycle46_ModelRouteValidation:
             model_route="stepfun/step-3.7-flash",
         )
         assert result == "ok"
+
+    async def test_stepfun_http_error_falls_back_to_minimax_when_configured(self):
+        provider = _make_provider()
+        request = httpx.Request("POST", "https://api.stepfun.com/v1/chat/completions")
+        response = httpx.Response(402, request=request)
+        provider._call_stepfun = AsyncMock(
+            side_effect=httpx.HTTPStatusError("quota exceeded", request=request, response=response)
+        )
+        provider._call_minimax = AsyncMock(return_value="fallback ok")
+
+        result = await provider.call_model(
+            messages=[{"role": "user", "content": "hi"}],
+            model_route="stepfun/step-2-16k",
+        )
+
+        assert result == "fallback ok"
+        provider._call_minimax.assert_awaited_once_with(
+            [{"role": "user", "content": "hi"}],
+            "MiniMax-M3",
+            4096,
+        )
 
     async def test_model_route_empty_string_raises_clear_value_error(self):
         """Edge case: an empty string has no '/', so it must hit the new

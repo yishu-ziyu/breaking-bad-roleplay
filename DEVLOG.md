@@ -1,5 +1,59 @@
 # Breaking Bad Roleplay — 开发日志
 
+## 2026-07-02 Docker VM deployment + bb.yishuziyu.cn ✅
+
+### 背景
+- Supabase Edge Functions 迁移完成了设计阶段，但当前最短可玩路径是保留 FastAPI，直接部署到现有 Docker VM。
+- 服务器公网 IP 变更为 `121.89.90.68`，仍在运行且资源足够：Docker 26.1，容器端口 8080 可用。
+- 用户希望新项目域名使用 `bb.yishuziyu.cn`，不要影响已有 `gun.yishuziyu.cn` 项目。
+
+### 改动
+- `.dockerignore` — 忽略 `.DS_Store` / `._*` / `**/._*`，避免 macOS AppleDouble 文件进入 Docker build context 后让 Alembic 读到 null bytes。
+- `Dockerfile` — npm 使用 `registry.npmmirror.com`，pip 使用清华镜像源，解决国内 VM 构建时 npm/PyPI 下载超时；启动命令仍为 `alembic upgrade head && python3 start.py`。
+- `backend/alembic/env.py` — Alembic online migration 改为直接 `create_engine(URL)`，绕过 `configparser`，避免数据库密码中的 URL 编码字符被当成 `%` 插值。
+- `backend/db/url.py` — 保持密码特殊字符的 percent-encoding；不再把 `%40` 解码回裸 `@`。
+- `backend/alembic/versions/a1b2c3d4e5f6_add_session_current_mode.py` — 新增 `sessions.current_mode`，修复线上 `/api/session/create` 因缺列导致的 500。
+- `backend/agents/provider.py` — StepFun HTTP 错误时，如果配置了 MiniMax key，自动 fallback 到 `MiniMax-M3`；线上 StepFun 当前返回 402 quota exceeded，MiniMax fallback 可继续生成剧情。
+- `src/App.tsx` / `src/App.css` — 修复 landing 点击后又被 auto-play 状态重置的问题；新增 `hasEnteredWorld`，点击 `ENTER THE WORLD` 后进入 Story UI 并触发默认剧情；首访语言跟随浏览器偏好并保证运行时语言非空。
+
+### 服务器与域名
+- 应用目录：`/opt/breaking-bad-roleplay`
+- 容器：`bb-roleplay`
+- 端口：`0.0.0.0:8080 -> 8080`
+- 公网入口：
+  - `https://bb.yishuziyu.cn/`
+  - `http://121.89.90.68/`
+- Nginx：
+  - `/etc/nginx/conf.d/bb-roleplay.conf` — `bb.yishuziyu.cn` 80/443 反代到 `127.0.0.1:8080`
+  - `/etc/nginx/conf.d/red-herring-ip-api.conf` — IP 访问 `121.89.90.68` 反代到本项目
+  - `gun.yishuziyu.cn` 的正式域名配置仍在 `/etc/nginx/conf.d/red-herring.conf`，未作为本项目域名使用
+- TLS：
+  - Let’s Encrypt certificate: `/etc/letsencrypt/live/bb.yishuziyu.cn/`
+  - 到期时间：2026-09-30 14:49:59 UTC
+  - 当前证书通过手动 DNS-01 签发，后续需要在到期前续签，或接入阿里云 DNS API hook 自动续签。
+- DNS：
+  - 阿里云 DNS 已添加 `bb.yishuziyu.cn -> 121.89.90.68`
+  - HTTP 域名访问可能被阿里云 ICP 拦截；HTTPS 已验证可用。
+
+### 数据库与 Provider
+- Supabase direct DB hostname 只给 IPv6，当前 VM 无可用 IPv6 出口，所以线上改用 Supabase pooler。
+- pooler 连接采用 project-ref 用户名形态，密码必须 URL encode；文档和提交中不记录密码。
+- StepFun key 可配置，但当前线上请求命中 402 quota exceeded；MiniMax key 存在时自动 fallback，保证故事模式可玩。
+
+### 验证
+- `npm run build` — passed
+- `cd backend && ./.venv/bin/pytest tests/test_provider_parsing.py tests/test_routes.py tests/test_db_url.py` — 27 passed, 1 existing StarletteDeprecationWarning
+- `git diff --check` — passed
+- Playwright public smoke on `https://bb.yishuziyu.cn/` — landing loads, `ENTER THE WORLD` click enters Story UI
+- Server check — `bb-roleplay` container running, Nginx routes `bb.yishuziyu.cn` to `127.0.0.1:8080`
+
+### 已知后续
+- Docker public build logs still warn that `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` are not injected; guest story mode works, but authenticated cloud sync needs build-time Vite env vars if this VM deployment becomes the long-term path.
+- Let’s Encrypt DNS-01 certificate is manual-renewal unless an Aliyun DNS automation hook is added.
+- Server-side Nginx and cert setup are documented here but not yet codified as IaC.
+
+---
+
 ## 2026-07-01 Privacy model + encrypted cloud profile ✅
 
 ### 背景

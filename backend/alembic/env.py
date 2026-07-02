@@ -7,7 +7,7 @@ Alembic runs migrations synchronously. ``target_metadata`` points at
 """
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, make_url, pool
+from sqlalchemy import create_engine, make_url, pool
 
 from alembic import context
 
@@ -27,7 +27,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 
-def _sync_url() -> str:
+def _sync_url():
     """Return a sync-compatible database URL derived from settings.
 
     ``settings.database_url`` uses ``postgresql+asyncpg`` for the async
@@ -37,11 +37,8 @@ def _sync_url() -> str:
     url = make_url(settings.database_url)
     if url.get_backend_name() == "postgresql" and "+asyncpg" in url.drivername:
         url = url.set(drivername="postgresql+psycopg2")
-    return render_engine_url(url)
+    return url
 
-
-# Make the URL available to both offline and online runners.
-config.set_main_option("sqlalchemy.url", _sync_url())
 
 # ``Base.metadata`` now contains every table defined in db.models.
 target_metadata = Base.metadata
@@ -52,7 +49,7 @@ def run_migrations_offline() -> None:
 
     Emits SQL to stdout without needing a live DB connection.
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = render_engine_url(_sync_url())
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -70,13 +67,9 @@ def run_migrations_online() -> None:
 
     Creates a synchronous Engine and runs migrations within a transaction.
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    engine = create_engine(_sync_url(), poolclass=pool.NullPool)
 
-    with connectable.connect() as connection:
+    with engine.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
