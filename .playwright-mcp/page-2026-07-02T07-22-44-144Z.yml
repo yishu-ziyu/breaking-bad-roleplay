@@ -1,0 +1,8 @@
+- generic [ref=f2e10]:
+  - heading "BREAKING BAD World Lines" [level=1] [ref=f2e11]:
+    - text: BREAKING BAD
+    - generic [ref=f2e12]: World Lines
+  - paragraph [ref=f2e14]: What if you could rewrite the story?
+  - button "ENTER THE WORLD →" [ref=f2e15] [cursor=pointer]:
+    - text: ENTER THE WORLD
+    - generic [ref=f2e16]: →
