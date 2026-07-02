@@ -1,5 +1,7 @@
 import { roleAssets, type RoleAssetCharacterId, type RoleGifTag } from '../roleAssets'
 
+type LS = { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+
 const RECENT_KEY = 'abq_recent_gifs'
 const WEIGHTS_KEY = 'abq_gif_weights'
 export const COOLDOWN_SIZE = 3
@@ -26,13 +28,13 @@ const EMOTION_BRIDGE: Record<string, RoleGifTag[]> = {
 }
 
 function lsAvailable(): boolean {
-  return typeof globalThis !== 'undefined' && typeof (globalThis as unknown as { localStorage: Storage }).localStorage !== 'undefined'
+  return typeof globalThis !== 'undefined' && typeof (globalThis as unknown as { localStorage: LS }).localStorage !== 'undefined'
 }
 
 function lsGet(key: string): string | null {
   if (!lsAvailable()) return null
   try {
-    return (globalThis as unknown as { localStorage: Storage }).localStorage.getItem(key)
+    return (globalThis as unknown as { localStorage: LS }).localStorage.getItem(key)
   } catch {
     return null
   }
@@ -41,7 +43,7 @@ function lsGet(key: string): string | null {
 function lsSet(key: string, value: string): void {
   if (!lsAvailable()) return
   try {
-    (globalThis as unknown as { localStorage: Storage }).localStorage.setItem(key, value)
+    (globalThis as unknown as { localStorage: LS }).localStorage.setItem(key, value)
   } catch {
     // best-effort
   }
@@ -50,7 +52,7 @@ function lsSet(key: string, value: string): void {
 function lsRemove(key: string): void {
   if (!lsAvailable()) return
   try {
-    (globalThis as unknown as { localStorage: Storage }).localStorage.removeItem(key)
+    (globalThis as unknown as { localStorage: LS }).localStorage.removeItem(key)
   } catch {
     // best-effort
   }
