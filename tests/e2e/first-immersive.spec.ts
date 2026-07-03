@@ -16,13 +16,20 @@ async function gotoFresh(page: Page) {
  * script, so React's initial usePersistedState reads the seeded values.
  */
 async function seedStorage(page: Page, values: Record<string, unknown>) {
+  // addInitScript serializes data as JSON. Objects/arrays become stringified
+  // inside the init script. We re-parse strings that look like JSON objects/arrays.
   await page.addInitScript((data) => {
-    for (const [key, value] of Object.entries(data)) {
+    for (const [key, raw] of Object.entries(data)) {
+      let value: unknown = raw
+      if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
+        try { value = JSON.parse(raw) } catch { /* keep as string */ }
+      }
       window.localStorage.setItem(key, JSON.stringify(value))
     }
-  }, { ...values, abq_enteredWorld: true })
+  }, values)
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
+  await page.evaluate(() => { window.localStorage.setItem('abq_enteredWorld', 'true') })
 }
 
 function chatState(

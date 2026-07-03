@@ -104,15 +104,17 @@ async function emitSSE(page: Page, type: string, data: unknown) {
 /** Seed localStorage (abq_ prefix is added by caller, matching persistedState). */
 async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
-    for (const [key, value] of Object.entries(data)) {
+    // Bypass landing screen BEFORE React mounts
+    window.localStorage.setItem('abq_enteredWorld', 'true')
+    for (const [key, raw] of Object.entries(data)) {
+      let value: unknown = raw
+      if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
+        try { value = JSON.parse(raw) } catch { /* keep as string */ }
+      }
       window.localStorage.setItem(key, JSON.stringify(value))
     }
   }, values)
   await page.goto(BASE_URL)
-  await page.waitForLoadState('domcontentloaded')
-  // Bypass landing screen
-  const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
-  if (await enterBtn.count() > 0) await enterBtn.click()
   await page.waitForLoadState('domcontentloaded')
 }
 
