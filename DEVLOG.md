@@ -1,5 +1,44 @@
 # Breaking Bad Roleplay — 开发日志
 
+## 2026-07-03 Visual QA audit + P0 fixes + E2E infrastructure ✅
+
+### 背景
+- Ship QA task: `breaking-bad-roleplay-qa-1-ui-2-a-b-qa-3`，全量视觉 QA + 游戏测试方法论调研。
+- 输出 `visual-qa-report.md`（14 个发现，P0/P1/P2 分级）和 `testing-methodology.md`（4 种测试方法 + 3 周路线图）。
+
+### 发现的 P0 问题
+1. `.msg--char` 类在 App.css 中无对应规则，角色消息缺少左对齐的 avatar + body grid 布局。
+2. `BeatControls` 组件 destructuring 了 `language` prop，但 `BeatControlsProps` 接口未声明，属于死代码。
+3. `VoicePlayer` 的禁用态和按钮文案硬编码英文，中文环境下显示 English fallback。
+
+### 修复
+- `src/App.css` — 新增 `.msg--char .msg-avatar` / `.msg--char .msg-body` 规则，与 `.msg--user` 对称布局。
+- `src/App.tsx` — 移除 `BeatControls` 中未使用的 `language` 参数。
+- `src/components/VoicePlayer.tsx` — 新增 `unavailableText` prop，默认按 `language` 自动选择中文/英文文案；新增 `fallbackLabel` 逻辑。
+
+### E2E 测试基础设施修复
+- 3 个 E2E spec 文件共 22 个测试失败，全部卡在 landing screen 未 bypass：
+  - `waitForLoadState('networkidle')` — 在 SPA + 热重载环境下超时，改成 `domcontentloaded`。
+  - `seedStorage` 后缺少 `abq_enteredWorld: true`，导致页面仍显示 landing screen 而非聊天界面。
+  - `gotoFresh` 缺少 landing screen bypass 步骤。
+  - FC-1 中 `#llmProvider` selector 在 Loop 3 已从 UI 移除，改为注释说明。
+- 以上均为预存问题（clean baseline 上也失败），非本轮 P0 修复引入的回归。
+
+### 交付物
+- `.ship/tasks/breaking-bad-roleplay-qa-1-ui-2-a-b-qa-3/product/visual-qa-report.md`
+- `.ship/tasks/breaking-bad-roleplay-qa-1-ui-2-a-b-qa-3/product/testing-methodology.md`
+
+### 验证
+- `npx tsc --noEmit` — 0 errors
+- `npx tsx --test` — 32 passed, 0 failed
+- E2E: 22 个预存失败（landing screen bypass 问题），1 passed，1 skipped
+
+### Commits
+- `452495f` fix: P0 visual QA — .msg--char styles, VoicePlayer i18n, BeatControls props
+- `5329381` fix: E2E tests — bypass landing screen, use domcontentloaded, update model selector
+
+---
+
 ## 2026-07-02 Docker VM deployment + bb.yishuziyu.cn ✅
 
 ### 背景

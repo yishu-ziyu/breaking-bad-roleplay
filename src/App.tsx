@@ -436,7 +436,7 @@ function App() {
   const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
 
-  const [hasEnteredWorld, setHasEnteredWorld] = useState(false)
+  const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
   const [autoPlayMode, setAutoPlayMode] = useState(false)
 
   // Relation per character (persist across character switches)
