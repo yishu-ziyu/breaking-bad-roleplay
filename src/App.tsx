@@ -53,17 +53,18 @@ function resolveStoryEventGif(evt: StoryEvent): string | null {
 
 function getEventTitle(evt: StoryEvent, lang: Language): string {
   const charId = (evt.data.character_id as string) ?? ''
+  const t = uiText[lang]
   switch (evt.type) {
-    case 'outline': return lang === 'zh' ? '故事大纲' : 'Story Outline'
-    case 'scene_change': return lang === 'zh' ? '场景切换' : 'Scene Change'
-    case 'agent_speak': return lang === 'zh' ? `${charId} 说` : `${charId} speaks`
-    case 'agent_think': return lang === 'zh' ? `${charId} 思考` : `${charId} thinks`
-    case 'agent_act': return lang === 'zh' ? `${charId} 行动` : `${charId} acts`
-    case 'beat_ready': return lang === 'zh' ? '🎬 导演等你决策' : '🎬 Director awaits your decision'
-    case 'world_state_delta': return lang === 'zh' ? '📊 世界状态变化' : '📊 World State Delta'
-    case 'status': return lang === 'zh' ? '状态更新' : 'Status'
-    case 'complete': return lang === 'zh' ? '🎬 剧情完结' : '🎬 Story Complete'
-    case 'error': return lang === 'zh' ? '⚠ 错误' : '⚠ Error'
+    case 'outline': return t.eventOutline
+    case 'scene_change': return t.eventSceneChange
+    case 'agent_speak': return `${charId} ${t.eventSpeaks}`
+    case 'agent_think': return `${charId} ${t.eventThinks}`
+    case 'agent_act': return `${charId} ${t.eventActs}`
+    case 'beat_ready': return t.eventBeatReady
+    case 'world_state_delta': return t.eventWorldDelta
+    case 'status': return t.eventStatus
+    case 'complete': return t.eventComplete
+    case 'error': return t.eventError
     default: return evt.type
   }
 }
@@ -202,6 +203,35 @@ const uiText = {
     stop: 'Stop',
     storyOutline: 'Story Outline',
     paused: 'Paused',
+    eventOutline: 'Story Outline',
+    eventSceneChange: 'Scene Change',
+    eventSpeaks: 'speaks',
+    eventThinks: 'thinks',
+    eventActs: 'acts',
+    eventBeatReady: 'Director awaits your decision',
+    eventWorldDelta: 'World State Delta',
+    eventStatus: 'Status',
+    eventComplete: 'Story Complete',
+    eventError: 'Error',
+    connecting: 'Connecting…',
+    disconnected: 'Disconnected',
+    reconnect: 'Reconnect',
+    restart: 'Restart',
+    autoContinue: 'Director auto-continuing (5min idle)…',
+    streaming: 'Streaming',
+    resumingStory: 'Resuming previous story…',
+    storyComplete: 'Story complete. All beats rendered.',
+    openingEmotion: 'opening pressure',
+    enterWorld: 'ENTER THE WORLD',
+    langEn: 'EN',
+    beatRedirect: '↩ Redirect',
+    beatSwitchPerspective: '👤 Switch Perspective',
+    beatSubmit: 'Submit',
+    beatCancel: 'Cancel',
+    beatSelectCharacter: 'Select character…',
+    beatRedirectPlaceholder: 'Enter new plot direction…',
+    chatHeaderWith: '{character} with their {relation}',
+    savePrompt: 'Sign in to save this conversation to the cloud.',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
@@ -245,6 +275,35 @@ const uiText = {
     stop: '停止',
     storyOutline: '任务大纲',
     paused: '已暂停',
+    eventOutline: '故事大纲',
+    eventSceneChange: '场景切换',
+    eventSpeaks: '说',
+    eventThinks: '思考',
+    eventActs: '行动',
+    eventBeatReady: '导演等你决策',
+    eventWorldDelta: '世界状态变化',
+    eventStatus: '状态更新',
+    eventComplete: '剧情完结',
+    eventError: '错误',
+    connecting: '连接现场…',
+    disconnected: '已断开',
+    reconnect: '重连',
+    restart: '重新开始',
+    autoContinue: '导演 5 分钟无操作，自动继续中…',
+    streaming: '播放中',
+    resumingStory: '正在恢复上次剧情…',
+    storyComplete: '任务结束。所有剧情节点已完成。',
+    openingEmotion: '开场压迫',
+    enterWorld: '进入世界',
+    langEn: 'EN',
+    beatRedirect: '↩ 重定向',
+    beatSwitchPerspective: '👤 切换视角',
+    beatSubmit: '提交',
+    beatCancel: '取消',
+    beatSelectCharacter: '选择角色…',
+    beatRedirectPlaceholder: '输入新的剧情方向…',
+    chatHeaderWith: '{character} 与{relation}',
+    savePrompt: '同步档案后，可在云端保存这段会谈。'
   },
 } satisfies Record<Language, Record<string, string>>
 
@@ -293,14 +352,13 @@ function BeatControls({ t, language, characters, onContinue, onStop, onRedirect,
     }
   }
 
-  const zh = language === 'zh'
   const labels = {
-    redirect: zh ? '↩ 重定向' : '↩ Redirect',
-    switchPerspective: zh ? '👤 切换视角' : '👤 Switch Perspective',
-    submit: zh ? '提交' : 'Submit',
-    cancel: zh ? '取消' : 'Cancel',
-    selectCharacter: zh ? '选择角色…' : 'Select character…',
-    redirectPlaceholder: zh ? '输入新的剧情方向…' : 'Enter new plot direction…',
+    redirect: t.beatRedirect,
+    switchPerspective: t.beatSwitchPerspective,
+    submit: t.beatSubmit,
+    cancel: t.beatCancel,
+    selectCharacter: t.beatSelectCharacter,
+    redirectPlaceholder: t.beatRedirectPlaceholder,
   }
 
   return (
@@ -543,7 +601,7 @@ function App() {
               id: `opener-${selectedCharId}`,
               sender: selectedCharId,
               text: opener,
-              emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
+              emotion: t.openingEmotion,
               gifQuery: null,
               gifUrl: openerGif,
             }],
@@ -806,7 +864,7 @@ function App() {
             </div>
           </div>
           <button className="landing-screen__enter" onClick={handleEnterWorld} type="button">
-            {language === 'zh' ? '进入世界' : 'ENTER THE WORLD'}
+            {t.enterWorld}
             <span className="landing-screen__enter-arrow">&rarr;</span>
           </button>
         </div>
@@ -856,8 +914,8 @@ function App() {
         <section>
           <span className="field-label">{t.language}</span>
           <div className="seg-control">
-            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>EN</button>
-            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>中文</button>
+            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>{t.langEn}</button>
+            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>{t.langZh}</button>
           </div>
         </section>
 
@@ -914,10 +972,10 @@ function App() {
             <span className="schema-pill">
               {story.connectionState === 'idle' && t.setStage}
               {story.connectionState === 'connecting' && t.connecting}
-              {story.connectionState === 'streaming' && (language === 'zh' ? '播放中' : 'Streaming')}
+              {story.connectionState === 'streaming' && t.streaming}
               {story.connectionState === 'beat_paused' && t.paused}
-              {story.connectionState === 'complete' && (language === 'zh' ? '已完结' : 'Complete')}
-              {story.connectionState === 'error' && (language === 'zh' ? '错误' : 'Error')}
+              {story.connectionState === 'complete' && t.eventComplete}
+              {story.connectionState === 'error' && t.eventError}
             </span>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
           </header>
@@ -950,7 +1008,7 @@ function App() {
                 <span className="dot" /><span className="dot" /><span className="dot" />
               </div>
               <p>{story.isResuming
-                ? (language === 'zh' ? '正在恢复上次剧情…' : 'Resuming previous story…')
+                ? (t.resumingStory)
                 : t.directing}</p>
             </div>
           )}
@@ -961,11 +1019,11 @@ function App() {
               <p>⚠ {story.getCharState(selectedCharId).error}</p>
               {story.sessionId && (
                 <button type="button" onClick={story.reconnect}>
-                  {language === 'zh' ? '重连' : 'Reconnect'}
+                  {t.reconnect}
                 </button>
               )}
               <button type="button" onClick={story.reset}>
-                {language === 'zh' ? '重新开始' : 'Restart'}
+                {t.restart}
               </button>
               {error && <div className="error-box">{error}</div>}
             </div>
@@ -1046,7 +1104,7 @@ function App() {
                 <div className="streaming-indicator" aria-live="polite">
                   {story.autoContinued ? (
                     <span className="auto-continue-notice">
-                      {language === 'zh' ? '导演 5 分钟无操作，自动继续中…' : 'Director auto-continuing (5min idle)…'}
+                      {t.autoContinue}
                     </span>
                   ) : (
                     <div className="typing">
@@ -1093,15 +1151,11 @@ function App() {
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
               <h2>
-                {language === 'zh'
-                  ? `${selectedChar.name} 与${getRelationLabel(relation, language)}`
-                  : `${selectedChar.name} with their ${getRelationLabel(relation, language)}`}
+                {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
               </h2>
               {showSavePrompt && (
                 <div className="save-prompt">
-                  {language === 'zh'
-                    ? '同步档案后，可在云端保存这段会谈。'
-                    : 'Sign in to save this conversation to the cloud.'}
+                  {t.savePrompt}
                 </div>
               )}
             </div>
