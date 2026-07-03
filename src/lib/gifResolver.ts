@@ -1,4 +1,4 @@
-import { roleAssets, type RoleAssetCharacterId, type RoleGifTag } from '../roleAssets'
+import { roleAssets, type RoleAssetCharacterId, type RoleGifAsset, type RoleGifTag } from '../roleAssets'
 
 type LS = { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
 
@@ -141,7 +141,7 @@ function candidateTags(query: string | null | undefined, emotion: string | null 
 
 function resolveBestTag(
   candidates: RoleGifTag[][],
-  pool: typeof roleAssets[string]['gifPools'],
+  pool: RoleGifAsset[],
   recent: string[],
 ): RoleGifTag | null {
   for (const group of candidates) {
@@ -159,7 +159,7 @@ function resolveBestTag(
   return null
 }
 
-function weightedRandom(matches: typeof roleAssets[string]['gifPools']): typeof matches[number] {
+function weightedRandom(matches: RoleGifAsset[]): typeof matches[number] {
   const weights = parseWeights()
   const entries = matches.map(g => ({
     gif: g,

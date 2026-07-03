@@ -8,7 +8,7 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 
 async function gotoFresh(page: Page) {
   await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 }
 
 /**
@@ -20,9 +20,9 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
     for (const [key, value] of Object.entries(data)) {
       window.localStorage.setItem(key, JSON.stringify(value))
     }
-  }, values)
+  }, { ...values, abq_enteredWorld: true })
   await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 }
 
 function chatState(
@@ -108,6 +108,9 @@ async function mockChatCrew(
 
 test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
   await gotoFresh(page)
+  // Click through landing screen to reveal auth section
+  const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
+  if (await enterBtn.count() > 0) await enterBtn.click()
   const cta = page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })
   await expect(cta).toBeVisible()
 })
@@ -138,7 +141,7 @@ test('AC-2: anonymous chat history survives refresh', async ({ page }) => {
   await expect(page.locator('.msg--char p', { hasText: replyText })).toBeVisible()
 
   await page.reload()
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 
   await expect(page.locator('.msg--user p', { hasText: userText })).toBeVisible()
   await expect(page.locator('.msg--char p', { hasText: replyText })).toBeVisible()

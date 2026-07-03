@@ -4,7 +4,11 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173'
 
 async function gotoFresh(page: Page) {
   await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
+  // Bypass landing screen
+  const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
+  if (await enterBtn.count() > 0) await enterBtn.click()
+  await page.waitForLoadState('domcontentloaded')
 }
 
 async function sendChatMessage(page: Page, text: string) {
@@ -95,7 +99,7 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
   await page.getByRole('button', { name: 'EN' }).click()
   await page.locator('.char-card', { hasText: 'Saul' }).click()
   await page.locator('#relation').selectOption('witness')
-  await page.locator('#llmProvider').selectOption('minimax')
+  // model selector removed from UI in Loop 3
   await sendChatMessage(page, 'I need representation.')
 
   await expect(page.locator('.msg--char p', { hasText: 'For a client' })).toBeVisible()
@@ -106,7 +110,7 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
     relation: 'witness',
     mode: 'direct',
     language: 'en',
-    llmProvider: 'minimax',
+    llmProvider: 'cliproxy',
   })
 })
 

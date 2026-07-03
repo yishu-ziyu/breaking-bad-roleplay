@@ -109,7 +109,11 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
     }
   }, values)
   await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
+  // Bypass landing screen
+  const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
+  if (await enterBtn.count() > 0) await enterBtn.click()
+  await page.waitForLoadState('domcontentloaded')
 }
 
 /**
