@@ -160,7 +160,7 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'person being evaluated': { en: '被评估的人', zh: '被评估的人' },
 }
 
-const uiText = {
+const uiText: Record<Language, Record<string, string>> = {
   en: {
     tagline: 'Stateful Breaking Bad autonomous agents running Plan-Reflect cognitive loops.',
     landingSubtitle: 'Pick a character. Choose your relationship. Start a conversation that matters.',
@@ -213,14 +213,6 @@ const uiText = {
     eventStatus: 'Status',
     eventComplete: 'Story Complete',
     eventError: 'Error',
-    connecting: 'Connecting…',
-    disconnected: 'Disconnected',
-    reconnect: 'Reconnect',
-    restart: 'Restart',
-    autoContinue: 'Director auto-continuing (5min idle)…',
-    streaming: 'Streaming',
-    resumingStory: 'Resuming previous story…',
-    storyComplete: 'Story complete. All beats rendered.',
     openingEmotion: 'opening pressure',
     enterWorld: 'ENTER THE WORLD',
     langEn: 'EN',
@@ -232,6 +224,12 @@ const uiText = {
     beatRedirectPlaceholder: 'Enter new plot direction…',
     chatHeaderWith: '{character} with their {relation}',
     savePrompt: 'Sign in to save this conversation to the cloud.',
+    langZh: '中文',
+    resumingStory: 'Resuming previous story...',
+    reconnect: 'Reconnect',
+    restart: 'Restart',
+    autoContinue: 'Director auto-continuing (5min idle)...',
+    streaming: 'Streaming',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
@@ -285,15 +283,13 @@ const uiText = {
     eventStatus: '状态更新',
     eventComplete: '剧情完结',
     eventError: '错误',
-    connecting: '连接现场…',
-    disconnected: '已断开',
     reconnect: '重连',
     restart: '重新开始',
     autoContinue: '导演 5 分钟无操作，自动继续中…',
     streaming: '播放中',
     resumingStory: '正在恢复上次剧情…',
-    storyComplete: '任务结束。所有剧情节点已完成。',
     openingEmotion: '开场压迫',
+    langZh: '中文',
     enterWorld: '进入世界',
     langEn: 'EN',
     beatRedirect: '↩ 重定向',
@@ -305,7 +301,7 @@ const uiText = {
     chatHeaderWith: '{character} 与{relation}',
     savePrompt: '同步档案后，可在云端保存这段会谈。'
   },
-} satisfies Record<Language, Record<string, string>>
+}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -328,7 +324,6 @@ type BeatAction = 'continue' | 'stop' | 'redirect' | 'switch_perspective'
 
 interface BeatControlsProps {
   t: Record<string, string>
-  language: Language
   characters: Character[]
   onContinue: () => void | Promise<void>
   onStop: () => void | Promise<void>
@@ -336,7 +331,7 @@ interface BeatControlsProps {
   onSwitchPerspective: (charId: string) => void | Promise<void>
 }
 
-function BeatControls({ t, language, characters, onContinue, onStop, onRedirect, onSwitchPerspective }: BeatControlsProps) {
+function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchPerspective }: BeatControlsProps) {
   const [pending, setPending] = useState<BeatAction | null>(null)
   const [redirectOpen, setRedirectOpen] = useState(false)
   const [redirectText, setRedirectText] = useState('')
@@ -450,7 +445,7 @@ function App() {
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
-  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm-v2', 'cliproxy')
+  const [llmProvider] = usePersistedState<string>('llm-v2', 'cliproxy')
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -953,14 +948,7 @@ function App() {
           </section>
         )}
 
-        {/* Model backend */}
-        <section>
-          <label htmlFor="llmProvider">{t.model}</label>
-          <select id="llmProvider" value={llmProvider} onChange={e => setLlmProvider(e.target.value)}>
-            <option value="cliproxy">CLIProxy gemini-pro-agent</option>
-            <option value="minimax">MiniMax M3</option>
-          </select>
-        </section>
+        {/* Model backend — hidden, backend uses cliproxy default */}
       </aside>
 
       {/* ===================== MAIN PANEL ===================== */}
@@ -1120,7 +1108,6 @@ function App() {
                   <p>{t.directorDecision}</p>
                   <BeatControls
                     t={t}
-                    language={language}
                     characters={characters}
                     onContinue={() => story.sendAction('continue', undefined, selectedCharId)}
                     onStop={() => story.sendAction('stop', undefined, selectedCharId)}

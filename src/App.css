@@ -980,6 +980,16 @@ textarea {
   color: var(--color-text-muted-3);
 }
 
+.msg--char .msg-avatar {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.msg--char .msg-body {
+  grid-column: 2;
+  grid-row: 1;
+}
+
 /* Typing indicator */
 .typing {
   display: inline-flex;

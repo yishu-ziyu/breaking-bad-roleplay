@@ -1,6 +1,5 @@
-task_id: supabase-edge-migration
+task_id: breaking-bad-roleplay-qa-1-ui-2-a-b-qa-3
 active: true
-current_phase: handoff
-status: completed
-phase: handoff
-handoff_completed: true
+current_phase: pm-intake
+status: in_progress
+phase: complete
