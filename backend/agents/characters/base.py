@@ -94,6 +94,7 @@ class BaseCharacter(ABC):
         context: Sequence[dict],
         user_message: str,
         model_route: str = "stepfun/step-3.7-flash",
+        voice_example: str | None = None,
     ) -> dict:
         """
         Generate an in-character reply with structured metadata.
@@ -104,10 +105,26 @@ class BaseCharacter(ABC):
           tool_executed, tool_log
 
         Falls back gracefully if the model does not return valid JSON.
+
+        When ``voice_example`` is provided (e.g. from the Director in story
+        mode) it is prepended to the character's own system prompt as a
+        VOICE ANCHOR block, so the cadence / relationship pressure set by
+        the user propagates into the sub-agent rewrite rather than only
+        sitting at the tail of the user message.
         """
+        system_prompt = self.system_prompt()
+        if voice_example:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "VOICE ANCHOR:\n"
+                "Match the cadence and relationship pressure of this reference "
+                "speaking style when rewriting the scene below. Keep the scene facts; "
+                "let the relationship pressure guide register and word choice.\n"
+                f"{voice_example}"
+            )
         # Build messages with structured-output instruction
         messages: list[dict] = [
-            {"role": "system", "content": self.system_prompt() + STRUCTURED_OUTPUT_PROMPT},
+            {"role": "system", "content": system_prompt + STRUCTURED_OUTPUT_PROMPT},
         ]
         messages.extend(context)
         messages.append({"role": "user", "content": user_message})

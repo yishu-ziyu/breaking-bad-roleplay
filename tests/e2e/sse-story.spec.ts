@@ -382,9 +382,18 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
   // complete event rendered in the event feed
   await expect(page.locator('.story-event--complete')).toBeVisible()
 
-  // Restart button present (calls story.reset → back to idle)
+  // Story-complete follow-up actions are present, plus Start Again.
   await expect(
-    page.locator('.story-complete button'),
+    page.locator('.story-complete button', { hasText: /Start Chapter/ }),
+  ).toBeVisible()
+  await expect(
+    page.locator('.story-complete button', { hasText: /Try a Different Branch/ }),
+  ).toBeVisible()
+  await expect(
+    page.locator('.story-complete button', { hasText: /Replay Last Beat/ }),
+  ).toBeVisible()
+  await expect(
+    page.locator('.story-complete button', { hasText: /Start Again/ }),
   ).toBeVisible()
 })
 

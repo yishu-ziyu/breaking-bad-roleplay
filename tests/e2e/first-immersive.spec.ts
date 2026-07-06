@@ -262,7 +262,7 @@ test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavai
 /* ------------------------------------------------------------------ */
 
 test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }) => {
-  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew' }))
+  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew', abq_view: 'chat' }))
   await mockChatCrew(page, [
     { sender: 'walter', text: 'We need to be careful.', emotion: 'tense', gifQuery: 'tense' },
     { sender: 'gus', text: 'Everything is under control.', emotion: 'business', gifQuery: 'business' },

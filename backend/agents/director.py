@@ -158,6 +158,7 @@ class DirectorAgent:
         session_id: str | None = None,
         action_queue: Any = None,
         db: Any = None,
+        voice_example: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         Main entry point.  Consumes a task description and yields
@@ -209,6 +210,7 @@ class DirectorAgent:
                 session_factory=session_factory,
                 session_id=session_id,
                 active_character_id=active_character_id,
+                voice_example=voice_example,
             ):
                 yield event
             # Wait for player to continue (unless this is the last beat)
@@ -284,6 +286,108 @@ class DirectorAgent:
                                 target_raw, target_raw
                             )
                         # Fall through to idx += 1 (same as old `pass`).
+                    elif act_type == "continue_chapter":
+                        # Append a brand-new chapter to the running outline.
+                        # The Director prompts the LLM to continue from
+                        # where we are; parsed scenes are concatenated onto
+                        # the existing scenes list.
+                        branch_goal = signal.get("branch_goal") if isinstance(signal, dict) else None
+                        next_outline = await self._generate_outline_followup(
+                            base_task=task,
+                            prior_outline=outline_text,
+                            existing_scenes=scenes,
+                            branch_goal=branch_goal,
+                        )
+                        if next_outline is None:
+                            yield AgentEvent(
+                                type="status",
+                                data={"message": "Chapter continuation failed — keeping current outline."},
+                            )
+                        else:
+                            next_scenes = self._parse_outline(next_outline)
+                            yield AgentEvent(
+                                type="outline",
+                                data={
+                                    "content": next_outline,
+                                    "appended": True,
+                                    "chapter": 2,
+                                },
+                            )
+                            scenes = scenes + next_scenes
+                            # Re-enter the beat loop starting at the first
+                            # newly appended scene so the next iteration
+                            # renders beat 1 of chapter 2 (not the next
+                            # unrendered beat of chapter 1).
+                            idx = len(scenes) - len(next_scenes) - 1
+                            previous_scene = current_scene
+                            continue
+                    elif act_type == "branch":
+                        # Replace everything from a chosen beat onward. Beats
+                        # before from_beat_id stay; everything after is
+                        # regenerated. ``scenes[beat_idx]`` keeps the
+                        # original beat text; ``branch_scenes`` are appended
+                        # after, so the next loop iteration renders
+                        # ``scenes[beat_idx + 1]`` which is
+                        # ``branch_scenes[0]``. The branch starts AFTER the
+                        # chosen beat, not at it.
+                        from_beat_id = signal.get("from_beat_id") if isinstance(signal, dict) else None
+                        branch_goal = signal.get("branch_goal") if isinstance(signal, dict) else None
+                        try:
+                            beat_idx = int(str(from_beat_id).rsplit("_", 1)[-1]) - 1
+                        except (ValueError, AttributeError, IndexError):
+                            beat_idx = max(0, idx - 1)
+                        beat_idx = max(0, min(beat_idx, len(scenes) - 1))
+                        branch_outline = await self._generate_branch_outline(
+                            base_task=task,
+                            prior_outline=outline_text,
+                            branch_beat_index=beat_idx,
+                            scenes=scenes,
+                            branch_goal=branch_goal,
+                        )
+                        if branch_outline is None:
+                            yield AgentEvent(
+                                type="status",
+                                data={"message": "Branch generation failed — keeping current outline."},
+                            )
+                        else:
+                            branch_scenes = self._parse_outline(branch_outline)
+                            yield AgentEvent(
+                                type="outline",
+                                data={
+                                    "content": branch_outline,
+                                    "branched": True,
+                                    "from_beat_id": from_beat_id,
+                                },
+                            )
+                            # Keep scenes[0..beat_idx] (inclusive) from the
+                            # original outline, then append the freshly
+                            # generated scenes. The next iteration of the
+                            # loop will re-render scenes[beat_idx] with new
+                            # body content but same beat position.
+                            prefix = scenes[: beat_idx + 1]
+                            scenes = prefix + branch_scenes
+                            previous_scene = ""
+                            idx = beat_idx
+                            continue  # skip trailing idx+=1 / previous_scene overwrite
+                    elif act_type == "replay":
+                        # Re-render a specific beat. ``idx`` is set one
+                        # before the target so the loop's idx+=1 lands on
+                        # it again. The next iteration regenerates that
+                        # beat's events without changing the outline.
+                        beat_id = signal.get("beat_id") if isinstance(signal, dict) else None
+                        try:
+                            replay_idx = int(str(beat_id).rsplit("_", 1)[-1]) - 1
+                        except (ValueError, AttributeError, IndexError):
+                            replay_idx = idx
+                        replay_idx = max(0, min(replay_idx, len(scenes) - 1))
+                        # If the user replays the LAST beat, splice a copy
+                        # so the loop pauses again instead of immediately
+                        # emitting ``complete``.
+                        if replay_idx == len(scenes) - 1:
+                            scenes.append(scenes[replay_idx])
+                        previous_scene = ""
+                        idx = max(0, replay_idx - 1)
+                        continue  # skip trailing idx+=1 / previous_scene overwrite
                     # "continue": fall through to next beat
                 except asyncio.TimeoutError:
                     yield AgentEvent(
@@ -353,6 +457,88 @@ class DirectorAgent:
         Handles both em-dash (U+2014) and en-dash (U+2013) separators."""
         name = re.split(r"[–—]", scene_desc)[0]
         return name.split(":")[0].strip()
+
+    async def _generate_outline_followup(
+        self,
+        base_task: str,
+        prior_outline: str,
+        existing_scenes: list[str],
+        branch_goal: str | None = None,
+    ) -> str | None:
+        """Generate the next chapter's outline as a continuation.
+
+        Returns a numbered plain-text outline (same format as
+        ``_generate_outline``). Scenes from this outline are concatenated
+        onto the existing list — beats are never re-numbered.
+        """
+        goal_suffix = f"\nNew chapter focus: {branch_goal}" if branch_goal else ""
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Original task: {base_task}\n\n"
+                    f"Existing outline (chapter 1):\n{prior_outline}\n\n"
+                    f"Existing beats so far:\n"
+                    + "\n".join(f"{i + 1}. {s}" for i, s in enumerate(existing_scenes))
+                    + f"\n\nGenerate a NEW chapter (chapter 2) that continues "
+                    f"directly from where chapter 1 ends.{goal_suffix}\n"
+                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
+                    "Do NOT output JSON, code fences, or any structured format. "
+                    "Each line should start with a number like '1. Scene title — description'. "
+                    "Numbering should restart at 1 for the new chapter."
+                ),
+            },
+        ]
+        try:
+            raw = await self.provider.call_model(messages, self.model_route)
+            if raw and raw.strip().startswith(('[', '{')):
+                return self._extract_text_from_json_outline(raw)
+            return raw
+        except Exception:
+            logger.exception("Outline followup LLM call failed")
+            return None
+
+    async def _generate_branch_outline(
+        self,
+        base_task: str,
+        prior_outline: str,
+        branch_beat_index: int,
+        scenes: list[str],
+        branch_goal: str | None = None,
+    ) -> str | None:
+        """Generate a new outline for everything AFTER the branch beat.
+
+        The Director keeps ``scenes[: branch_beat_index + 1]`` and replaces
+        the rest with the LLM's output. Output is a plain-text numbered
+        list (continuing the prior outline's tone, not duplicating beats).
+        """
+        prior_beat = scenes[branch_beat_index] if 0 <= branch_beat_index < len(scenes) else ""
+        goal_suffix = f"\nBranching focus: {branch_goal}" if branch_goal else ""
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Original task: {base_task}\n\n"
+                    f"Existing outline:\n{prior_outline}\n\n"
+                    f"Branching from beat {branch_beat_index + 1}: {prior_beat}\n"
+                    f"Everything before beat {branch_beat_index + 1} is preserved. "
+                    f"Generate ONLY the beats that follow.{goal_suffix}\n"
+                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
+                    "Do NOT output JSON, code fences, or any structured format. "
+                    "Each line should start with a number like '1. Scene title — description'."
+                ),
+            },
+        ]
+        try:
+            raw = await self.provider.call_model(messages, self.model_route)
+            if raw and raw.strip().startswith(('[', '{')):
+                return self._extract_text_from_json_outline(raw)
+            return raw
+        except Exception:
+            logger.exception("Branch outline LLM call failed")
+            return None
     @staticmethod
     def _parse_outline(text: str) -> list[str]:
         """Parse an LLM-generated outline into a list of scene descriptions.
@@ -392,6 +578,21 @@ class DirectorAgent:
         if raw and isinstance(raw, str) and raw.startswith(("minimax/", "stepfun/", "cliproxy/")):
             return raw
         return None
+
+    def _system_prompt_with_voice_example(self, voice_example: str | None) -> str:
+        if not voice_example:
+            return self.system_prompt
+        return (
+            f"{self.system_prompt}\n\n"
+            "VOICE ANCHOR:\n"
+            "Use this reference speaking style when drafting or rewriting story dialogue. "
+            "Keep the current scene facts, but match this cadence and relationship pressure. "
+            "The reference may be in a different language than the user's reply language; "
+            "translate the register and pressure into the target reply language rather "
+            "than transliterating the surface words.\n"
+            f"{voice_example}"
+        )
+
     async def _generate_beat(
         self,
         task: str,
@@ -403,6 +604,7 @@ class DirectorAgent:
         session_factory: Any = None,
         session_id: str | None = None,
         active_character_id: str | None = None,
+        voice_example: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         Generate a single narrative beat with fine-grained events.
@@ -457,7 +659,7 @@ class DirectorAgent:
             f"'{self.model_route}'."
         )
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": self._system_prompt_with_voice_example(voice_example)},
             {"role": "user", "content": beat_prompt},
         ]
         try:
@@ -540,9 +742,10 @@ class DirectorAgent:
                             context=[],
                             user_message=(
                                 f"Scene: {scene_desc}\nContext: {task}\n"
-                                f"Respond in character."
+                                "Respond in character."
                             ),
                             model_route=beat_model_route,
+                            voice_example=voice_example,
                         )
                         evt_data = {
                             **evt_data,

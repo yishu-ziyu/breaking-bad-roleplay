@@ -230,6 +230,12 @@ const uiText: Record<Language, Record<string, string>> = {
     restart: 'Restart',
     autoContinue: 'Director auto-continuing (5min idle)...',
     streaming: 'Streaming',
+    returnToLanding: '↩ Return to Landing',
+    continueChapter: 'Start Chapter 2',
+    branchStory: 'Try a Different Branch',
+    replayBeat: 'Replay Last Beat',
+    startAgain: 'Start Again',
+    storyCompleteHint: 'Each new beat will pick up the last chapter\'s context.',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
@@ -299,7 +305,13 @@ const uiText: Record<Language, Record<string, string>> = {
     beatSelectCharacter: '选择角色…',
     beatRedirectPlaceholder: '输入新的剧情方向…',
     chatHeaderWith: '{character} 与{relation}',
-    savePrompt: '同步档案后，可在云端保存这段会谈。'
+    savePrompt: '同步档案后，可在云端保存这段会谈。',
+    returnToLanding: '↩ 回到主页',
+    continueChapter: '开始第二章',
+    branchStory: '换一个分支重开',
+    replayBeat: '重演最后节点',
+    startAgain: '重新开始',
+    storyCompleteHint: '下一节会用上一章的剧情作为起点。',
   },
 }
 
@@ -438,6 +450,16 @@ function App() {
 
   const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
   const [autoPlayMode, setAutoPlayMode] = useState(false)
+
+  // P0-4: when switching to a character that already has a saved relation,
+  // surface a brief inline notice so the user understands the relation
+  // was kept (instead of silently defaulting back to the first option).
+  const [relationNotice, setRelationNotice] = useState<string | null>(null)
+  useEffect(() => {
+    if (!relationNotice) return
+    const id = window.setTimeout(() => setRelationNotice(null), 3500)
+    return () => window.clearTimeout(id)
+  }, [relationNotice])
 
   // Relation per character (persist across character switches)
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
@@ -649,7 +671,7 @@ function App() {
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     setError(null)
     try {
-      await story.startStory(storyTask, selectedCharId)
+      await story.startStory(storyTask, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -670,7 +692,7 @@ function App() {
     const timer = setTimeout(async () => {
       setError(null)
       try {
-        await story.startStory(DEFAULT_STORY_PROMPT, selectedCharId)
+        await story.startStory(DEFAULT_STORY_PROMPT, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
         setStoryTask('')
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
@@ -826,10 +848,49 @@ function App() {
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {
     setSelectedCharId(id)
-    setRelationByChar(prev => ({ ...prev, [id]: characters.find(c => c.id === id)!.relationOptions[0] }))
+    setRelationByChar(prev => {
+      const savedRelation = prev[id]
+      if (savedRelation !== undefined) {
+        const charName = characters.find(c => c.id === id)?.name ?? id
+        setRelationNotice(
+          `${charName}: ${getRelationLabel(savedRelation, language)}`,
+        )
+      }
+      return { ...prev, [id]: savedRelation ?? characters.find(c => c.id === id)!.relationOptions[0] }
+    })
     setMessage('')
     setError(null)
-  }, [setSelectedCharId, setRelationByChar])
+  }, [setSelectedCharId, setRelationByChar, language])
+
+  const handleReturnToLanding = useCallback(() => {
+    story.reset()
+    setHasEnteredWorld(false)
+    setAutoPlayMode(false)
+  }, [story, setHasEnteredWorld])
+
+  const storyContextSummary = useMemo(() => {
+    const spoken = story.events
+      .filter(evt => evt.type === 'agent_speak')
+      .slice(-4)
+      .map(evt => `${evt.data.character_id ?? 'Character'}: ${evt.data.content ?? ''}`)
+      .join('\n')
+    return [story.outline, spoken].filter(Boolean).join('\n\n')
+  }, [story.events, story.outline])
+
+  const handleContinueChapter = useCallback(async () => {
+    const prompt = `${DEFAULT_STORY_PROMPT}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
+  }, [relation, selectedCharId, story, storyContextSummary])
+
+  const handleBranchStory = useCallback(async () => {
+    const prompt = `${DEFAULT_STORY_PROMPT}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.\n\nOriginal context:\n${storyContextSummary || 'No previous context was captured.'}`
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
+  }, [relation, selectedCharId, story, storyContextSummary])
+
+  const handleReplayBeat = useCallback(async () => {
+    const prompt = `${DEFAULT_STORY_PROMPT}\n\nReplay the last beat from a more intimate angle. Keep the same premise, but reveal a hidden motive or unspoken fear that was not explicit before.\n\nPrevious context:\n${storyContextSummary || 'No previous context was captured.'}`
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
+  }, [relation, selectedCharId, story, storyContextSummary])
 
   /* ---- Render ---- */
   if (!hasEnteredWorld) {
@@ -868,7 +929,39 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <>
+      {/* P0-3: auto-resume probe toast. Shown when the mount-time HEAD
+          probe finds the saved sessionId is dead (404). Dismissable +
+          auto-dismisses after 8s (handled in the hook). */}
+      {story.resumeToast && (
+        <div className="resume-notice" role="status" aria-live="polite">
+          <span>{story.resumeToast}</span>
+          <button
+            type="button"
+            className="resume-notice__close"
+            onClick={story.dismissResumeToast}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {/* P0-4: relation preservation notice when the user returns to a
+          character whose saved relation is being reused. */}
+      {relationNotice && (
+        <div className="relation-notice" role="status" aria-live="polite">
+          <span>↻ {relationNotice}</span>
+          <button
+            type="button"
+            className="resume-notice__close"
+            onClick={() => setRelationNotice(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      <main className="app-shell">
       {/* ===================== SIDEBAR ===================== */}
       <aside className="sidebar">
         {/* Brand */}
@@ -878,6 +971,9 @@ function App() {
             <h1>{t.storyTitle}</h1>
             <p>{t.tagline}</p>
           </div>
+          <button type="button" className="brand-return" onClick={handleReturnToLanding}>
+            {t.returnToLanding}
+          </button>
         </div>
 
         {/* Auth section */}
@@ -1117,11 +1213,22 @@ function App() {
                 </div>
               )}
 
-              {/* complete: restart entry */}
+              {/* complete: restart and follow-up entries.
+                  Each new-session button seeds the next story with the
+                  recent context so the user feels like they are picking up
+                  where the last chapter left off. The buttons are labelled
+                  "Start Again" rather than "Continue" so users do not
+                  expect an in-band continuation of the closed session. */}
               {story.connectionState === 'complete' && (
                 <div className="story-complete">
                   <p>🎬 {t.storyComplete}</p>
-                  <button type="button" onClick={story.reset}>{t.startStory}</button>
+                  <div className="story-complete__actions">
+                    <button type="button" onClick={handleContinueChapter}>{t.continueChapter}</button>
+                    <button type="button" onClick={handleBranchStory}>{t.branchStory}</button>
+                    <button type="button" onClick={handleReplayBeat}>{t.replayBeat}</button>
+                    <button type="button" onClick={story.reset}>{t.startAgain}</button>
+                  </div>
+                  <p className="story-complete__hint">{t.storyCompleteHint}</p>
                 </div>
               )}
 
@@ -1202,6 +1309,7 @@ function App() {
         </section>
       )}
     </main>
+    </>
   )
 }
 

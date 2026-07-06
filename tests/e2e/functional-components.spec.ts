@@ -201,7 +201,9 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
 
   await installMockEventSource(page)
   // Register routes BEFORE navigation
-  await page.route('**/api/session/resume-sid/messages', async (route) => {
+  let messagesRouteHits = 0
+  await page.route('**/api/session/resume-sid/messages*', async (route) => {
+    messagesRouteHits += 1
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -229,6 +231,7 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
     abq_view: JSON.stringify('story'),
     abq_language: JSON.stringify('en'),
   })
+  await expect.poll(() => messagesRouteHits).toBeGreaterThanOrEqual(2)
   await expect(page.locator('.story-event--agent_speak p', { hasText: 'Restored line.' })).toBeVisible()
   await expect(page.locator('.beat-controls')).toBeVisible()
 

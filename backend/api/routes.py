@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,10 +104,13 @@ async def session_action(
     Handle player control actions.
 
     Supported actions:
-      - continue  : no-op ack; frontend reconnects to /stream for next beat
-      - stop       : pause the session (status -> "paused")
-      - redirect   : replace task_prompt with a new direction
-      - switch_perspective : change active_character_id
+      - continue         : no-op ack; frontend reconnects to /stream for next beat
+      - stop             : pause the session (status -> "paused")
+      - redirect         : replace task_prompt with a new direction
+      - switch_perspective: change active_character_id
+      - continue_chapter : append a fresh chapter to the running outline
+      - branch           : regenerate outline from a chosen beat_id
+      - replay           : re-render a specific beat in place
     """
     result = await db.execute(
         select(SessionModel).where(SessionModel.id == session_id)
@@ -158,10 +161,54 @@ async def session_action(
                 {"action": "switch_perspective", "target": payload.target_character}
             )
 
+    elif action == "continue_chapter":
+        # Out-of-band: append a new chapter to the running outline. The
+        # Director will generate fresh beats once it picks the signal off
+        # its action_queue. Append a chapter-marker suffix so the UI can
+        # tell chapter 2 from chapter 1 in the outline header.
+        session.title = f"{session.title} (continued)" if session.title else "continued"
+        session_data = _session_queues.get(session.id)
+        if session_data and not session_data["queue"].full():
+            session_data["queue"].put_nowait(
+                {"action": "continue_chapter", "branch_goal": payload.branch_goal}
+            )
+
+    elif action == "branch":
+        if not payload.from_beat_id:
+            raise HTTPException(
+                status_code=400,
+                detail="from_beat_id is required for branch action",
+            )
+        session_data = _session_queues.get(session.id)
+        if session_data and not session_data["queue"].full():
+            session_data["queue"].put_nowait(
+                {
+                    "action": "branch",
+                    "from_beat_id": payload.from_beat_id,
+                    "branch_goal": payload.branch_goal or "",
+                }
+            )
+
+    elif action == "replay":
+        if not payload.beat_id:
+            raise HTTPException(
+                status_code=400,
+                detail="beat_id is required for replay action",
+            )
+        session_data = _session_queues.get(session.id)
+        if session_data and not session_data["queue"].full():
+            session_data["queue"].put_nowait(
+                {"action": "replay", "beat_id": payload.beat_id}
+            )
+
     else:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown action: {action}. Expected continue|stop|redirect|switch_perspective",
+            detail=(
+                f"Unknown action: {action}. "
+                "Expected continue|stop|redirect|switch_perspective|"
+                "continue_chapter|branch|replay"
+            ),
         )
 
     session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -177,6 +224,7 @@ async def session_action(
 @router.get("/session/{session_id}/stream")
 async def stream_session(
     session_id: str,
+    voice_example: str | None = Query(default=None),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -228,6 +276,7 @@ async def stream_session(
                 session_factory=async_session_factory,
                 session_id=resolved_session_id,
                 action_queue=beat_queue,
+                voice_example=voice_example,
             ):
                 # Stop-signal check: POST /session/{id}/action with
                 # action=stop flips session.status to "paused" in a
