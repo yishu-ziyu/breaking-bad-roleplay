@@ -19,6 +19,7 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
   // addInitScript serializes data as JSON. Objects/arrays become stringified
   // inside the init script. We re-parse strings that look like JSON objects/arrays.
   await page.addInitScript((data) => {
+    window.localStorage.setItem('abq_enteredWorld', 'true')
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -27,9 +28,6 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
       window.localStorage.setItem(key, JSON.stringify(value))
     }
   }, values)
-  await page.goto(BASE_URL)
-  await page.waitForLoadState('domcontentloaded')
-  await page.evaluate(() => { window.localStorage.setItem('abq_enteredWorld', 'true') })
 }
 
 function chatState(
@@ -109,11 +107,29 @@ async function mockChatCrew(
   })
 }
 
+async function mockAutoStoryStart(page: Page) {
+  await page.route('**/api/session/create', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ session_id: 'first-immersive-session' }),
+    })
+  })
+  await page.route('**/api/session/*/stream**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: '',
+    })
+  })
+}
+
 /* ------------------------------------------------------------------ */
 /*  AC-1: Fresh incognito → guest entry CTA visible                    */
 /* ------------------------------------------------------------------ */
 
 test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
+  await mockAutoStoryStart(page)
   await gotoFresh(page)
   // Click through landing screen to reveal auth section
   const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
@@ -138,12 +154,6 @@ test('AC-2: anonymous chat history survives refresh', async ({ page }) => {
   ])
 
   await gotoFresh(page)
-  const storedAfterLoad = await page.evaluate(() => localStorage.getItem('abq_messages'))
-  const charAfterLoad = await page.evaluate(() => localStorage.getItem('abq_character'))
-  console.log('AC-2 DEBUG stored:', storedAfterLoad)
-  console.log('AC-2 DEBUG character:', charAfterLoad)
-  const html = await page.content()
-  console.log('AC-2 DEBUG html has userText:', html.includes(userText))
   await expect(page.locator('.msg--user p', { hasText: userText })).toBeVisible()
   await expect(page.locator('.msg--char p', { hasText: replyText })).toBeVisible()
 
