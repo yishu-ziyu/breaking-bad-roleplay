@@ -676,20 +676,20 @@ function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [storyTask, story, selectedCharId])
+  }, [storyTask, story, selectedCharId, relation])
 
   /* ---- Auto-play mode (triggered by landing screen) ---- */
   const handleEnterWorld = useCallback(() => {
     setHasEnteredWorld(true)
     setAutoPlayMode(true)
-  }, [])
+  }, [setHasEnteredWorld])
 
   useEffect(() => {
     if (!autoPlayMode) return
-    setAutoPlayMode(false)
-    setStoryTask(DEFAULT_STORY_PROMPT)
-    setView('story')
     const timer = setTimeout(async () => {
+      setAutoPlayMode(false)
+      setStoryTask(DEFAULT_STORY_PROMPT)
+      setView('story')
       setError(null)
       try {
         await story.startStory(DEFAULT_STORY_PROMPT, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
@@ -699,7 +699,7 @@ function App() {
       }
     }, 0)
     return () => clearTimeout(timer)
-  }, [autoPlayMode, story, selectedCharId])
+  }, [autoPlayMode, story, selectedCharId, relation, setView])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
