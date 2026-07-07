@@ -219,6 +219,5 @@ export function resolveGifUrl(
   const defaultPool = pool.filter(g => g.tags.includes('default'))
   const fallbackUrl = chooseAndRecord(defaultPool)
   if (fallbackUrl) return fallbackUrl
-
   return null
 }
