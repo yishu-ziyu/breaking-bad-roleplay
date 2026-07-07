@@ -85,24 +85,28 @@ function clearSavedSessionId(): void {
 /* ----- Existence probe for an existing session -----
  * Used by the mount-time auto-resume flow to decide whether to call
  * resumeSession (which would set connectionState='connecting' and flash
- * a typing indicator) or skip straight to a toast. Returns true if the
- * session exists on the backend, false on 404 or any non-2xx.
+ * a typing indicator) or skip straight to a toast. Returns "alive" when
+ * the session exists, "missing" only on confirmed 404, and "error" for
+ * transient or unknown probe failures.
  * Exported for unit testing. */
-export async function pingSession(sid: string): Promise<boolean> {
-  if (!sid) return false
+export type SessionProbeResult = 'alive' | 'missing' | 'error'
+
+export async function pingSession(sid: string): Promise<SessionProbeResult> {
+  if (!sid) return 'missing'
   try {
     const res = await fetch(`/api/session/${sid}/messages?limit=1`, { method: 'GET' })
-    return res.ok
+    if (res.ok) return 'alive'
+    if (res.status === 404) return 'missing'
+    return 'error'
   } catch {
-    /* Network errors are treated as "not reachable". The caller clears the
-     * stale id and shows a recoverable notice instead of flashing streaming UI. */
-    return false
+    return 'error'
   }
 }
 
 /* ----- Auto-resume toast text (English copy; not localized.
  * This only fires when an existing saved session is gone). */
 const RESUME_EXPIRED_TOAST = 'Your last session expired (deleted or server reset). Start a new one.'
+const RESUME_RETRY_TOAST = 'Could not verify your last session. Try again when the server is reachable.'
 
 /* ----- Event dedup key: identifies duplicate events on reconnect -----
  * SSE events have no unique ID, so we synthesize a key from stable content.
@@ -114,6 +118,26 @@ function dedupKey(evt: StoryEvent): string {
   if (evt.type === 'agent_speak' && d.content) return `speak:${d.character_id}:${d.content}`
   if (evt.type === 'beat_ready' && d.beat_id) return `beat:${d.beat_id}`
   return `${evt.type}:${evt.received_at ?? Date.now()}`
+}
+
+export function beatIndexFromBeatId(beatId: unknown): number | null {
+  if (typeof beatId !== 'string') return null
+  const match = beatId.match(/^beat[_-](\d+)$/i)
+  if (!match) return null
+  const parsed = Number.parseInt(match[1], 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+export function deriveBeatProgressFromMessages(messages: Array<{ beat_id: string | null }>): {
+  beatId: string | null
+  beatIndex: number
+} {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const beatId = messages[i]?.beat_id ?? null
+    const beatIndex = beatIndexFromBeatId(beatId)
+    if (beatIndex !== null) return { beatId, beatIndex }
+  }
+  return { beatId: null, beatIndex: 0 }
 }
 
 export interface UseStoryStreamReturn {
@@ -142,7 +166,7 @@ export function useStoryStream(): UseStoryStreamReturn {
   const [outline, setOutline] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   // P0-3: do NOT pre-set 'connecting' just because localStorage has a
-  // savedSid. The auto-resume effect will probe via HEAD first; only if
+  // savedSid. The auto-resume effect will probe session history first; only if
   // the backend confirms the session exists will it transition to
   // 'connecting'. This eliminates the 1–3s "Connecting…" flash when the
   // saved sessionId is stale (404).
@@ -153,7 +177,7 @@ export function useStoryStream(): UseStoryStreamReturn {
   const [errorByChar, setErrorByChar] = useState<Record<string, string | null>>({})
   const [autoContinued, setAutoContinued] = useState(false)
   // Same fix as connectionState: don't claim we're "resuming" until the
-  // HEAD probe confirms the session is still alive.
+  // session-history probe confirms the session is still alive.
   const [isResuming, setIsResuming] = useState<boolean>(false)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
 
@@ -172,6 +196,28 @@ export function useStoryStream(): UseStoryStreamReturn {
   const setSessionError = useCallback((err: string | null) => {
     setErrorByChar(prev => ({ ...prev, '__session__': err }))
   }, [])
+
+  const clearStorySessionState = useCallback((options?: {
+    clearStorage?: boolean
+    clearCharacterFeedback?: boolean
+  }) => {
+    closeEventSource()
+    setEvents([])
+    setOutline(null)
+    setSessionId(null)
+    setCurrentBeatId(null)
+    setBeatIndex(0)
+    setAutoContinued(false)
+    setConnectionState('idle')
+    sessionRef.current = null
+    if (options?.clearCharacterFeedback) {
+      setIsSendingByChar({})
+      setErrorByChar({})
+    }
+    if (options?.clearStorage) {
+      clearSavedSessionId()
+    }
+  }, [closeEventSource])
 
   const appendEvent = useCallback((evt: StoryEvent) => {
     setEvents((prev) => {
@@ -223,8 +269,10 @@ export function useStoryStream(): UseStoryStreamReturn {
     es.addEventListener('beat_ready', (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data)
-        setCurrentBeatId(payload.data?.beat_id ?? null)
-        setBeatIndex((prev) => prev + 1)
+        const beatId = typeof payload.data?.beat_id === 'string' ? payload.data.beat_id : null
+        const parsedBeatIndex = beatIndexFromBeatId(beatId)
+        setCurrentBeatId(beatId)
+        setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
         setAutoContinued(false)
         setConnectionState('beat_paused')
       } catch { /* ignore */ }
@@ -270,14 +318,8 @@ export function useStoryStream(): UseStoryStreamReturn {
   }, [appendEvent, closeEventSource, setSessionError])
 
   const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', voiceExample?: string | null): Promise<void> => {
-    closeEventSource()
-    setEvents([])
-    setOutline(null)
-    setSessionId(null)
-    setCurrentBeatId(null)
-    setBeatIndex(0)
+    clearStorySessionState()
     setSessionError(null)
-    setAutoContinued(false)
     setConnectionState('connecting')
 
     try {
@@ -304,7 +346,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       setSessionError(e instanceof Error ? e.message : 'Unknown error')
       setConnectionState('error')
     }
-  }, [closeEventSource, connectStream, setSessionError])
+  }, [clearStorySessionState, connectStream, setSessionError])
 
   const resumeSession = useCallback(async (sid: string): Promise<void> => {
     setIsResuming(true)
@@ -316,22 +358,14 @@ export function useStoryStream(): UseStoryStreamReturn {
       const res = await fetch(`/api/session/${sid}/messages`)
       if (res.status === 404) {
         // Session no longer exists — clear storage and return to idle.
-        clearSavedSessionId()
-        closeEventSource()
-        setEvents([])
-        setOutline(null)
-        setSessionId(null)
-        sessionRef.current = null
-        setCurrentBeatId(null)
-        setBeatIndex(0)
-        setAutoContinued(false)
-        setConnectionState('idle')
+        clearStorySessionState({ clearStorage: true })
         return
       }
       if (!res.ok) {
         throw new Error(`Failed to fetch session history (${res.status})`)
       }
       const msgs = (await res.json()) as MessageOut[]
+      const restoredProgress = deriveBeatProgressFromMessages(msgs)
       const restoredEvents: StoryEvent[] = msgs.map((msg) => ({
         type: 'agent_speak',
         data: {
@@ -339,11 +373,14 @@ export function useStoryStream(): UseStoryStreamReturn {
           content: msg.content,
           emotion_state: msg.emotion_state,
           gif_search_query: msg.gif_search_query,
+          beat_id: msg.beat_id,
         },
         received_at: Date.now(),
       }))
       setEvents(restoredEvents)
       setSessionId(sid)
+      setCurrentBeatId(restoredProgress.beatId)
+      setBeatIndex(restoredProgress.beatIndex)
       // The /messages endpoint only returns persisted messages; we don't
       // know the true server-side session state. Default to 'beat_paused'
       // so the UI shows the Continue/Stop controls and lets the user
@@ -356,7 +393,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     } finally {
       setIsResuming(false)
     }
-  }, [closeEventSource, setSessionError])
+  }, [clearStorySessionState, setSessionError])
 
   const sendAction = useCallback(async (action: StoryAction, params?: StoryActionParams, characterId?: string): Promise<void> => {
     const sid = sessionRef.current
@@ -383,17 +420,9 @@ export function useStoryStream(): UseStoryStreamReturn {
           // non-abort error: still proceed with local cleanup
         }
       }
-      closeEventSource()
-      setConnectionState('idle')
-      setEvents([])
-      setOutline(null)
-      setSessionId(null)
-      sessionRef.current = null
-      setBeatIndex(0)
-      setCurrentBeatId(null)
       // User explicitly stopped — clear localStorage so we don't auto-resume
       // a stopped session on next page refresh (defeats the purpose of Stop).
-      clearSavedSessionId()
+      clearStorySessionState({ clearStorage: true })
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null
       }
@@ -477,7 +506,7 @@ export function useStoryStream(): UseStoryStreamReturn {
         abortControllerRef.current = null
       }
     }
-  }, [closeEventSource, connectStream])
+  }, [clearStorySessionState, connectStream])
 
   const reconnect = useCallback(() => {
     const sid = sessionRef.current
@@ -488,23 +517,12 @@ export function useStoryStream(): UseStoryStreamReturn {
   }, [connectStream, setSessionError])
 
   const reset = useCallback(() => {
-    closeEventSource()
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
-    setEvents([])
-    setOutline(null)
-    setSessionId(null)
-    setCurrentBeatId(null)
-    setBeatIndex(0)
-    setIsSendingByChar({})
-    setErrorByChar({})
-    setAutoContinued(false)
-    setConnectionState('idle')
-    sessionRef.current = null
-    clearSavedSessionId()
-  }, [closeEventSource])
+    clearStorySessionState({ clearStorage: true, clearCharacterFeedback: true })
+  }, [clearStorySessionState])
 
   // Auto-resume on mount if a sessionId is saved in localStorage.
   // Guarded by a ref to avoid duplicate triggers (React strict mode, etc.)
@@ -523,17 +541,22 @@ export function useStoryStream(): UseStoryStreamReturn {
     let cancelled = false
     setIsResuming(true)
     ;(async () => {
-      const alive = await pingSession(savedSid)
+      const probe = await pingSession(savedSid)
       if (cancelled) return
-      if (alive) {
+      if (probe === 'alive') {
         resumeSession(savedSid)
-      } else {
+      } else if (probe === 'missing') {
         // Session is gone — clear storage and tell the user, but stay idle.
         clearSavedSessionId()
         setSessionError(null)
         setIsResuming(false)
         setConnectionState('idle')
         setResumeToast(RESUME_EXPIRED_TOAST)
+      } else {
+        setSessionError(null)
+        setIsResuming(false)
+        setConnectionState('idle')
+        setResumeToast(RESUME_RETRY_TOAST)
       }
     })()
 

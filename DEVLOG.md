@@ -1,5 +1,114 @@
 # Breaking Bad Roleplay — 开发日志
 
+## 2026-07-07 Story Board HUD reference pass ✅
+
+### 背景
+- 用户认可参考图方向：Albuquerque case-file / director system / paper dossier / timeline HUD。
+- 本轮目标是把这个视觉语言先落到 Story 视图的真实玩法界面，不做全量重写，不引入假指标。
+- 使用并行只读 code reviewer lane；主线程同时用 Computer Use 在 Chrome 里做真实玩家路径检查。
+
+### 改动
+- `src/App.tsx` — Story 视图顶部改为 HUD 信息条；streaming / paused / complete 状态改为 storyboard 布局；新增当前事件摘要、卡片标题、真实 `to_scene` 地点显示和中文 fallback。
+- `src/App.css` — Story stream 改为左侧 timeline + 右侧纸质 scene card + pressure footer；导演选择按钮改为卡片式 decision tray；暂停态压缩 board 高度，保证下一步选择在 1440×900 首屏内可见；补 responsive 和 focus/contrast 收口。
+- `.ship/tasks/story-board-hud-2026-07-07/notes.md` — 记录参考图拆解、subagent review 反馈、Computer Use 试玩结论和验收命令。
+
+### 验证
+- `npm run lint` — passed
+- `npm test` — 47 passed
+- `npm run build` — passed
+- `npx playwright test tests/e2e/sse-story.spec.ts --reporter=line --output=/tmp/bbr-playwright-output` — 11 passed
+- Computer Use 试玩：Chrome 进入 Story → 输入剧情 → Start Story → 观察 HUD / timeline / scene card；发现并修复 story card headline 层级问题。
+
+### Reviewer 修复
+- 恢复 `.story-outline p` 的真实 director outline，摘要改为非 `p`，避免破坏既有 e2e selector。
+- HUD Location 优先使用 SSE `scene_change.data.to_scene`，只在缺失时 fallback 到 description。
+- 中文界面的默认地点从 `North of ABQ` 改为 `阿尔伯克基北部`。
+- 右侧 scene card 只追踪 scene/action/thought/dialogue；`beat_ready` 与 `world_state_delta` 保留在 timeline、pressure footer 和 decision tray，不再抢主卡标题。
+
+## 2026-07-07 Visual redesign pass ✅
+
+### 背景
+- 对 landing、story setup、chat、story stream、mobile entry 做完整视觉分析与实现收口。
+- 使用并行只读子 Agent：一条 UX/视觉审计，一条《绝命毒师》玩家试玩预期审计；主 Agent 负责截图、设计方向、集成和验收。
+- 设计参考与最终截图保存在 `.ship/tasks/visual-redesign-2026-07-07/`。
+
+### 改动
+- `src/App.tsx` — 增加关系压力档案和 chat header 压力摘要；opening GIF 不再显示；GIF keyword caption 不再暴露给玩家；chat 自动滚动改为只滚动 `.chat-stream` 容器；`Beat 0` 改为从 Beat/节点 1 起显示；系统化文案改为 scene/beat/consequence 语境。
+- `src/App.css` — landing 增强首屏可读性；chat 消息改为更像剧本台词卡；story event、world delta、streaming、redirect/perspective、save prompt、focus-visible 补样式；移动端 sidebar/story 密度收口；添加 reduced-motion 兜底。
+- `src/styles/tokens.css` — 新增 `--font-display`，用于标题/案卷气质，正文仍沿用现有可读体系。
+- `.ship/tasks/visual-redesign-2026-07-07/visual-audit.md` — 记录视觉问题、实现、验收与剩余风险。
+
+### 验证
+- `npm run lint` — passed
+- `npm test` — 47 passed
+- `npm run build` — passed
+- Playwright 视觉 smoke：`chatCaptionCount: 0`、`openerGifVisible: 0`、`scrollYAfterChat: 0`、`sidebarScrollAfterChat: 0`
+
+### 剩余风险
+- 后端 stream payload 里仍可能出现 `Director is analysing...` 之类状态文案；本轮只改前端展示层。
+- 完整 GIF 策略后续应进入显式 `show_gif` / beat-strength schema，而不是只靠前端 suppression。
+
+## 2026-07-07 Parallel review + BB player lane ✅
+
+### 背景
+- 用户提出：实现者每完成一步后，应有并行 reviewer 审核；另一个 agent 扮演懂《绝命毒师》的玩家，试玩并指出不符合预期的地方。
+- 复用 yishuship 现有 loop / phase brief，不新增 workflow runner、agent registry 或调度框架。
+
+### 改动
+- `docs/AGENT_PLAYTEST_PROCESS.md` — 新增 tracked 项目流程文档，定义 lead orchestrator、implementer、code reviewer、BB player 四条 lane；主 agent 保留上下文用于规划、派发、验收和下一轮规划，具体文件映射、局部实现、测试失败诊断、试玩和 review 优先派发给子 agent。
+- `.ship/loop-infra/phase-briefs/review-brief.md` — 增加 review packet 和 reviewer 输出契约，固定 `REQUEST_CHANGES / COMMENT / APPROVE`、scope table、findings、next actions、rerun checks。
+- `.ship/loop-infra/phase-briefs/market-brief.md` — 增加 `BB player` persona，用代表性 Direct / Crew / Story 路径检查角色还原、关系张力、语言、GIF、安全拒绝和剧情节奏。
+- `.ship/loop-protocol.md` — Review 与 Market Simulation 阶段指向上述两个现有 phase brief。
+
+### 验证
+- 实际派发两个只读并行 agent：code reviewer lane 与 BB player lane。
+- 子 agent 反馈已合并；未引入新运行时代码或新依赖。
+- `git diff --check` — passed
+
+## 2026-07-06 Computer Use playthrough fixes ✅
+
+### 背景
+- 使用 Computer Use 在 Chrome 里完整走了一遍本地 `127.0.0.1:5173`：Landing → Story setup → Start Story → Chat → 发送消息 → 回到 Story。
+- 目标不是只看静态页面，而是用真实前后端链路发现可玩性问题并修掉。
+
+### 发现的问题
+- 英文 UI 下，Walter 新回复仍然输出中文；根因是后端 direct chat 虽然接收了 `language`，但角色 prompt 没有强制目标语言，中文 `voiceExample` 会把模型拉回中文。
+- Story 创建后直接展示完整 7-beat outline，提前剧透后续剧情。
+- Story setup 初始卡片被伪元素撑成过大的空玻璃面板，视觉焦点弱。
+- Chat composer 的固定按钮宽度会让 `Thinking…` 状态显得拥挤。
+
+### 改动
+- `backend/agents/director.py` — direct / crew chat prompt 明确写入 `Reply language: English/Simplified Chinese only`；voice example 只作为语气参考，不复制其语言。
+- `backend/tests/test_director_bugfixes.py` — 新增跨语言 voice example 的 direct-chat 语言控制回归测试。
+- `src/App.tsx` — Story Outline 改为玩家可见的非剧透摘要，只显示 beat 数量；完整 outline 仍保留给内部剧情上下文。
+- `src/App.css` — Story setup 改为紧凑居中卡片；composer 按钮改为内容宽度并设最小尺寸。
+
+### 验证
+- Computer Use 浏览器复测：英文 UI 下新发消息返回英文；Story Outline 只显示 `7 story beats planned`；Story setup 初始卡片布局正常；`Thinking…` 按钮不再挤压。
+- `cd backend && uv run pytest` — 119 passed, 1 existing StarletteDeprecationWarning
+- `npm run lint` — passed
+- `npm test` — 47 passed
+- `npm run build` — passed
+- `git diff --check` — passed
+
+## 2026-07-06 Visual QA follow-up polish ✅
+
+### 背景
+- 当前工作树已经在推进 landing / story 视觉改版。
+- 在不覆盖现有未提交视觉改动的前提下，继续收口 Visual QA 剩余的 P1 问题。
+
+### 改动
+- `src/App.tsx` — 给主 `app-shell` 加 `lang` 标记；把聊天区 `typing/error/composer` 收拢到单个 `chat-footer`，避免短屏下输入区被挤压。
+- `src/App.css` — 中文会话下放宽 `chat/story` 正文行高；移动端 sidebar 改为有上限的内部滚动；手机断点下 composer 改为单列；补 Firefox `scrollbar-width` / `scrollbar-color` 到 sidebar。
+- `src/styles/tokens.css` — 新增 `--line-height-cjk: 1.7`。
+- `.ship/tasks/breaking-bad-roleplay-qa-1-ui-2-a-b-qa-3/dev-context.md` — 记录本轮测试命令、模式参考和单波次实现范围。
+
+### 验证
+- `npm run lint` — passed
+- `npm test` — 47 passed
+- `npm run build` — passed
+- `git diff --check` — passed
+
 ## 2026-07-03 Visual QA audit + P0 fixes + E2E infrastructure ✅
 
 ### 背景

@@ -1010,9 +1010,6 @@ class DirectorAgent:
               { participants, scene_goal, tension_note, debate_logs }
         """
         mode = context.get("mode", "direct")
-        history: list[dict] = context.get("history", [])
-        language: str = context.get("language", "en")
-        relation: str = context.get("relation", "partner")
         if mode == "crew":
             return await self._handle_crew_chat(character_id, user_message, context)
         return await self._handle_direct_chat(character_id, user_message, context)
@@ -1029,6 +1026,7 @@ class DirectorAgent:
             character_cls = CHARACTER_AGENTS["Walter White"]
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
+        target_language = "Simplified Chinese" if language == "zh" else "English"
         llm_provider: str = context.get("llmProvider", "stepfun")
         # Resolve model route
         scene_context = f"{backend_id} {relation} {user_message}".lower()
@@ -1052,12 +1050,18 @@ class DirectorAgent:
                 ctx_messages.append({"role": "user", "content": turn.get("text", "")})
             else:
                 ctx_messages.append({"role": "assistant", "content": turn.get("text", "")})
-        # Build relationship context string for the prompt
-        rel_label = relation
         voice_example: str | None = context.get("voiceExample")
-        user_msg_with_context = user_message
+        user_msg_with_context = (
+            f"{user_message}\n\n"
+            f"[Reply language: {target_language} only.]"
+        )
         if voice_example:
-            user_msg_with_context += f"\n\n[Reference speaking style: {voice_example}]"
+            user_msg_with_context += (
+                "\n\n[Reference speaking style: "
+                "use this only for cadence and relationship pressure. "
+                "Do not copy the reference language; translate the style into "
+                f"{target_language}: {voice_example}]"
+            )
         # Instantiate character and call structured respond
         agent = character_cls(self.provider)
         result = await agent.respond_structured(
@@ -1111,6 +1115,7 @@ class DirectorAgent:
         # Build the multi-turn prompt
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
+        target_language = "Simplified Chinese" if language == "zh" else "English"
         history: list[dict] = context.get("history", [])
         history_summary = ""
         if history:
@@ -1123,7 +1128,7 @@ class DirectorAgent:
         crew_prompt = (
             f"User message: {user_message}\n"
             f"Relation to primary character ({backend_primary}): {relation}\n"
-            f"Language: {language}\n\n"
+            f"Reply language: {target_language} only.\n\n"
         )
         if history_summary:
             crew_prompt += f"Recent conversation:\n{history_summary}\n\n"

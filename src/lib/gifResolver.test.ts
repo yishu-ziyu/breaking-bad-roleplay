@@ -90,6 +90,14 @@ describe('gifResolver', () => {
     assert.ok(!url.includes('10RCqM2nZpdqOQ'), 'family must not return confrontation GIF')
   })
 
+  it('generic fallback keeps returning GIFs after a small default pool is recent', () => {
+    resetGifResolverState()
+    for (let i = 0; i < 5; i++) {
+      const url = resolveGifUrl('skyler', null, null)
+      assert.ok(url, `expected a fallback GIF on call ${i}`)
+    }
+  })
+
   it('COOLDOWN_SIZE is 3', () => {
     assert.strictEqual(COOLDOWN_SIZE, 3, 'cooldown should be 3 for small pool variety')
   })

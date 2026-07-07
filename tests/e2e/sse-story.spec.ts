@@ -235,6 +235,52 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   ).toBeVisible()
 })
 
+test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pressure footer, and decision tray', async ({
+  page,
+}) => {
+  await driveToBeatPaused(page, {
+    outline: '1. Los Pollos office — Gus tests Walter.\n2. Superlab — Walter must choose a side.',
+  })
+
+  await emitSSE(page, 'scene_change', {
+    data: {
+      from_scene: 'Restaurant floor',
+      to_scene: 'Los Pollos Hermanos office',
+      description: 'Transitioning to: Los Pollos Hermanos office.',
+    },
+  })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Gus Fring',
+      content: 'A calm conversation prevents unfortunate misunderstandings.',
+      emotion_state: 'controlled pressure',
+      gif_search_query: 'gus polite pressure',
+    },
+  })
+
+  await expect(page.locator('.story-hud')).toBeVisible()
+  await expect(page.locator('.story-hud')).toContainText('Scene Board')
+  await expect(page.locator('.story-hud')).toContainText('Beat 1')
+  await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos office')
+  await expect(page.locator('.story-hud')).toContainText('Paused')
+
+  await expect(page.locator('.story-outline__summary')).toContainText('2 story beats planned')
+  await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
+
+  await expect(page.locator('.story-event--scene_change', { hasText: 'Los Pollos Hermanos office' })).toBeVisible()
+  await expect(page.locator('.story-scene-card h3')).toContainText('Gus Fring')
+  await expect(page.locator('.story-scene-card__quote')).toContainText('A calm conversation prevents')
+
+  await expect(page.locator('.story-scene-card__pressure')).toContainText('Unspoken Pressure')
+  await expect(page.locator('.story-scene-card__pressure')).toContainText('Possible Consequences')
+  await expect(page.locator('.story-scene-card__pressure')).toContainText('Relationship Impact')
+
+  await expect(page.locator('.beat-paused')).toContainText('Choose the next move')
+  await expect(page.locator('.beat-controls button', { hasText: /Continue/ })).toBeVisible()
+  await expect(page.locator('.beat-controls button', { hasText: /Redirect/ })).toBeVisible()
+  await expect(page.locator('.beat-controls button', { hasText: /Switch Perspective/ })).toBeVisible()
+})
+
 /* ------------------------------------------------------------------ */
 /*  TC-SSE-2: continue — beat increments after next beat_ready         */
 /* ------------------------------------------------------------------ */
@@ -342,12 +388,16 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
       gif_search_query: 'tense',
     },
   })
-  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1' } })
 
   // New outline text is visible (different from old)
   await expect(page.locator('.story-outline p')).toContainText('eliminate Gus')
   // Old outline text is gone
   await expect(page.locator('.story-outline p')).not.toContainText('methylamine')
+
+  // Redirect starts a new outline; the HUD/progress should follow the
+  // backend beat_id instead of continuing the old outline's counter.
+  await expect(page.locator('.story-progress span')).toContainText('Beat 1')
 
   // New agent_speak content visible
   await expect(

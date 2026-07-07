@@ -40,8 +40,12 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Gus Fring': 'gus', 'Gus': 'gus',
 }
 
+const STORY_CARD_EVENT_TYPES = new Set(['scene_change', 'agent_speak', 'agent_think', 'agent_act'])
+
 function resolveStoryEventGif(evt: StoryEvent): string | null {
   if (evt.type !== 'agent_speak') return null
+  if (evt.data.show_gif === false) return null
+  if (!evt.data.gif_search_query && !evt.data.emotion_state) return null
   const charId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
   if (!charId) return null
   return resolveGifUrl(
@@ -49,6 +53,16 @@ function resolveStoryEventGif(evt: StoryEvent): string | null {
     (evt.data.emotion_state as string) ?? null,
     (evt.data.gif_search_query as string) ?? null,
   )
+}
+
+const STORY_EVENT_GIF_CACHE = new WeakMap<StoryEvent, string | null>()
+
+function getStoryEventGif(evt: StoryEvent): string | null {
+  const cached = STORY_EVENT_GIF_CACHE.get(evt)
+  if (cached !== undefined) return cached
+  const resolved = resolveStoryEventGif(evt)
+  STORY_EVENT_GIF_CACHE.set(evt, resolved)
+  return resolved
 }
 
 function getEventTitle(evt: StoryEvent, lang: Language): string {
@@ -69,6 +83,60 @@ function getEventTitle(evt: StoryEvent, lang: Language): string {
   }
 }
 
+function formatStoryPlanPreview(outline: string, lang: Language): string {
+  const beats = outline
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => /^\d+[.)]\s+/.test(line))
+  const count = Math.max(beats.length, 1)
+  return lang === 'zh'
+    ? `已规划 ${count} 个剧情节拍。具体走向会随游玩逐步揭示。`
+    : `${count} story beats planned. The details will reveal as you play.`
+}
+
+function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
+  switch (evt.type) {
+    case 'scene_change':
+      return ((evt.data.description as string) ?? '').replace(/^Transitioning to:\s*/i, '')
+    case 'agent_speak':
+      return (evt.data.content as string) ?? ''
+    case 'agent_think':
+      return (evt.data.thought_content as string) ?? ''
+    case 'agent_act':
+      return (evt.data.action as string) ?? ''
+    case 'world_state_delta': {
+      const deltas = evt.data.deltas as Array<Record<string, string>> | undefined
+      if (!deltas?.length) return lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.'
+      const first = deltas[0]
+      return `${first.target ?? first.entity}: ${first.field} → ${first.new_value ?? 'changed'}`
+    }
+    case 'status':
+    case 'complete':
+    case 'error':
+      return (evt.data.message as string) ?? ''
+    default:
+      return ''
+  }
+}
+
+function getStoryCardHeading(evt: StoryEvent | null, fallback: string): string {
+  if (!evt) return fallback
+  const characterId = typeof evt.data.character_id === 'string' ? evt.data.character_id : ''
+  if (characterId) return characterId
+  return fallback
+}
+
+function findLastStoryEvent(
+  events: StoryEvent[],
+  predicate: (evt: StoryEvent) => boolean,
+): StoryEvent | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const evt = events[i]
+    if (evt && predicate(evt)) return evt
+  }
+  return null
+}
+
 type ChatMessage = {
   id: string
   sender: CharacterId | 'user'
@@ -79,6 +147,12 @@ type ChatMessage = {
   thinking?: string
   toolExecuted?: string | null
   toolLog?: string | null
+}
+
+type PressureProfile = {
+  trust: string
+  pressure: string
+  conflict: string
 }
 
 type Character = {
@@ -162,8 +236,8 @@ const relationLabels: Record<string, Record<Language, string>> = {
 
 const uiText: Record<Language, Record<string, string>> = {
   en: {
-    tagline: 'Stateful Breaking Bad autonomous agents running Plan-Reflect cognitive loops.',
-    landingSubtitle: 'Pick a character. Choose your relationship. Start a conversation that matters.',
+    tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
+    landingSubtitle: 'Pick a profile. Anchor the relationship. Step into a scene where silence has consequences.',
     landingStep1: 'Choose',
     landingStep2: 'Anchor',
     landingStep3: 'Chat',
@@ -179,13 +253,13 @@ const uiText: Record<Language, Record<string, string>> = {
     model: 'Model Backend',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: 'Set the Stage',
-    setStageHint: 'Describe the story you want in natural language. The Director will autonomously act out the plot, pausing at each beat for your decision.',
+    setStageHint: 'Describe the story you want in natural language. The scene board will play it beat by beat, pausing at pressure points for your decision.',
     placeholder: 'e.g. Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out…',
     startStory: 'Start Story',
-    directing: 'Directing…',
+    directing: 'Blocking the scene…',
     narrativeStream: 'Narrative Stream',
     eventFeed: 'Fine-grained event-driven narrative',
-    directorDecision: 'Director awaits your decision:',
+    directorDecision: 'Choose the next move:',
     switchToChat: 'Switch to Chat',
     you: 'You',
     send: 'Send',
@@ -193,8 +267,8 @@ const uiText: Record<Language, Record<string, string>> = {
     messagePlaceholder: 'Negotiate with {character} as their {relation}…',
     privateScene: 'Private Scene',
     crewScene: 'Crew Debate',
-    schema: 'Director-Driven',
-    gifTrigger: 'GIF',
+    schema: 'Scene Board',
+    gifTrigger: 'Scene beat',
     connected: 'Stream live',
     connecting: 'Connecting…',
     disconnected: 'Disconnected',
@@ -204,14 +278,14 @@ const uiText: Record<Language, Record<string, string>> = {
     storyOutline: 'Story Outline',
     paused: 'Paused',
     eventOutline: 'Story Outline',
-    eventSceneChange: 'Scene Change',
+    eventSceneChange: 'Scene Setup',
     eventSpeaks: 'speaks',
-    eventThinks: 'thinks',
+    eventThinks: 'unspoken pressure',
     eventActs: 'acts',
-    eventBeatReady: 'Director awaits your decision',
-    eventWorldDelta: 'World State Delta',
-    eventStatus: 'Status',
-    eventComplete: 'Story Complete',
+    eventBeatReady: 'Beat decision',
+    eventWorldDelta: 'Consequences Changed',
+    eventStatus: 'Scene Status',
+    eventComplete: 'Scene Wrapped',
     eventError: 'Error',
     openingEmotion: 'opening pressure',
     enterWorld: 'ENTER THE WORLD',
@@ -228,7 +302,7 @@ const uiText: Record<Language, Record<string, string>> = {
     resumingStory: 'Resuming previous story...',
     reconnect: 'Reconnect',
     restart: 'Restart',
-    autoContinue: 'Director auto-continuing (5min idle)...',
+    autoContinue: 'Scene resumes after 5min idle...',
     streaming: 'Streaming',
     returnToLanding: '↩ Return to Landing',
     continueChapter: 'Start Chapter 2',
@@ -236,6 +310,21 @@ const uiText: Record<Language, Record<string, string>> = {
     replayBeat: 'Replay Last Beat',
     startAgain: 'Start Again',
     storyCompleteHint: 'Each new beat will pick up the last chapter\'s context.',
+    pressureDossier: 'Relationship pressure',
+    pressureTrust: 'Trust',
+    pressureStyle: 'Pressure',
+    pressureConflict: 'Conflict',
+    scene: 'Scene',
+    location: 'Location',
+    tension: 'Tension',
+    time: 'Time',
+    sceneTimeline: 'Scene Timeline',
+    unspokenPressure: 'Unspoken Pressure',
+    possibleConsequences: 'Possible Consequences',
+    relationshipImpact: 'Relationship Impact',
+    currentBeat: 'Current Beat',
+    sceneFallback: 'Scene board is waiting for the first beat.',
+    storyLocationFallback: 'North of ABQ',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
@@ -255,10 +344,10 @@ const uiText: Record<Language, Record<string, string>> = {
     model: '引擎线路',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: '任务简报',
-    setStageHint: '写下这局的目标、风险和想看到的冲突。导演会分镜推进剧情，并在关键节点等待你的选择。',
+    setStageHint: '写下这局的目标、风险和想看到的冲突。场景会分镜推进剧情，并在关键节点等待你的选择。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
     startStory: '开始任务',
-    directing: '导演正在分镜…',
+    directing: '现场正在调度…',
     narrativeStream: '任务现场',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
@@ -269,8 +358,8 @@ const uiText: Record<Language, Record<string, string>> = {
     messagePlaceholder: '以{relation}身份对 {character} 说…',
     privateScene: '单人场景',
     crewScene: '群像会谈',
-    schema: '导演系统',
-    gifTrigger: '镜头参考',
+    schema: '场景记录',
+    gifTrigger: '镜头节点',
     connected: '现场已连接',
     connecting: '连接现场…',
     disconnected: '已断开',
@@ -280,18 +369,18 @@ const uiText: Record<Language, Record<string, string>> = {
     storyOutline: '任务大纲',
     paused: '已暂停',
     eventOutline: '故事大纲',
-    eventSceneChange: '场景切换',
+    eventSceneChange: '场景建立',
     eventSpeaks: '说',
-    eventThinks: '思考',
+    eventThinks: '未说出口',
     eventActs: '行动',
-    eventBeatReady: '导演等你决策',
-    eventWorldDelta: '世界状态变化',
-    eventStatus: '状态更新',
-    eventComplete: '剧情完结',
+    eventBeatReady: '关键选择',
+    eventWorldDelta: '后果变化',
+    eventStatus: '现场状态',
+    eventComplete: '任务收束',
     eventError: '错误',
     reconnect: '重连',
     restart: '重新开始',
-    autoContinue: '导演 5 分钟无操作，自动继续中…',
+    autoContinue: '5 分钟无操作，现场自动继续中…',
     streaming: '播放中',
     resumingStory: '正在恢复上次剧情…',
     openingEmotion: '开场压迫',
@@ -312,6 +401,96 @@ const uiText: Record<Language, Record<string, string>> = {
     replayBeat: '重演最后节点',
     startAgain: '重新开始',
     storyCompleteHint: '下一节会用上一章的剧情作为起点。',
+    pressureDossier: '关系压力',
+    pressureTrust: '信任',
+    pressureStyle: '施压方式',
+    pressureConflict: '冲突钩子',
+    scene: '场次',
+    location: '地点',
+    tension: '张力',
+    time: '时间',
+    sceneTimeline: '分镜时间线',
+    unspokenPressure: '未说出口的压力',
+    possibleConsequences: '可能后果',
+    relationshipImpact: '关系影响',
+    currentBeat: '当前节点',
+    sceneFallback: '场景记录正在等待第一个剧情节点。',
+    storyLocationFallback: '阿尔伯克基北部',
+  },
+}
+
+const pressureProfiles: Record<CharacterId, Record<Language, PressureProfile>> = {
+  walter: {
+    en: {
+      trust: 'conditional, usefulness first',
+      pressure: 'control through expertise and shame',
+      conflict: 'respect, obedience, and proof of competence',
+    },
+    zh: {
+      trust: '有条件，先看你是否有用',
+      pressure: '用专业和羞辱建立控制',
+      conflict: '尊重、服从、证明自己够格',
+    },
+  },
+  jesse: {
+    en: {
+      trust: 'fragile loyalty',
+      pressure: 'emotion, guilt, and sudden honesty',
+      conflict: 'abandonment, respect, and being used',
+    },
+    zh: {
+      trust: '脆弱但重情义',
+      pressure: '情绪、愧疚和突然的真话',
+      conflict: '被抛下、被尊重、被利用',
+    },
+  },
+  skyler: {
+    en: {
+      trust: 'earned through plain answers',
+      pressure: 'calm questions with family stakes',
+      conflict: 'safety, lies, and who controls the home',
+    },
+    zh: {
+      trust: '靠坦白一点点换来',
+      pressure: '用冷静追问把家庭风险摆上桌',
+      conflict: '安全、谎言、家里谁说了算',
+    },
+  },
+  saul: {
+    en: {
+      trust: 'transactional until the fee clears',
+      pressure: 'jokes that expose legal danger',
+      conflict: 'cash, leverage, and plausible deniability',
+    },
+    zh: {
+      trust: '交易型，先看钱和风险',
+      pressure: '用玩笑点破法律危险',
+      conflict: '现金、把柄、可否撇清关系',
+    },
+  },
+  mike: {
+    en: {
+      trust: 'low, proven by discipline',
+      pressure: 'few words, practical consequences',
+      conflict: 'competence, silence, and loose ends',
+    },
+    zh: {
+      trust: '很低，只相信纪律',
+      pressure: '少说话，只讲后果',
+      conflict: '能力、沉默、未清理风险',
+    },
+  },
+  gus: {
+    en: {
+      trust: 'professional until broken',
+      pressure: 'courtesy as an implied threat',
+      conflict: 'performance, loyalty, and discretion',
+    },
+    zh: {
+      trust: '职业化，破一次就结束',
+      pressure: '礼貌本身就是威胁',
+      conflict: '表现、忠诚、守口如瓶',
+    },
   },
 }
 
@@ -326,6 +505,17 @@ function getRelationLabel(relation: string, lang: Language): string {
 function formatRelation(char: Character, relation: string, lang: Language): string {
   const label = getRelationLabel(relation, lang)
   return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
+}
+
+function getPressureProfile(characterId: CharacterId, relation: string, lang: Language): PressureProfile {
+  const profile = pressureProfiles[characterId][lang]
+  const relationLabel = getRelationLabel(relation, lang)
+  return {
+    ...profile,
+    conflict: lang === 'zh'
+      ? `${relationLabel}：${profile.conflict}`
+      : `${relationLabel}: ${profile.conflict}`,
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -449,7 +639,6 @@ function App() {
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
 
   const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
-  const [autoPlayMode, setAutoPlayMode] = useState(false)
 
   // P0-4: when switching to a character that already has a saved relation,
   // surface a brief inline notice so the user understands the relation
@@ -464,6 +653,10 @@ function App() {
   // Relation per character (persist across character switches)
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
   const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
+  const pressureProfile = useMemo(
+    () => getPressureProfile(selectedCharId, relation, language),
+    [selectedCharId, relation, language],
+  )
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
@@ -555,7 +748,6 @@ function App() {
      fetch cloud → merge with local → if merged is empty, insert opener. */
   useEffect(() => {
     const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
-    const openerGif = resolveGifUrl(selectedCharId, 'opening pressure', null)
 
     ;(async () => {
       let cloudMsgs: ChatMessage[] = []
@@ -620,7 +812,7 @@ function App() {
               text: opener,
               emotion: t.openingEmotion,
               gifQuery: null,
-              gifUrl: openerGif,
+              gifUrl: null,
             }],
           }
         }
@@ -639,7 +831,7 @@ function App() {
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
   const [prevSceneUrl, setPrevSceneUrl] = useState<string | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
-  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatStreamRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
@@ -659,7 +851,9 @@ function App() {
   }, [currentSceneUrl])
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const stream = chatStreamRef.current
+    if (!stream) return
+    stream.scrollTo({ top: stream.scrollHeight, behavior: 'smooth' })
   }, [messages.length])
 
   const userTurnCount = messages.filter(m => m.sender === 'user').length
@@ -678,28 +872,13 @@ function App() {
     }
   }, [storyTask, story, selectedCharId, relation])
 
-  /* ---- Auto-play mode (triggered by landing screen) ---- */
+  /* ---- Enter world from landing screen ---- */
   const handleEnterWorld = useCallback(() => {
     setHasEnteredWorld(true)
-    setAutoPlayMode(true)
-  }, [setHasEnteredWorld])
-
-  useEffect(() => {
-    if (!autoPlayMode) return
-    const timer = setTimeout(async () => {
-      setAutoPlayMode(false)
-      setStoryTask(DEFAULT_STORY_PROMPT)
-      setView('story')
-      setError(null)
-      try {
-        await story.startStory(DEFAULT_STORY_PROMPT, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
-        setStoryTask('')
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      }
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [autoPlayMode, story, selectedCharId, relation, setView])
+    setView('story')
+    setStoryTask(DEFAULT_STORY_PROMPT)
+    story.reset()
+  }, [setHasEnteredWorld, setView, story])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -865,7 +1044,6 @@ function App() {
   const handleReturnToLanding = useCallback(() => {
     story.reset()
     setHasEnteredWorld(false)
-    setAutoPlayMode(false)
   }, [story, setHasEnteredWorld])
 
   const storyContextSummary = useMemo(() => {
@@ -876,6 +1054,28 @@ function App() {
       .join('\n')
     return [story.outline, spoken].filter(Boolean).join('\n\n')
   }, [story.events, story.outline])
+
+  const currentStoryEvent = useMemo(() => {
+    return findLastStoryEvent(story.events, evt => STORY_CARD_EVENT_TYPES.has(evt.type))
+  }, [story.events])
+  const currentStoryText = currentStoryEvent ? getStoryEventSummary(currentStoryEvent, language) : t.sceneFallback
+  const currentStoryTitle = currentStoryEvent ? getEventTitle(currentStoryEvent, language) : t.currentBeat
+  const currentStoryHeading = getStoryCardHeading(currentStoryEvent, currentStoryTitle)
+  const currentStorySpeakerId = currentStoryEvent?.type === 'agent_speak'
+    ? DISPLAY_NAME_TO_ID[currentStoryEvent.data.character_id as string]
+    : null
+  const currentStorySpeakerText = currentStoryEvent?.type === 'agent_speak'
+    ? ((currentStoryEvent.data.content as string) ?? '')
+    : ''
+  const storyLocation = useMemo(() => {
+    const latest = findLastStoryEvent(story.events, evt => evt.type === 'scene_change')
+    if (!latest) return t.storyLocationFallback
+    const destination = typeof latest.data.to_scene === 'string' ? latest.data.to_scene : ''
+    return (destination || getStoryEventSummary(latest, language)).slice(0, 64)
+  }, [language, story.events, t.storyLocationFallback])
+  const storyBeatLabel = language === 'zh'
+    ? `节点 ${Math.max(story.beatIndex, 1)}`
+    : `Beat ${Math.max(story.beatIndex, 1)}`
 
   const handleContinueChapter = useCallback(async () => {
     const prompt = `${DEFAULT_STORY_PROMPT}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
@@ -961,7 +1161,7 @@ function App() {
           </button>
         </div>
       )}
-      <main className="app-shell">
+      <main className="app-shell" lang={language === 'zh' ? 'zh-CN' : 'en'}>
       {/* ===================== SIDEBAR ===================== */}
       <aside className="sidebar">
         {/* Brand */}
@@ -1031,6 +1231,23 @@ function App() {
               <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
             ))}
           </select>
+          <div className="pressure-dossier" aria-label={t.pressureDossier}>
+            <span className="pressure-dossier__eyebrow">{t.pressureDossier}</span>
+            <dl>
+              <div>
+                <dt>{t.pressureTrust}</dt>
+                <dd>{pressureProfile.trust}</dd>
+              </div>
+              <div>
+                <dt>{t.pressureStyle}</dt>
+                <dd>{pressureProfile.pressure}</dd>
+              </div>
+              <div>
+                <dt>{t.pressureConflict}</dt>
+                <dd>{pressureProfile.conflict}</dd>
+              </div>
+            </dl>
+          </div>
         </section>
 
         {/* Mode (chat only) */}
@@ -1051,16 +1268,34 @@ function App() {
       {view === 'story' ? (
         /* ---------- Story View ---------- */
         <section className="story-panel">
-          <header className="story-header">
-            <h2>{t.narrativeStream}</h2>
-            <span className="schema-pill">
-              {story.connectionState === 'idle' && t.setStage}
-              {story.connectionState === 'connecting' && t.connecting}
-              {story.connectionState === 'streaming' && t.streaming}
-              {story.connectionState === 'beat_paused' && t.paused}
-              {story.connectionState === 'complete' && t.eventComplete}
-              {story.connectionState === 'error' && t.eventError}
-            </span>
+          <header className="story-header story-hud">
+            <div className="story-hud__brand">
+              <span className="brand-icon" aria-hidden="true" />
+              <div>
+                <p>{t.schema}</p>
+                <h2>{t.narrativeStream}</h2>
+              </div>
+            </div>
+            <div className="story-hud__metric">
+              <span>{t.scene}</span>
+              <strong>{storyBeatLabel}</strong>
+            </div>
+            <div className="story-hud__metric story-hud__metric--wide">
+              <span>{t.location}</span>
+              <strong>{storyLocation}</strong>
+              <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+            </div>
+            <div className="story-hud__metric">
+              <span>{t.tension}</span>
+              <strong>
+                {story.connectionState === 'idle' && t.setStage}
+                {story.connectionState === 'connecting' && t.connecting}
+                {story.connectionState === 'streaming' && t.streaming}
+                {story.connectionState === 'beat_paused' && t.paused}
+                {story.connectionState === 'complete' && t.eventComplete}
+                {story.connectionState === 'error' && t.eventError}
+              </strong>
+            </div>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
           </header>
 
@@ -1117,70 +1352,111 @@ function App() {
           {(story.connectionState === 'streaming'
             || story.connectionState === 'beat_paused'
             || story.connectionState === 'complete') && (
-            <div className="story-stream">
-              {story.outline && (
-                <div className="story-outline">
-                  <strong>{t.storyOutline}</strong>
-                  <p>{story.outline}</p>
-                </div>
-              )}
+            <div className={`story-stream story-stream--${story.connectionState}`}>
+              <div className="story-board__brief">
+                {story.outline && (
+                  <div className="story-outline">
+                    <strong>{t.storyOutline}</strong>
+                    <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
+                    <p className="story-outline__body">{story.outline}</p>
+                  </div>
+                )}
 
-              <div className="story-progress">
-                <span>Beat {story.beatIndex}</span>
+                <div className="story-progress">
+                  <span>{storyBeatLabel}</span>
+                </div>
               </div>
 
-              <div className="story-events">
-                {story.events.map((evt, i) => (
-                  <div key={`${i}-${evt.type}-${evt.received_at ?? ''}`} className={`story-event story-event--${evt.type}`}>
-                    <strong>{getEventTitle(evt, language)}</strong>
-                    <div className="event-body">
-                      {evt.type === 'scene_change' && (
-                        <p>{(evt.data.description as string) ?? ''}</p>
-                      )}
-                      {evt.type === 'agent_speak' && (() => {
-                        const speakCharId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
-                        const speakText = (evt.data.content as string) ?? ''
-                        return (
-                          <div className="story-event__content">
-                            <p><em>{(evt.data.character_id as string) ?? ''}:</em> {speakText}</p>
-                            {speakCharId && speakText && (
-                              <VoicePlayer
-                                text={speakText}
-                                characterId={speakCharId}
-                                language={language}
-                              />
-                            )}
-                            <GifCard src={resolveStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
-                          </div>
-                        )
-                      })()}
-                      {evt.type === 'agent_think' && (
-                        <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
-                      )}
-                      {evt.type === 'agent_act' && (
-                        <p><em>{(evt.data.character_id as string) ?? ''}</em> {(evt.data.action as string) ?? ''}</p>
-                      )}
-                      {evt.type === 'world_state_delta' && (
-                        <ul className="world-delta">
-                          {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => (
-                            <li key={j}>
-                              {d.target ?? d.entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {evt.type === 'status' && (
-                        <p className="status-msg">{evt.data.message as string}</p>
-                      )}
-                      {evt.type === 'complete' && (
-                        <p>{(evt.data.message as string) ?? t.storyComplete}</p>
-                      )}
-                      {evt.type === 'error' && (
-                        <p className="status-msg">⚠ {(evt.data.message as string) ?? 'Error'}</p>
-                      )}
+              <div className="story-board__grid">
+                <aside className="story-timeline" aria-label={t.sceneTimeline}>
+                  <h3>{t.sceneTimeline}</h3>
+                  <div className="story-events">
+                    {story.events.map((evt, i) => (
+                      <div
+                        key={`${i}-${evt.type}-${evt.received_at ?? ''}`}
+                        className={`story-event story-event--${evt.type}${evt === currentStoryEvent ? ' is-active' : ''}`}
+                      >
+                        <span className="story-event__dot" aria-hidden="true" />
+                        <strong>{getEventTitle(evt, language)}</strong>
+                        <div className="event-body">
+                          {evt.type === 'scene_change' && (
+                            <p>{(evt.data.description as string) ?? ''}</p>
+                          )}
+                          {evt.type === 'agent_speak' && (() => {
+                            const speakCharId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
+                            const speakText = (evt.data.content as string) ?? ''
+                            return (
+                              <div className="story-event__content">
+                                <p><em>{(evt.data.character_id as string) ?? ''}:</em> {speakText}</p>
+                                {speakCharId && speakText && (
+                                  <VoicePlayer
+                                    text={speakText}
+                                    characterId={speakCharId}
+                                    language={language}
+                                  />
+                                )}
+                                <GifCard src={getStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
+                              </div>
+                            )
+                          })()}
+                          {evt.type === 'agent_think' && (
+                            <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
+                          )}
+                          {evt.type === 'agent_act' && (
+                            <p><em>{(evt.data.character_id as string) ?? ''}</em> {(evt.data.action as string) ?? ''}</p>
+                          )}
+                          {evt.type === 'world_state_delta' && (
+                            <ul className="world-delta">
+                              {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => (
+                                <li key={j}>
+                                  {d.target ?? d.entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {evt.type === 'status' && (
+                            <p className="status-msg">{evt.data.message as string}</p>
+                          )}
+                          {evt.type === 'complete' && (
+                            <p>{(evt.data.message as string) ?? t.storyComplete}</p>
+                          )}
+                          {evt.type === 'error' && (
+                            <p className="status-msg">⚠ {(evt.data.message as string) ?? 'Error'}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </aside>
+
+                <section className={`story-scene-card story-scene-card--${currentStoryEvent?.type ?? 'empty'}`}>
+                  <div className="story-scene-card__paper">
+                    <div className="story-scene-card__meta">
+                      <span>{currentStoryTitle}</span>
+                      <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+                    </div>
+                    <h3>{currentStoryHeading}</h3>
+                    <p className="story-scene-card__quote">{currentStoryText}</p>
+                    {currentStorySpeakerId && currentStorySpeakerText && (
+                      <VoicePlayer text={currentStorySpeakerText} characterId={currentStorySpeakerId} language={language} />
+                    )}
+                    <GifCard src={currentStoryEvent ? getStoryEventGif(currentStoryEvent) : null} alt={t.gifTrigger} />
+                  </div>
+                  <div className="story-scene-card__pressure">
+                    <div>
+                      <strong>{t.unspokenPressure}</strong>
+                      <p>{pressureProfile.pressure}</p>
+                    </div>
+                    <div>
+                      <strong>{t.possibleConsequences}</strong>
+                      <p>{pressureProfile.conflict}</p>
+                    </div>
+                    <div>
+                      <strong>{t.relationshipImpact}</strong>
+                      <p>{t.pressureTrust}: {pressureProfile.trust}</p>
                     </div>
                   </div>
-                ))}
+                </section>
               </div>
 
               {/* Streaming indicator */}
@@ -1244,26 +1520,34 @@ function App() {
           <header className="chat-header">
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
-              <h2>
-                {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
-              </h2>
-              {showSavePrompt && (
-                <div className="save-prompt">
-                  {t.savePrompt}
+                  <h2>
+                    {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+                  </h2>
+                  <div className="chat-pressure-line">
+                    <span>{t.pressureTrust}: {pressureProfile.trust}</span>
+                    <span>{t.pressureConflict}: {pressureProfile.conflict}</span>
+                  </div>
+                  {showSavePrompt && (
+                    <div className="save-prompt">
+                      {t.savePrompt}
                 </div>
               )}
             </div>
             <span className="schema-pill">{t.schema}</span>
           </header>
 
-          <div className="chat-stream">
+          <div className="chat-stream" ref={chatStreamRef}>
             {messages.map(msg => {
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
               const senderName = senderChar?.name ?? (isUser ? t.you : (msg.sender as string))
               const senderColor = senderChar?.color ?? selectedChar.color
               return (
-                <article key={msg.id} className={`msg ${isUser ? 'msg--user' : 'msg--char'}`}>
+                <article
+                  key={msg.id}
+                  className={`msg ${isUser ? 'msg--user' : 'msg--char'}`}
+                  style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}
+                >
                   <div className="msg-avatar" style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}>
                     {isUser ? <span className="avatar-letter">{t.you[0]}</span> : <Silhouette characterId={msg.sender as CharacterId} name={senderName} size={36} />}
                   </div>
@@ -1282,30 +1566,33 @@ function App() {
                     {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
                       <VoicePlayer text={msg.text} characterId={msg.sender as CharacterId} language={language} />
                     )}
-                    <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={msg.gifQuery ? `${t.gifTrigger}: ${msg.gifQuery}` : undefined} />
+                    <GifCard src={msg.id.startsWith('opener-') ? null : msg.gifUrl} alt={msg.gifQuery ? t.gifTrigger : ''} />
                   </div>
                 </article>
               )
             })}
+            <div className="chat-end" aria-hidden="true" />
           </div>
 
-          {isSending && (
-            <div className="typing" aria-live="polite">
-              <span className="dot" /><span className="dot" /><span className="dot" />
-            </div>
-          )}
-          {error && <div className="error-box">{error}</div>}
+          <div className="chat-footer">
+            {isSending && (
+              <div className="typing" aria-live="polite">
+                <span className="dot" /><span className="dot" /><span className="dot" />
+              </div>
+            )}
+            {error && <div className="error-box">{error}</div>}
 
-          <form className="composer" onSubmit={handleSend}>
-            <input
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
-            />
-            <button type="submit" disabled={isSending || !message.trim()}>
-              {isSending ? t.sending : t.send}
-            </button>
-          </form>
+            <form className="composer" onSubmit={handleSend}>
+              <input
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+              />
+              <button type="submit" disabled={isSending || !message.trim()}>
+                {isSending ? t.sending : t.send}
+              </button>
+            </form>
+          </div>
         </section>
       )}
     </main>

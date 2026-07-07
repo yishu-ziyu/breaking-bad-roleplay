@@ -190,25 +190,35 @@ export function resolveGifUrl(
 
   const candidates = candidateTags(gifQuery, emotion)
   const recent = parseRecent()[characterId] ?? []
-
-  const bestTag = resolveBestTag(candidates, pool, recent)
-  if (bestTag) {
-    const taggedMatches = pool.filter(g => g.tags.includes(bestTag) && !recent.includes(g.url))
-    if (taggedMatches.length > 0) {
-      const choice = weightedRandom(taggedMatches)
-      pushRecent(characterId, choice.url)
-      incrementWeight(choice.url)
-      return choice.url
-    }
-  }
-
-  const defaultMatches = pool.filter(g => g.tags.includes('default') && !recent.includes(g.url))
-  if (defaultMatches.length > 0) {
-    const choice = weightedRandom(defaultMatches)
+  const chooseAndRecord = (matches: RoleGifAsset[]): string | null => {
+    if (matches.length === 0) return null
+    const choice = weightedRandom(matches)
     pushRecent(characterId, choice.url)
     incrementWeight(choice.url)
     return choice.url
   }
+
+  const bestTag = resolveBestTag(candidates, pool, recent)
+  if (bestTag) {
+    const taggedMatches = pool.filter(g => g.tags.includes(bestTag) && !recent.includes(g.url))
+    const taggedUrl = chooseAndRecord(taggedMatches)
+    if (taggedUrl) return taggedUrl
+  }
+
+  const defaultMatches = pool.filter(g => g.tags.includes('default') && !recent.includes(g.url))
+  const defaultUrl = chooseAndRecord(defaultMatches)
+  if (defaultUrl) return defaultUrl
+
+  const fallbackTag = resolveBestTag(candidates, pool, [])
+  if (fallbackTag) {
+    const taggedMatches = pool.filter(g => g.tags.includes(fallbackTag))
+    const taggedUrl = chooseAndRecord(taggedMatches)
+    if (taggedUrl) return taggedUrl
+  }
+
+  const defaultPool = pool.filter(g => g.tags.includes('default'))
+  const fallbackUrl = chooseAndRecord(defaultPool)
+  if (fallbackUrl) return fallbackUrl
 
   return null
 }

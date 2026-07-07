@@ -148,6 +148,38 @@ class TestB5_CrewChat:
         assert isinstance(result["debate_logs"], list)
 
 
+class TestChatLanguageControl:
+    async def test_direct_chat_keeps_target_language_with_cross_language_voice_example(
+        self,
+        director,
+        mock_provider,
+    ):
+        mock_provider.call_model.return_value = json.dumps({
+            "reply_text": "Sit down. We are going to be precise.",
+            "emotion_state": "tense",
+            "gif_search_query": "walter white tense stare",
+            "thinking": "He needs control.",
+            "tool_executed": None,
+            "tool_log": None,
+        })
+        context = {
+            "mode": "direct",
+            "history": [],
+            "language": "en",
+            "relation": "former student",
+            "llmProvider": "minimax",
+            "voiceExample": "我记得你。不是因为你总能答对。",
+        }
+
+        await director._handle_direct_chat("walter", "Why did you call me?", context)
+
+        messages = mock_provider.call_model.call_args.args[0]
+        user_prompt = messages[-1]["content"]
+        assert "Reply language: English only." in user_prompt
+        assert "Do not copy the reference language" in user_prompt
+        assert "我记得你" in user_prompt
+
+
 # ===================================================================
 # Cycle 3 PR-A: redirect / switch_perspective / continue dict signals
 # ===================================================================
