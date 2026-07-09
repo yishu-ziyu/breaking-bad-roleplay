@@ -237,7 +237,7 @@ const relationLabels: Record<string, Record<Language, string>> = {
 const uiText: Record<Language, Record<string, string>> = {
   en: {
     tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
-    landingSubtitle: 'Pick a profile. Anchor the relationship. Step into a scene where silence has consequences.',
+    landingSubtitle: 'Step into Albuquerque. Everything you say stays with them.',
     landingStep1: 'Choose',
     landingStep2: 'Anchor',
     landingStep3: 'Chat',
@@ -328,7 +328,7 @@ const uiText: Record<Language, Record<string, string>> = {
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
-    landingSubtitle: '选一个角色。确定你的关系。开始一段有分量的对话。',
+    landingSubtitle: '走进阿尔伯克基。你的每一句话，他们都会记住。',
     landingStep1: '选择',
     landingStep2: '锚定',
     landingStep3: '对话',
@@ -660,7 +660,7 @@ function App() {
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
-  const [llmProvider] = usePersistedState<string>('llm-v2', 'cliproxy')
+  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm-v2', 'minimax')
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -875,7 +875,7 @@ function App() {
   /* ---- Enter world from landing screen ---- */
   const handleEnterWorld = useCallback(() => {
     setHasEnteredWorld(true)
-    setView('story')
+    setView('chat')
     setStoryTask(DEFAULT_STORY_PROMPT)
     story.reset()
   }, [setHasEnteredWorld, setView, story])
@@ -1261,7 +1261,18 @@ function App() {
           </section>
         )}
 
-        {/* Model backend — hidden, backend uses cliproxy default */}
+        {/* LLM Provider selector */}
+        <section>
+          <span className="field-label">{t.model}</span>
+          <select
+            value={llmProvider}
+            onChange={e => setLlmProvider(e.target.value)}
+          >
+            <option value="minimax">MiniMax M3</option>
+            <option value="stepfun">StepFun</option>
+            <option value="cliproxy">CLIProxy (本地)</option>
+          </select>
+        </section>
       </aside>
 
       {/* ===================== MAIN PANEL ===================== */}

@@ -101,7 +101,7 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
   await page.locator('.seg-control button:has-text("EN")').click()
   await page.locator('.char-card', { hasText: 'Saul' }).click()
   await page.locator('#relation').selectOption('witness')
-  // model selector removed from UI in Loop 3
+  await page.locator('section', { hasText: 'Model Backend' }).locator('select').selectOption('cliproxy')
   await sendChatMessage(page, 'I need representation.')
 
   await expect(page.locator('.msg--char p', { hasText: 'For a client' })).toBeVisible()
