@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from agents.provider import ModelResult
 

@@ -1,8 +1,6 @@
 import httpx
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
-from config import settings
 from agents.tools import (
     Tool,
     ToolCall,

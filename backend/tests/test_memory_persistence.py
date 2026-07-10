@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from db.models import CharacterDossier
+from agents.director import DirectorAgent
 from agents.memory import (
     MAX_KNOWLEDGE_ENTRIES,
     MAX_RELATIONSHIP_NOTES_CHARS,
@@ -52,6 +53,48 @@ def _provider_with_delta(delta):
     provider = MagicMock()
     provider.call_model = AsyncMock(return_value=json.dumps({"deltas": [delta]}))
     return provider
+
+
+async def test_serverless_profile_persists_messages_without_blocking_on_dossiers():
+    provider = MagicMock()
+    director = DirectorAgent(provider, enable_dossier_updates=False)
+    db = MagicMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+
+    with patch("agents.director.update_dossiers", new=AsyncMock()) as update:
+        deltas = await director._persist_beat_writes(
+            session=db,
+            session_id="session-vercel",
+            beat_index=0,
+            speak_events=[
+                {
+                    "character_id": "Walter White",
+                    "content": "We are done when I say we are done.",
+                    "emotion_state": "tense",
+                    "gif_search_query": "walter white tense",
+                }
+            ],
+            beat_events_for_dossier=[],
+            scene_desc="RV in the desert",
+            beat_model_route="minimax/MiniMax-M3",
+        )
+
+    assert deltas == []
+    assert db.add.call_count == 1
+    assert db.commit.await_count == 1
+    update.assert_not_awaited()
+
+
+def test_director_runtime_route_is_reflected_in_its_system_prompt():
+    director = DirectorAgent(
+        MagicMock(),
+        model_route="minimax/MiniMax-M3",
+    )
+
+    assert 'always "minimax/MiniMax-M3"' in director.system_prompt
+    assert 'set to "minimax/MiniMax-M3"' in director.system_prompt
+    assert "stepfun/step-2-16k" not in director.system_prompt
 
 
 async def test_update_dossiers_creates_session_and_world_rows():
@@ -324,4 +367,3 @@ class TestCycle46_RelationshipNotesGrowthCap:
         assert short_notes in dossier.relationship_notes
         assert "second note" in dossier.relationship_notes
         assert len(dossier.relationship_notes) <= MAX_RELATIONSHIP_NOTES_CHARS
-

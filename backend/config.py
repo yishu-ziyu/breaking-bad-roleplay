@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     cli_proxy_base_url: str = "http://127.0.0.1:8317"
     cli_proxy_api_key: str = ""
     cli_proxy_default_model: str = "gemini-pro-agent"
+    director_model_route: str = "stepfun/step-2-16k"
+    # Dossier analysis is a useful secondary LLM pass, but it must be
+    # deferrable on runtimes with a hard request deadline (for example Vercel
+    # Hobby functions). Dialogue messages are still persisted either way.
+    enable_dossier_updates: bool = True
     # DATABASE_URL has no fallback — the app cannot run without a Postgres
     # connection (db/session.py builds the engine at import time), so it
     # stays mandatory.

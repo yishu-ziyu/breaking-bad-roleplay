@@ -106,6 +106,32 @@ class TestApiKeyValidation:
             _make_settings()
 
 
+class TestDirectorRuntimeProfile:
+    def test_defaults_preserve_full_local_enrichment(self, monkeypatch):
+        monkeypatch.setenv("MINIMAX_API_KEY", "mk-x")
+        monkeypatch.delenv("STEPFUN_API_KEY", raising=False)
+        monkeypatch.setenv("DATABASE_URL", _DB_URL)
+        monkeypatch.delenv("DIRECTOR_MODEL_ROUTE", raising=False)
+        monkeypatch.delenv("ENABLE_DOSSIER_UPDATES", raising=False)
+
+        settings = _make_settings()
+
+        assert settings.director_model_route == "stepfun/step-2-16k"
+        assert settings.enable_dossier_updates is True
+
+    def test_vercel_profile_can_select_minimax_and_defer_dossiers(self, monkeypatch):
+        monkeypatch.setenv("MINIMAX_API_KEY", "mk-x")
+        monkeypatch.delenv("STEPFUN_API_KEY", raising=False)
+        monkeypatch.setenv("DATABASE_URL", _DB_URL)
+        monkeypatch.setenv("DIRECTOR_MODEL_ROUTE", "minimax/MiniMax-M3")
+        monkeypatch.setenv("ENABLE_DOSSIER_UPDATES", "false")
+
+        settings = _make_settings()
+
+        assert settings.director_model_route == "minimax/MiniMax-M3"
+        assert settings.enable_dossier_updates is False
+
+
 # ---------------------------------------------------------------------------
 # Part A — ALLOWED_ORIGINS parsing + production warning
 # ---------------------------------------------------------------------------

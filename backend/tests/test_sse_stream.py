@@ -14,10 +14,8 @@ Mock strategy
   predefined ``AgentEvent`` objects. This keeps the test free of any real
   LLM call while still exercising the SSE formatting + ordering in
   ``routes.py``.
-- Lifespan: ``main.engine`` is patched to a no-op async context manager so
-  importing ``main`` (which constructs the lifespan) does not require a
-  real DATABASE_URL. ``httpx.ASGITransport`` does not run the ASGI lifespan,
-  so ``app.state.provider`` / ``app.state.director`` are never built; the
+- Lifespan: ``httpx.ASGITransport`` does not run the ASGI lifespan, so
+  ``app.state.provider`` / ``app.state.director`` are never built; the
   dependency overrides make the routes not look at ``app.state`` at all.
 
 Streaming assertions
@@ -38,7 +36,6 @@ from __future__ import annotations
 
 import json
 import os
-from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -131,32 +128,19 @@ async def client(mock_db, mock_director, mock_session_factory):
     for any non-stream endpoint. The stream endpoint sources its DB
     sessions from ``api.routes.async_session_factory`` (Cycle 45 / H1),
     so we patch that module attribute with ``mock_session_factory``.
-    ``main.engine`` is patched to neutralise lifespan DB init (defensive —
-    ASGITransport does not run lifespan, but the patch keeps import-time
-    references safe).
+    ASGITransport does not run lifespan, and schema migration is an explicit
+    deployment step rather than an app-startup side effect.
     """
     app.dependency_overrides[get_db] = lambda: mock_db
     app.dependency_overrides[get_director] = lambda: mock_director
 
-    @asynccontextmanager
-    async def _fake_engine_begin():
-        class _FakeConn:
-            async def run_sync(self, fn):
-                return None
-
-        yield _FakeConn()
-
-    fake_engine = MagicMock()
-    fake_engine.begin = _fake_engine_begin
-
     try:
         with patch("api.routes.async_session_factory", mock_session_factory):
-            with patch("main.engine", fake_engine):
-                transport = httpx.ASGITransport(app=app)
-                async with httpx.AsyncClient(
-                    transport=transport, base_url="http://test"
-                ) as c:
-                    yield c
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as c:
+                yield c
     finally:
         app.dependency_overrides.clear()
 

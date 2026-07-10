@@ -9,7 +9,6 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from api.routes import router as api_router
 from db.models import Base  # noqa: F401 — registers models with Base.metadata
-from db.session import engine
 
 # Configure logging before any application module uses a logger.
 # Without this, Python's lastResort handler emits bare WARNING+ messages
@@ -69,7 +68,11 @@ async def lifespan(app: FastAPI):
     from agents.director import DirectorAgent
 
     provider = ProviderFacade(settings)
-    director = DirectorAgent(provider)
+    director = DirectorAgent(
+        provider,
+        model_route=settings.director_model_route,
+        enable_dossier_updates=settings.enable_dossier_updates,
+    )
 
     app.state.provider = provider
     app.state.director = director

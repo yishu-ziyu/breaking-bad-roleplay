@@ -11,9 +11,8 @@ Mock strategy
 - DB: ``app.dependency_overrides[get_db]`` returns a mock AsyncSession so
   tests never touch real Postgres (aiosqlite is not installed, so in-memory
   SQLite is not an option).
-- Lifespan: ``db.session.engine.begin`` is patched to a no-op async context
-  manager so FastAPI startup (which runs ``Base.metadata.create_all`` against
-  the real DATABASE_URL) does not try to connect to Postgres.
+- Lifespan: schema creation is not performed at startup; migrations are an
+  explicit deployment step, so these route tests do not need a real Postgres.
 - Director/Provider: not invoked by the routes under test, so the real
   singletons created in lifespan simply sit unused on ``app.state``.
 
@@ -25,10 +24,9 @@ request/response model cleanly.
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,39 +70,12 @@ def mock_db():
 
 @pytest.fixture
 def client(mock_db):
-    """TestClient with ``get_db`` overridden and lifespan DB init neutralized.
-
-    The ``engine`` reference in ``main`` is replaced with a fake whose
-    ``begin()`` returns a no-op async context manager, so the FastAPI lifespan
-    startup (which runs ``Base.metadata.create_all`` against the real
-    DATABASE_URL) does not try to connect to Postgres. The lifespan still
-    constructs real ``ProviderFacade`` / ``DirectorAgent`` singletons on
-    ``app.state``, but they are unused because the routes under test do not
-    depend on ``get_director`` / ``get_provider``.
-
-    We patch ``main.engine`` (not ``engine.begin`` directly) because
-    SQLAlchemy's ``AsyncEngine.begin`` is a read-only descriptor that
-    cannot be overwritten via ``setattr``.
-    """
+    """TestClient with ``get_db`` overridden by a mock session."""
     app.dependency_overrides[get_db] = lambda: mock_db
 
-    @asynccontextmanager
-    async def _fake_engine_begin():
-        class _FakeConn:
-            # Lifespan does `await conn.run_sync(Base.metadata.create_all)`,
-            # so run_sync must return an awaitable.
-            async def run_sync(self, fn):
-                return None
-
-        yield _FakeConn()
-
-    fake_engine = MagicMock()
-    fake_engine.begin = _fake_engine_begin
-
     try:
-        with patch("main.engine", fake_engine):
-            with TestClient(app) as c:
-                yield c
+        with TestClient(app) as c:
+            yield c
     finally:
         app.dependency_overrides.clear()
 

@@ -10,10 +10,7 @@ No production code changes. Runs as pytest.
 
 from __future__ import annotations
 
-import json
-import re
 import pytest
-from agents.provider import ModelResult
 
 
 # ---------------------------------------------------------------------------

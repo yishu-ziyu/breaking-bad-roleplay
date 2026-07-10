@@ -26,7 +26,9 @@ playwright-report
 *.sln
 *.sw?
 __pycache__/
+.venv/
 .vercel
+.vercel_python_packages/
 
 # Work artifacts (local only)
 .ship/
