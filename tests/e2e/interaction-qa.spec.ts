@@ -718,6 +718,7 @@ test('TC-IX-19: beat-controls buttons have pointer cursor and visible focus', as
     const s = getComputedStyle(el)
     return s.outlineStyle !== 'none' || s.boxShadow !== 'none'
   })
+  expect(focusVisible).toBe(true)
   // At minimum, the element should be focusable (tabIndex >= 0 implicitly for buttons)
   const tabIndex = await continueBtn.evaluate((el) => el.tabIndex)
   expect(tabIndex).toBe(0)

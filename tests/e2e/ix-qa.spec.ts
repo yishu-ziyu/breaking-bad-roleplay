@@ -1,5 +1,4 @@
 import { test, expect, type Page } from '@playwright/test'
-import { promises as fs } from 'fs'
 
 const BASE_URL = 'http://localhost:5173'
 
@@ -34,6 +33,10 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
 
 async function installMockEventSource(page: Page) {
   await page.addInitScript(() => {
+    type MockWindow = Window & {
+      __mockSSE: { emit: (type: string, data: unknown) => void } | null
+    }
+
     class MockEventSource {
       url: string
       handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
@@ -46,7 +49,7 @@ async function installMockEventSource(page: Page) {
       static CLOSED = 2
       constructor(url: string) {
         this.url = url
-        ;(window as any).__mockSSE = this
+        ;(window as MockWindow).__mockSSE = this
       }
       addEventListener(type: string, fn: (e: MessageEvent) => void) {
         if (!this.handlers.has(type)) this.handlers.set(type, [])
@@ -65,8 +68,9 @@ async function installMockEventSource(page: Page) {
         if (type === 'message' && this.onmessage) this.onmessage(ev)
       }
     }
-    ;(window as any).EventSource = MockEventSource as any
-    ;(window as any).__mockSSE = null
+    ;(window as Window & { EventSource: typeof EventSource }).EventSource =
+      MockEventSource as unknown as typeof EventSource
+    ;(window as MockWindow).__mockSSE = null
   })
 }
 
@@ -102,12 +106,17 @@ async function driveToBeatPaused(page: Page, opts: { outline?: string; agentSpea
   await page.locator('.story-setup textarea').fill('Walter 需要拿到新的甲胺供应。')
   await page.locator('.story-setup button').click()
 
-  await page.waitForFunction(() => (window as any).__mockSSE !== null, { timeout: 5000 })
+  await page.waitForFunction(
+    () => Boolean((window as Window & { __mockSSE?: unknown }).__mockSSE),
+    { timeout: 5000 },
+  )
   await page.waitForTimeout(30)
 
   await page.evaluate(
     ({ outline, agentSpeak, beatId }) => {
-      const sse = (window as any).__mockSSE
+      const sse = (window as Window & {
+        __mockSSE?: { emit: (type: string, data: unknown) => void }
+      }).__mockSSE
       if (!sse) return
       sse.emit('status', { data: { message: 'Director online' } })
       sse.emit('outline', { data: { content: outline } })
@@ -245,7 +254,9 @@ test.describe('IX-3: BeatControls and decision flow', () => {
 
     // Emit next beat
     await page.evaluate(() => {
-      const sse = (window as any).__mockSSE
+      const sse = (window as Window & {
+        __mockSSE?: { emit: (type: string, data: unknown) => void }
+      }).__mockSSE
       if (!sse) return
       sse.emit('scene_change', { data: { description: '地下超级实验室。' } })
       sse.emit('agent_speak', { data: { character_id: 'Walter White', content: '这批货准备好了。', emotion_state: 'chemistry', gif_search_query: 'chemistry' } })
@@ -339,7 +350,9 @@ test.describe('IX-4: Terminal states', () => {
     collectErrors(page)
     await driveToBeatPaused(page)
     await page.evaluate(() => {
-      const sse = (window as any).__mockSSE
+      const sse = (window as Window & {
+        __mockSSE?: { emit: (type: string, data: unknown) => void }
+      }).__mockSSE
       if (!sse) return
       sse.emit('complete', { data: { message: '故事到达了终点。' } })
     })
@@ -360,7 +373,9 @@ test.describe('IX-4: Terminal states', () => {
     collectErrors(page)
     await driveToBeatPaused(page)
     await page.evaluate(() => {
-      const sse = (window as any).__mockSSE
+      const sse = (window as Window & {
+        __mockSSE?: { emit: (type: string, data: unknown) => void }
+      }).__mockSSE
       if (!sse) return
       sse.emit('error', { data: { message: 'SSE 连接断开。' } })
     })
