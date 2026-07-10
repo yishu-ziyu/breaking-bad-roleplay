@@ -3,11 +3,12 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "excludeFiles": "{backend/tests/**,backend/.pytest_cache/**,backend/.venv/**,tests/**,test/**,playwright-report/**,test-results/**,.ship/**}"
+      "excludeFiles": "{.*,**/.env*,backend/.pytest_cache/**,backend/.venv/**,backend/tests/**,deploy/**,dist/**,docs/**,looper-output/**,node_modules/**,playwright-report/**,public/**,scripts/**,src/**,supabase/**,test*/**}"
     }
   },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

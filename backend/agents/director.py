@@ -173,10 +173,18 @@ class DirectorAgent:
         provider: ProviderFacade,
         model_route: str = DEFAULT_DIRECTOR_MODEL_ROUTE,
         system_prompt: str = DIRECTOR_SYSTEM_PROMPT,
+        enable_dossier_updates: bool = True,
     ):
         self.provider = provider
         self.model_route = model_route
-        self.system_prompt = system_prompt
+        # The base prompt documents the default route in examples and rules.
+        # Keep those instructions aligned when a deployment selects a
+        # different provider via DIRECTOR_MODEL_ROUTE.
+        self.system_prompt = system_prompt.replace(
+            DEFAULT_DIRECTOR_MODEL_ROUTE,
+            model_route,
+        )
+        self.enable_dossier_updates = enable_dossier_updates
     async def process(
         self,
         task: str,
@@ -1135,6 +1143,8 @@ class DirectorAgent:
         # survive so dialogue does not "disappear" on page refresh after a
         # dossier failure.
         await session.commit()
+        if not self.enable_dossier_updates:
+            return []
         try:
             deltas = await update_dossiers(
                 db=session,

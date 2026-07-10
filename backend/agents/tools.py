@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Awaitable, Callable
+
+if TYPE_CHECKING:
+    from agents.provider import ModelResult
 
 logger = logging.getLogger(__name__)
 

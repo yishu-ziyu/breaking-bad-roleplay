@@ -4,11 +4,39 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import json
+import tomllib
 import subprocess
 import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _requirements(path: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def test_vercel_pyproject_matches_backend_runtime_dependencies() -> None:
+    """The root Vercel Python project must stay aligned with the backend."""
+
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]
+    assert project["dependencies"] == _requirements(
+        REPO_ROOT / "backend" / "requirements.txt"
+    )
+    assert project["requires-python"] == ">=3.12,<3.13"
+
+
+def test_vercel_function_bundle_excludes_local_environment_files() -> None:
+    config = json.loads((REPO_ROOT / "vercel.json").read_text())
+    excluded = config["functions"]["api/index.py"]["excludeFiles"]
+
+    assert ".env*" in excluded
+    assert "**/.env*" in excluded
 
 
 def test_vercel_entrypoint_exports_authoritative_fastapi_routes() -> None:
