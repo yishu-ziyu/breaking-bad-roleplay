@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import String, DateTime, Text, ForeignKey
+from sqlalchemy import String, DateTime, Text, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db.session import Base
 
@@ -25,6 +25,9 @@ class Session(Base):
     active_character_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     task_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     plot_outline: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    next_beat_index: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )

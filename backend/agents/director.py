@@ -430,6 +430,156 @@ class DirectorAgent:
             type="complete",
             data={"message": "All beats rendered. Roleplay outline complete."},
         )
+
+    async def process_next_beat(
+        self,
+        *,
+        session_factory: Any,
+        session_id: str,
+        voice_example: str | None = None,
+        language: str = "en",
+    ) -> AsyncIterator[AgentEvent]:
+        """Render one persisted story beat without cross-request memory.
+
+        Vercel may route each request to a different function instance. The
+        session row therefore owns the outline and next beat index, while this
+        method keeps each streaming invocation bounded to one generated beat.
+        """
+        from db.models import Session as SessionModel
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(SessionModel).where(SessionModel.id == session_id)
+            )
+            story_session = result.scalar_one_or_none()
+            if story_session is None:
+                raise ValueError("Session not found")
+            task = story_session.task_prompt
+            outline_text = story_session.plot_outline
+            beat_index = int(getattr(story_session, "next_beat_index", 0) or 0)
+            active_character_raw = story_session.active_character_id
+
+        if not task:
+            raise ValueError("Session has no task_prompt")
+
+        if not outline_text:
+            yield AgentEvent(
+                type="status",
+                data={"message": _status_message("analysing", language)},
+            )
+            outline_text = await self._generate_outline(task, language=language)
+            if outline_text is None:
+                yield AgentEvent(
+                    type="error",
+                    data={
+                        "message": "Outline generation failed — could not reach the model."
+                    },
+                )
+                return
+
+            scenes = self._parse_outline(outline_text)
+            async with session_factory() as session:
+                result = await session.execute(
+                    select(SessionModel).where(SessionModel.id == session_id)
+                )
+                story_session = result.scalar_one_or_none()
+                if story_session is None:
+                    raise ValueError("Session not found")
+                story_session.plot_outline = outline_text
+                story_session.next_beat_index = 0
+                await session.commit()
+
+            beat_index = 0
+            yield AgentEvent(type="outline", data={"content": outline_text})
+            yield AgentEvent(
+                type="status",
+                data={
+                    "message": _status_message("outlined", language, n=len(scenes))
+                },
+            )
+        else:
+            scenes = self._parse_outline(outline_text)
+
+        if not scenes:
+            yield AgentEvent(
+                type="error",
+                data={"message": "The generated outline contained no playable beats."},
+            )
+            return
+
+        if beat_index >= len(scenes):
+            async with session_factory() as session:
+                result = await session.execute(
+                    select(SessionModel).where(SessionModel.id == session_id)
+                )
+                story_session = result.scalar_one_or_none()
+                if story_session is not None:
+                    story_session.status = "complete"
+                    await session.commit()
+            yield AgentEvent(
+                type="complete",
+                data={"message": "All beats rendered. Roleplay outline complete."},
+            )
+            return
+
+        scene_desc = scenes[beat_index]
+        current_scene = self._short_scene_name(scene_desc)
+        previous_scene = (
+            self._short_scene_name(scenes[beat_index - 1]) if beat_index > 0 else ""
+        )
+        active_character_id = FRONTEND_TO_BACKEND_ID.get(
+            active_character_raw, active_character_raw
+        )
+        ready_event: AgentEvent | None = None
+
+        async for event in self._generate_beat(
+            task=task,
+            outline=outline_text,
+            beat_index=beat_index,
+            context={"previous_scene": previous_scene, "current_scene": current_scene},
+            scene_desc=scene_desc,
+            session_factory=session_factory,
+            session_id=session_id,
+            active_character_id=active_character_id,
+            voice_example=voice_example,
+            language=language,
+        ):
+            if event.type == "beat_ready":
+                ready_event = event
+            else:
+                yield event
+
+        next_beat_index = beat_index + 1
+        is_final = next_beat_index >= len(scenes)
+        async with session_factory() as session:
+            result = await session.execute(
+                select(SessionModel).where(SessionModel.id == session_id)
+            )
+            story_session = result.scalar_one_or_none()
+            if story_session is None:
+                raise ValueError("Session not found")
+            story_session.plot_outline = outline_text
+            story_session.next_beat_index = next_beat_index
+            story_session.status = "complete" if is_final else "waiting"
+            await session.commit()
+
+        ready_data = dict(ready_event.data) if ready_event is not None else {
+            "beat_id": f"beat_{next_beat_index}",
+            "beat_summary": scene_desc,
+        }
+        ready_data["is_final"] = is_final
+        yield AgentEvent(
+            type="beat_ready",
+            data=ready_data,
+            model_route=ready_event.model_route if ready_event is not None else None,
+        )
+
+        if is_final:
+            yield AgentEvent(
+                type="complete",
+                data={"message": "All beats rendered. Roleplay outline complete."},
+            )
+
     # ------------------------------------------------------------------
     # Outline generation
     # ------------------------------------------------------------------
@@ -703,7 +853,7 @@ class DirectorAgent:
         ]
         try:
             llm_response = await self.provider.call_model(messages, self.model_route)
-        except Exception as exc:
+        except Exception:
             logger.exception("Beat %d LLM call failed", beat_index + 1)
             yield AgentEvent(
                 type="error",

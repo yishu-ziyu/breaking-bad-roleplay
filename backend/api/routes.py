@@ -6,6 +6,7 @@ from sqlalchemy import select
 from typing import AsyncGenerator
 import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -20,9 +21,6 @@ from models.schemas import (
     SessionResponse,
     AgentEvent,
 )
-
-# In-flight SSE queues for beat-by-beat flow
-_session_queues: dict[str, dict] = {}
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -75,6 +73,7 @@ async def create_session(
         current_mode="story",
         task_prompt=payload.task_prompt,
         active_character_id=payload.active_character_id,
+        next_beat_index=0,
         created_at=now,
         updated_at=now,
     )
@@ -126,11 +125,6 @@ async def session_action(
         # "paused". Without this, a fresh /stream request after stop would
         # terminate immediately on the stop-signal check in event_generator.
         session.status = "active"
-        # Signal the Director to advance to the next beat.
-        session_id_to_signal = session.id
-        session_data = _session_queues.get(session_id_to_signal)
-        if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait({"action": "continue"})
 
     elif action == "stop":
         session.status = "paused"
@@ -142,11 +136,9 @@ async def session_action(
                 detail="redirect_prompt is required for redirect action",
             )
         session.task_prompt = payload.redirect_prompt
-        session_data = _session_queues.get(session.id)
-        if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait(
-                {"action": "redirect", "prompt": payload.redirect_prompt}
-            )
+        session.plot_outline = None
+        session.next_beat_index = 0
+        session.status = "active"
 
     elif action == "switch_perspective":
         if not payload.target_character:
@@ -155,23 +147,17 @@ async def session_action(
                 detail="target_character is required for switch_perspective action",
             )
         session.active_character_id = payload.target_character
-        session_data = _session_queues.get(session.id)
-        if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait(
-                {"action": "switch_perspective", "target": payload.target_character}
-            )
+        session.status = "active"
 
     elif action == "continue_chapter":
-        # Out-of-band: append a new chapter to the running outline. The
-        # Director will generate fresh beats once it picks the signal off
-        # its action_queue. Append a chapter-marker suffix so the UI can
-        # tell chapter 2 from chapter 1 in the outline header.
+        # Start a fresh persisted outline while retaining the prior messages
+        # as the completed chapter history.
         session.title = f"{session.title} (continued)" if session.title else "continued"
-        session_data = _session_queues.get(session.id)
-        if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait(
-                {"action": "continue_chapter", "branch_goal": payload.branch_goal}
-            )
+        if payload.branch_goal:
+            session.task_prompt = f"{session.task_prompt}\nNext chapter: {payload.branch_goal}"
+        session.plot_outline = None
+        session.next_beat_index = 0
+        session.status = "active"
 
     elif action == "branch":
         if not payload.from_beat_id:
@@ -179,15 +165,13 @@ async def session_action(
                 status_code=400,
                 detail="from_beat_id is required for branch action",
             )
-        session_data = _session_queues.get(session.id)
-        if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait(
-                {
-                    "action": "branch",
-                    "from_beat_id": payload.from_beat_id,
-                    "branch_goal": payload.branch_goal or "",
-                }
-            )
+        branch_goal = payload.branch_goal or "Continue with a different consequence."
+        session.task_prompt = (
+            f"{session.task_prompt}\nBranch after {payload.from_beat_id}: {branch_goal}"
+        )
+        session.plot_outline = None
+        session.next_beat_index = 0
+        session.status = "active"
 
     elif action == "replay":
         if not payload.beat_id:
@@ -195,11 +179,14 @@ async def session_action(
                 status_code=400,
                 detail="beat_id is required for replay action",
             )
-        session_data = _session_queues.get(session.id)
-        if session_data and not session_data["queue"].full():
-            session_data["queue"].put_nowait(
-                {"action": "replay", "beat_id": payload.beat_id}
+        match = re.fullmatch(r"beat[_-](\d+)", payload.beat_id)
+        if match is None:
+            raise HTTPException(
+                status_code=400,
+                detail="beat_id must use the form beat_1 or beat-1",
             )
+        session.next_beat_index = max(0, int(match.group(1)) - 1)
+        session.status = "active"
 
     else:
         raise HTTPException(
@@ -263,20 +250,13 @@ async def stream_session(
                 detail="Session has no task_prompt — create the session with a task description.",
             )
 
-        task = session.task_prompt
         resolved_session_id = session.id
 
     async def event_generator() -> AsyncGenerator[bytes, None]:
-        # Set up beat-pause queue
-        beat_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
-        _session_queues[resolved_session_id] = {"queue": beat_queue, "beat_index": 0}
-
         try:
-            async for event in director.process(
-                task=task,
+            async for event in director.process_next_beat(
                 session_factory=async_session_factory,
                 session_id=resolved_session_id,
-                action_queue=beat_queue,
                 voice_example=voice_example,
                 language=language,
             ):
@@ -329,11 +309,6 @@ async def stream_session(
                 f"event: error\n"
                 f"data: {err.model_dump_json()}\n\n"
             ).encode("utf-8")
-        finally:
-            # Always clean up the session queue to prevent memory leaks.
-            # Covers: normal completion, client disconnect, and error paths.
-            _session_queues.pop(resolved_session_id, None)
-
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
