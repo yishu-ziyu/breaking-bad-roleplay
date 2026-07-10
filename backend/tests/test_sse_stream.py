@@ -57,7 +57,7 @@ os.environ.setdefault(
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("ALLOWED_ORIGINS", "*")
 
-from api.routes import get_db, get_director, _session_queues  # noqa: E402
+from api.routes import get_db, get_director  # noqa: E402
 from main import app  # noqa: E402
 from models.schemas import AgentEvent  # noqa: E402
 
@@ -94,7 +94,7 @@ def mock_db():
 def mock_director():
     """Mock DirectorAgent.
 
-    Tests assign ``mock_director.process = <async generator function>`` to
+    Tests assign ``mock_director.process_next_beat = <async generator function>`` to
     control the event stream. Using a real async generator function (rather
     than AsyncMock) is required because routes.py consumes it with
     ``async for event in director.process(...)``.
@@ -159,8 +159,6 @@ async def client(mock_db, mock_director, mock_session_factory):
                     yield c
     finally:
         app.dependency_overrides.clear()
-        # Defensive: clear any leaked in-flight queues from a failed test.
-        _session_queues.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +241,7 @@ async def _read_stream(resp: httpx.Response) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Predefined async generator functions used as ``mock_director.process``
+# Predefined async generator functions used as ``mock_director.process_next_beat``
 # ---------------------------------------------------------------------------
 
 
@@ -304,6 +302,42 @@ async def _failing_process(
 
 
 class TestStreamHappyPath:
+    async def test_stream_uses_one_beat_director_interface(
+        self, client, mock_db, mock_director
+    ):
+        """The HTTP stream must not enter the legacy multi-beat wait loop."""
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        calls: list[dict] = []
+
+        async def one_beat(*args, **kwargs) -> AsyncIterator[AgentEvent]:
+            calls.append(kwargs)
+            yield AgentEvent(
+                type="beat_ready",
+                data={"beat_id": "beat_1", "is_final": False},
+            )
+
+        async def legacy_process_must_not_run(*args, **kwargs) -> AsyncIterator[AgentEvent]:
+            raise AssertionError("legacy multi-beat process was called")
+            yield  # pragma: no cover
+
+        mock_director.process_next_beat = one_beat
+        mock_director.process = legacy_process_must_not_run
+
+        async with client.stream(
+            "GET", "/api/session/sess-stream-1/stream"
+        ) as resp:
+            body = await _read_stream(resp)
+
+        events = parse_sse_events(body)
+        assert [event_type for event_type, _ in events] == ["beat_ready"]
+        assert len(calls) == 1
+        assert callable(calls[0]["session_factory"])
+        assert calls[0]["session_id"] == "sess-stream-1"
+        assert calls[0]["voice_example"] is None
+        assert calls[0]["language"] == "en"
+
     async def test_full_event_sequence_and_ordering(
         self, client, mock_db, mock_director
     ):
@@ -312,7 +346,7 @@ class TestStreamHappyPath:
         mock_db.execute = AsyncMock(
             return_value=_scalar_result(_make_session_row())
         )
-        mock_director.process = _happy_path_process
+        mock_director.process_next_beat = _happy_path_process
 
         async with client.stream(
             "GET", "/api/session/sess-stream-1/stream"
@@ -340,7 +374,7 @@ class TestStreamHappyPath:
         mock_db.execute = AsyncMock(
             return_value=_scalar_result(_make_session_row())
         )
-        mock_director.process = _happy_path_process
+        mock_director.process_next_beat = _happy_path_process
 
         async with client.stream(
             "GET", "/api/session/sess-stream-1/stream"
@@ -358,7 +392,7 @@ class TestStreamHappyPath:
         mock_db.execute = AsyncMock(
             return_value=_scalar_result(_make_session_row())
         )
-        mock_director.process = _happy_path_process
+        mock_director.process_next_beat = _happy_path_process
 
         async with client.stream(
             "GET", "/api/session/sess-stream-1/stream"
@@ -371,8 +405,8 @@ class TestStreamHappyPath:
         assert len(frames) >= 1
         for frame in frames:
             lines = frame.split("\n")
-            assert any(l.startswith("event: ") for l in lines), frame
-            data_lines = [l for l in lines if l.startswith("data: ")]
+            assert any(line.startswith("event: ") for line in lines), frame
+            data_lines = [line for line in lines if line.startswith("data: ")]
             assert len(data_lines) == 1, frame
             payload = json.loads(data_lines[0][len("data: ") :])
             assert "type" in payload
@@ -387,7 +421,7 @@ class TestStreamHappyPath:
         mock_db.execute = AsyncMock(
             return_value=_scalar_result(_make_session_row())
         )
-        mock_director.process = _happy_path_process
+        mock_director.process_next_beat = _happy_path_process
 
         async with client.stream(
             "GET", "/api/session/sess-stream-1/stream"
@@ -418,7 +452,7 @@ class TestStreamErrors:
         mock_db.execute = AsyncMock(
             return_value=_scalar_result(_make_session_row())
         )
-        mock_director.process = _failing_process
+        mock_director.process_next_beat = _failing_process
 
         async with client.stream(
             "GET", "/api/session/sess-stream-1/stream"
@@ -455,51 +489,11 @@ class TestStreamErrors:
         the Director has nothing to run on."""
         session = _make_session_row(task_prompt="")
         mock_db.execute = AsyncMock(return_value=_scalar_result(session))
-        mock_director.process = _happy_path_process  # should not be called
+        mock_director.process_next_beat = _happy_path_process  # should not be called
 
         resp = await client.get("/api/session/sess-stream-1/stream")
         assert resp.status_code == 400
         assert "task_prompt" in resp.json()["detail"]
-
-
-# ---------------------------------------------------------------------------
-# Tests — session queue cleanup
-# ---------------------------------------------------------------------------
-
-
-class TestStreamSessionQueueCleanup:
-    async def test_queue_cleared_after_normal_completion(
-        self, client, mock_db, mock_director
-    ):
-        """``_session_queues`` must not leak entries after a stream finishes
-        — routes.py pops the entry in a ``finally`` block."""
-        mock_db.execute = AsyncMock(
-            return_value=_scalar_result(_make_session_row())
-        )
-        mock_director.process = _happy_path_process
-
-        async with client.stream(
-            "GET", "/api/session/sess-stream-1/stream"
-        ) as resp:
-            await _read_stream(resp)
-
-        assert "sess-stream-1" not in _session_queues
-
-    async def test_queue_cleared_after_director_error(
-        self, client, mock_db, mock_director
-    ):
-        """The ``finally`` cleanup must also run on the error path."""
-        mock_db.execute = AsyncMock(
-            return_value=_scalar_result(_make_session_row())
-        )
-        mock_director.process = _failing_process
-
-        async with client.stream(
-            "GET", "/api/session/sess-stream-1/stream"
-        ) as resp:
-            await _read_stream(resp)
-
-        assert "sess-stream-1" not in _session_queues
 
 
 # ---------------------------------------------------------------------------
@@ -546,7 +540,7 @@ class TestStreamStopSignal:
         stream: emit a terminal status event and break, discarding any
         remaining director events."""
         session = _make_session_row(status="active")
-        mock_director.process = _three_beat_process
+        mock_director.process_next_beat = _three_beat_process
         # db.execute call sequence:
         #   0: initial session load in stream_session        -> session row
         #   1: status check before yielding beat 1           -> "active"
@@ -579,8 +573,6 @@ class TestStreamStopSignal:
         all_types = [t for t, _ in events]
         assert "outline" not in all_types
         assert "beat_ready" not in all_types
-        # Queue cleanup still runs on the break path (finally block).
-        assert "sess-stream-1" not in _session_queues
 
     async def test_stream_continues_when_status_active(
         self, client, mock_db, mock_director
@@ -589,7 +581,7 @@ class TestStreamStopSignal:
         check must not interfere — all director events are yielded in
         order and no terminal stop event is emitted."""
         session = _make_session_row(status="active")
-        mock_director.process = _two_event_process
+        mock_director.process_next_beat = _two_event_process
         # db.execute call sequence:
         #   0: initial session load              -> session row
         #   1: status check before beat 1        -> "active"
@@ -618,4 +610,3 @@ class TestStreamStopSignal:
         # the fix this would be 1 (only the initial load), so this
         # guards against the check being silently dropped.
         assert mock_db.execute.await_count == 3
-        assert "sess-stream-1" not in _session_queues

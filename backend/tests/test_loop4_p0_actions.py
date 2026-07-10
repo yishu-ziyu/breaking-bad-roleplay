@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 
-from api.routes import _session_queues, session_action
+from api.routes import session_action
 from models.schemas import SessionAction
 from agents.provider import ModelResult
 
@@ -36,36 +35,32 @@ def _session_row(session_id: str = "sess-123"):
     session.status = "active"
     session.title = "chapter one"
     session.task_prompt = "Walter needs leverage."
+    session.plot_outline = "1. RV - Walt waits\n2. Lab - Gus arrives"
+    session.next_beat_index = 2
     return session
 
 
 async def _call_action(mock_db, payload: SessionAction):
     session = _session_row()
     mock_db.execute = AsyncMock(return_value=_ScalarResult(session))
-    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
-    _session_queues[session.id] = {"queue": queue, "beat_index": 0}
-    try:
-        response = await session_action(session.id, payload, mock_db)
-        signal = queue.get_nowait()
-        return response, signal, session
-    finally:
-        _session_queues.pop(session.id, None)
+    response = await session_action(session.id, payload, mock_db)
+    return response, session
 
 
 class TestLoop4SessionActions:
-    async def test_continue_chapter_pushes_action_queue_signal(self, mock_db):
-        response, signal, session = await _call_action(
+    async def test_continue_chapter_resets_durable_story_progress(self, mock_db):
+        response, session = await _call_action(
             mock_db,
             SessionAction(action="continue_chapter", branch_goal="raise pressure"),
         )
 
         assert response.status == "ok"
         assert response.session_id == "sess-123"
-        assert signal == {
-            "action": "continue_chapter",
-            "branch_goal": "raise pressure",
-        }
         assert session.title == "chapter one (continued)"
+        assert "Next chapter: raise pressure" in session.task_prompt
+        assert session.plot_outline is None
+        assert session.next_beat_index == 0
+        assert session.status == "active"
         assert mock_db.commit.await_count == 1
 
     async def test_branch_requires_from_beat_id(self, mock_db):
@@ -82,8 +77,8 @@ class TestLoop4SessionActions:
         assert exc_info.value.status_code == 400
         assert "from_beat_id" in exc_info.value.detail
 
-    async def test_branch_pushes_action_queue_signal(self, mock_db):
-        response, signal, _session = await _call_action(
+    async def test_branch_resets_outline_with_branch_context(self, mock_db):
+        response, session = await _call_action(
             mock_db,
             SessionAction(
                 action="branch",
@@ -93,11 +88,10 @@ class TestLoop4SessionActions:
         )
 
         assert response.status == "ok"
-        assert signal == {
-            "action": "branch",
-            "from_beat_id": "beat_2",
-            "branch_goal": "Skyler finds the lie",
-        }
+        assert "Branch after beat_2: Skyler finds the lie" in session.task_prompt
+        assert session.plot_outline is None
+        assert session.next_beat_index == 0
+        assert session.status == "active"
 
     async def test_replay_requires_beat_id(self, mock_db):
         session = _session_row()
@@ -113,14 +107,15 @@ class TestLoop4SessionActions:
         assert exc_info.value.status_code == 400
         assert "beat_id" in exc_info.value.detail
 
-    async def test_replay_pushes_action_queue_signal(self, mock_db):
-        response, signal, _session = await _call_action(
+    async def test_replay_rewinds_durable_beat_index(self, mock_db):
+        response, session = await _call_action(
             mock_db,
             SessionAction(action="replay", beat_id="beat_3"),
         )
 
         assert response.status == "ok"
-        assert signal == {"action": "replay", "beat_id": "beat_3"}
+        assert session.next_beat_index == 2
+        assert session.status == "active"
 
 
 class TestLoop4DirectorVoiceAnchor:

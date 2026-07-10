@@ -1095,14 +1095,14 @@ class TestCycle17_ExceptionSanitization:
             return_value=_ExecuteResult([mock_session])
         )
 
-        # Mock director.process raises immediately
+        # Mock the request-bounded Director interface raising immediately.
         mock_director = MagicMock()
 
         async def _raising_process(*args, **kwargs):
             raise RuntimeError(sensitive_msg)
             yield  # pragma: no cover - unreachable, makes it an async gen
 
-        mock_director.process = _raising_process
+        mock_director.process_next_beat = _raising_process
 
         # Cycle 45 (H1): stream_session no longer takes a ``db`` parameter;
         # it sources short-lived sessions from ``api.routes.async_session_factory``.
