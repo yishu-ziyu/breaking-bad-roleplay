@@ -126,12 +126,17 @@ def _make_session_row(
     session_id: str = "sess-123",
     status: str = "active",
     task_prompt: str = "Cook a batch in the RV",
+    next_beat_index: int = 2,
 ):
     """Build a mock Session row that ``session_action`` can read and mutate."""
     session = MagicMock()
     session.id = session_id
     session.status = status
     session.task_prompt = task_prompt
+    session.title = "chapter one"
+    session.plot_outline = "1. RV - Cook\n2. Lab - Confront Gus"
+    session.next_beat_index = next_beat_index
+    session.active_character_id = "walter"
     return session
 
 
@@ -172,6 +177,7 @@ class TestCreateSession:
         datetime.fromisoformat(body["created_at"])
         added_session = mock_db.add.call_args.args[0]
         assert added_session.current_mode == "story"
+        assert added_session.next_beat_index == 0
         # DB was touched: one add, one commit, one refresh
         assert mock_db.add.call_count == 1
         assert mock_db.commit.await_count == 1
@@ -267,6 +273,37 @@ class TestSessionAction:
         )
         assert resp.status_code == 400
         assert "target_character" in resp.json()["detail"]
+
+    def test_action_redirect_resets_durable_outline_and_progress(self, client, mock_db):
+        session = _make_session_row(next_beat_index=2)
+        mock_db.execute = AsyncMock(return_value=_scalar_result(session))
+
+        resp = client.post(
+            "/api/session/sess-123/action",
+            json={"action": "redirect", "redirect_prompt": "Skyler takes control."},
+        )
+
+        assert resp.status_code == 200
+        assert session.task_prompt == "Skyler takes control."
+        assert session.plot_outline is None
+        assert session.next_beat_index == 0
+        assert session.status == "active"
+
+    def test_action_switch_perspective_keeps_progress_and_unlocks_next_beat(
+        self, client, mock_db
+    ):
+        session = _make_session_row(status="waiting", next_beat_index=2)
+        mock_db.execute = AsyncMock(return_value=_scalar_result(session))
+
+        resp = client.post(
+            "/api/session/sess-123/action",
+            json={"action": "switch_perspective", "target_character": "jesse"},
+        )
+
+        assert resp.status_code == 200
+        assert session.active_character_id == "jesse"
+        assert session.next_beat_index == 2
+        assert session.status == "active"
 
 
 # ---------------------------------------------------------------------------
