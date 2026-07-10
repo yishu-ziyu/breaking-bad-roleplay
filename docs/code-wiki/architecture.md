@@ -1,6 +1,6 @@
 # Architecture
 
-ABQ Roleplay Lab 是一个前后端分离但可通过 Docker 合并部署的互动叙事应用。前端负责角色选择、聊天体验、SSE 事件渲染、GIF/语音/场景视觉；后端负责 API、LLM provider 路由、Director Agent、角色 Agent、PostgreSQL 持久化。
+ABQ Roleplay Lab 是一个由 Vercel 同源托管 React 前端与 FastAPI Python Function 的互动叙事应用。前端负责角色选择、聊天体验、SSE 事件渲染、GIF/语音/场景视觉；后端负责 API、LLM provider 路由、Director Agent、角色 Agent、PostgreSQL 持久化。
 
 ## 技术栈
 
@@ -13,7 +13,7 @@ ABQ Roleplay Lab 是一个前后端分离但可通过 Docker 合并部署的互�
 | LLM 抽象 | httpx AsyncClient + provider prefix routing | [backend/agents/provider.py](../../backend/agents/provider.py) |
 | 后端数据库 | PostgreSQL + SQLAlchemy async + Alembic | [backend/db](../../backend/db), [backend/alembic](../../backend/alembic) |
 | 前端云同步 | Supabase Auth + RLS tables | [supabase/migrations](../../supabase/migrations) |
-| 部署 | Docker multi-stage, Render/Railway/Fly | [Dockerfile](../../Dockerfile), [render.yaml](../../render.yaml) |
+| 部署 | Vercel Vite static + Python Function | [vercel.json](../../vercel.json), [api/index.py](../../api/index.py) |
 
 ## 逻辑分层
 
@@ -191,7 +191,7 @@ auth.users
 
 当前行为：
 
-- Story Director 默认使用 `minimax/MiniMax-M3`。
+- Story Director 的路由由 `DIRECTOR_MODEL_ROUTE` 配置；Vercel Production 使用 `minimax/MiniMax-M3`。
 - Chat 默认 resolver 返回 CLIProxy；前端 `llmProvider` 可覆盖到 MiniMax。
 - 后端仍保留 StepFun 支持，尽管当前前端下拉没有暴露 StepFun 选项。
 
@@ -201,13 +201,10 @@ auth.users
 |---|---|---|
 | FastAPI `/api/chat` | [backend/api/routes.py](../../backend/api/routes.py) | 当前 Chat 主路径 |
 | FastAPI session/SSE | [backend/api/routes.py](../../backend/api/routes.py) | 当前 Story 主路径 |
-| Vercel `/api/chat` | [api/chat.py](../../api/chat.py) | 遗留 serverless 兼容路径 |
-| Vercel `/api/story` | [api/story.py](../../api/story.py) | 遗留一次性 story 路径 |
+| Vercel FastAPI 入口 | [api/index.py](../../api/index.py) | 导出与本地一致的完整 API |
 | `backend/scripts/setup_db.py` | [backend/scripts/setup_db.py](../../backend/scripts/setup_db.py) | 本地应急 create_all 脚本；长期 schema 以 Alembic 为准 |
 
 ## 主要风险与维护点
 
-- Alembic 初始迁移的 `sessions` 表没有 `current_mode` 字段，而当前 ORM 模型有 `current_mode nullable=False`。如果目标数据库是新库或干净库，继续开发前应补一条 Alembic migration 或确认已有数据库已手工对齐。
 - `README.md` 仍有旧 API 名称；Code Wiki 以当前代码为准。
-- `api/chat.py` 和 FastAPI `/api/chat` 的 provider/env 语义不同，改动时不要混淆。
-- Story SSE 会进行长连接和 LLM 调用；`routes.stream_session` 已避免长时间持有 DB connection，后续改动应保持这个约束。
+- Story SSE 会进行 LLM 调用；`routes.stream_session` 已避免长时间持有 DB connection，且每次调用仅处理一个 beat。

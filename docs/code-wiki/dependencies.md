@@ -12,7 +12,6 @@
 | `react-dom` | DOM rendering |
 | `@supabase/ssr` | Browser Supabase client helper |
 | `@supabase/supabase-js` | Supabase Auth / database client |
-| `railway` | Railway CLI/package dependency；不是前端运行时核心 |
 
 ### Dev / Build / Test
 

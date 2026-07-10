@@ -1,6 +1,6 @@
 # API Reference
 
-当前主 API 由 FastAPI 提供，文件是 [backend/api/routes.py](../../backend/api/routes.py)，统一 prefix 为 `/api`。Vercel serverless 下的 [api/chat.py](../../api/chat.py) 和 [api/story.py](../../api/story.py) 是遗留路径，见本文末尾。
+当前主 API 由 FastAPI 提供，文件是 [backend/api/routes.py](../../backend/api/routes.py)，统一 prefix 为 `/api`。Vercel 通过 [api/index.py](../../api/index.py) 导出同一个 app。
 
 ## 通用约定
 
@@ -325,24 +325,9 @@ Schema：`ChatRequest` in [backend/api/routes.py](../../backend/api/routes.py)
 | `BeatReadyData` | typed `beat_ready.data` |
 | `CharacterStateResponse` | 预留角色状态 response |
 
-## Legacy Serverless API
+## Vercel 执行语义
 
-这些文件存在于根目录 [api](../../api)，用于 Vercel serverless 风格部署或旧 Demo 兼容。当前 React 前端主路径不依赖它们。
-
-### [api/chat.py](../../api/chat.py)
-
-- `BaseHTTPRequestHandler` 实现的 `/api/chat`。
-- 自己处理 LLM provider config。
-- 默认 provider 语义与 FastAPI 不完全相同。
-- 不使用 FastAPI lifespan、SQLAlchemy、DirectorAgent 单例。
-
-### [api/story.py](../../api/story.py)
-
-- `POST /api/story`。
-- 一次性生成 outline 和完整 beats。
-- 适合旧的本地回放模式，不是当前 `useStoryStream` 路径。
-
-维护建议：
-
-- 如果继续以 FastAPI + Docker 为主，可以把 legacy endpoint 视为兼容层，不要在新功能中优先扩展。
-- 如果要删除 legacy，需要同步检查 Vercel 配置和 README 中旧 API 描述。
+- `/api/*` 全部进入 `api/index.py` 导出的 FastAPI app。
+- Story stream 每次请求只产生一个 beat；非最终 `beat_ready` 后由前端关闭 EventSource。
+- `continue` / `redirect` / `switch_perspective` 成功后，前端通过新的 stream 请求继续。
+- outline、`next_beat_index` 和角色消息持久化到 Postgres，因此不依赖函数实例复用。
