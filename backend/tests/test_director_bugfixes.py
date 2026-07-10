@@ -9,9 +9,20 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.schemas import AgentEvent
+from agents.provider import ModelResult
 
 # Fixtures mock_provider, director, and mock_db are defined in
 # conftest.py and auto-discovered by pytest — no import needed.
+
+
+def _mr(text: str, tool_calls=None) -> ModelResult:
+    """Build a ModelResult for a character sub-agent call (native function
+    calling path, DEC-0001)."""
+    return ModelResult(
+        content=text,
+        tool_calls=tool_calls or [],
+        stop_reason="tool_use" if tool_calls else "end_turn",
+    )
 
 
 # ===================================================================
@@ -145,6 +156,75 @@ class TestB5_CrewChat:
         }
         result = await director._handle_crew_chat("walter", "Hello?", context)
         assert "debate_logs" in result
+
+
+# ===================================================================
+# Loop 7: Crew mode per-character prompt injection
+# ===================================================================
+
+class TestLoop7_CrewVoiceInjection:
+    """Crew mode should inject each character's system prompt so they
+    retain distinct voices in the same LLM call."""
+
+    async def test_crew_chat_injects_character_voices(self, director, mock_provider):
+        """Given crew mode, the system prompt should include Walter and
+        Jesse's voice guides when both are participants."""
+        mock_provider.call_model.return_value = json.dumps([
+            {
+                "character_id": "Walter White",
+                "content": "We do things precisely.",
+                "emotion_state": "tense",
+                "gif_search_query": "walter white serious",
+                "thinking": None,
+                "tool_executed": None,
+                "tool_log": None,
+            },
+        ])
+        context = {
+            "mode": "crew",
+            "history": [],
+            "language": "en",
+            "relation": "partner",
+            "llmProvider": "minimax",
+        }
+        result = await director._handle_crew_chat("walter", "What's the plan?", context)
+        assert len(result["debate_logs"]) >= 1
+        # Verify the call_model received a system prompt with voice guides
+        call_args = mock_provider.call_model.call_args
+        assert call_args is not None
+        messages = call_args.args[0]
+        system_content = messages[0]["content"]
+        # Should include CREW_CHAT_SYSTEM_PROMPT base
+        assert "Director" in system_content or "multi-character" in system_content
+        # Should include character voice guides for participants
+        assert "Walter White" in system_content or "walter" in system_content.lower()
+
+    async def test_crew_chat_graceful_degrade_on_prompt_error(self, director, mock_provider):
+        """Given a character's system_prompt() raises, crew chat should
+        still work with just the other characters' voices."""
+        mock_provider.call_model.return_value = json.dumps([
+            {
+                "character_id": "Jesse Pinkman",
+                "content": "Yo, science!",
+                "emotion_state": "anxious",
+                "gif_search_query": "jesse pinkman nervous",
+                "thinking": None,
+                "tool_executed": None,
+                "tool_log": None,
+            },
+        ])
+        context = {
+            "mode": "crew",
+            "history": [],
+            "language": "en",
+            "relation": "partner",
+            "llmProvider": "minimax",
+        }
+        # Should not crash even if we pass a character that triggers a fallback
+        result = await director._handle_crew_chat("walter", "Hello?", context)
+        assert "debate_logs" in result
+        result = await director._handle_crew_chat("walter", "Hello?", context)
+        assert "debate_logs" in result
         assert isinstance(result["debate_logs"], list)
 
 
@@ -154,14 +234,17 @@ class TestChatLanguageControl:
         director,
         mock_provider,
     ):
-        mock_provider.call_model.return_value = json.dumps({
+        # Direct chat now routes the character reply through
+        # call_model_with_tools (native function calling, DEC-0001), which
+        # returns a ModelResult carrying the structured JSON envelope.
+        mock_provider.call_model_with_tools.return_value = _mr(json.dumps({
             "reply_text": "Sit down. We are going to be precise.",
             "emotion_state": "tense",
             "gif_search_query": "walter white tense stare",
             "thinking": "He needs control.",
             "tool_executed": None,
             "tool_log": None,
-        })
+        }))
         context = {
             "mode": "direct",
             "history": [],
@@ -173,7 +256,7 @@ class TestChatLanguageControl:
 
         await director._handle_direct_chat("walter", "Why did you call me?", context)
 
-        messages = mock_provider.call_model.call_args.args[0]
+        messages = mock_provider.call_model_with_tools.call_args.args[0]
         user_prompt = messages[-1]["content"]
         assert "Reply language: English only." in user_prompt
         assert "Do not copy the reference language" in user_prompt
@@ -704,8 +787,10 @@ class TestCycle16_MessagePersistence:
                 "recommended_model": "stepfun/step-3.7-flash",
             }
         ])
-        mock_provider.call_model = AsyncMock(
-            side_effect=[beat_events_json, "I am the one who knocks."]
+        mock_provider.call_model = AsyncMock(return_value=beat_events_json)
+        # The character sub-agent rewrite routes through call_model_with_tools.
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr("I am the one who knocks.")
         )
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
@@ -815,8 +900,9 @@ class TestCycle16_MessagePersistence:
                 "recommended_model": "stepfun/step-3.7-flash",
             }
         ])
-        mock_provider.call_model = AsyncMock(
-            side_effect=[beat_events_json, "Yeah, science!"]
+        mock_provider.call_model = AsyncMock(return_value=beat_events_json)
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr("Yeah, science!")
         )
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
@@ -1152,3 +1238,129 @@ class TestCycle25_MessageSurvivesDossierFailure:
         # rollback — so they survive the dossier failure.
         speak_events = [e for e in events if e.type == "agent_speak"]
         assert len(speak_events) == 2
+
+
+# ===================================================================
+# Loop 4: Dossier context injection into character prompts
+# ===================================================================
+
+class TestLoop4_DossierInjection:
+    """Scenario: character dossiers from PostgreSQL are injected into
+    character agent prompts so the character knows the player's history."""
+
+    async def test_direct_chat_injects_dossier_context(
+        self, director, mock_provider, mock_db, mock_session_factory
+    ):
+        """Given a world-level dossier exists for Walter, _handle_direct_chat
+        should include the dossier data in the character's prompt."""
+        fake_dossier = MagicMock()
+        fake_dossier.session_id = None
+        fake_dossier.owner_id = "walter"
+        fake_dossier.subject_id = "walter"
+        fake_dossier.trust_level = 8
+        fake_dossier.knowledge = json.dumps({
+            "2026-01-01T00:00": "The player is a former student with blue meth connections",
+        })
+        fake_dossier.relationship_notes = "[14:30] Walt trusts the player more than before"
+        # Setup mock DB to return our fake dossier
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [fake_dossier]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        mock_provider.call_model_with_tools.return_value = _mr(json.dumps({
+            "reply_text": "I know exactly who you are.",
+            "emotion_state": "tense",
+            "gif_search_query": "walter white knowing",
+            "thinking": "He remembers me.",
+            "tool_executed": None,
+            "tool_log": None,
+        }))
+
+        context = {
+            "mode": "direct",
+            "history": [],
+            "language": "en",
+            "relation": "former student",
+            "llmProvider": "minimax",
+        }
+
+        result = await director._handle_direct_chat(
+            "walter", "Do you remember me?", context,
+            session_factory=mock_session_factory,
+        )
+
+        # Verify the character responded
+        assert result["reply_text"] == "I know exactly who you are."
+        # Verify DB was queried for dossiers
+        assert mock_db.execute.await_count >= 1
+
+    async def test_direct_chat_no_dossier_when_factory_none(
+        self, director, mock_provider
+    ):
+        """Given no session_factory, _handle_direct_chat should still work
+        without querying the DB (graceful degrade)."""
+        mock_provider.call_model_with_tools.return_value = _mr(json.dumps({
+            "reply_text": "I don't know you.",
+            "emotion_state": "calm",
+            "gif_search_query": "walter white neutral",
+            "thinking": "Stranger.",
+            "tool_executed": None,
+            "tool_log": None,
+        }))
+
+        context = {
+            "mode": "direct",
+            "history": [],
+            "language": "en",
+            "relation": "stranger",
+            "llmProvider": "minimax",
+        }
+
+        result = await director._handle_direct_chat(
+            "walter", "Who are you?", context,
+            session_factory=None,
+        )
+
+        assert result["reply_text"] == "I don't know you."
+
+    async def test_format_dossier_context_empty_when_no_match(
+        self, director, mock_db, mock_session_factory
+    ):
+        """Given no dossiers match the character, the dossier context
+        string is empty (graceful degrade — no extra prompt noise)."""
+        from agents.memory import format_dossier_context
+
+        # Empty list -> empty string
+        assert format_dossier_context([], "Walter White") == ""
+
+        # Dossier for a different character -> empty string
+        other = MagicMock()
+        other.owner_id = "jesse"
+        other.subject_id = "walter"
+        other.trust_level = 5
+        other.knowledge = "{}"
+        other.relationship_notes = ""
+        assert format_dossier_context([other], "Walter White") == ""
+
+    async def test_format_dossier_context_formats_correctly(
+        self, director, mock_db, mock_session_factory
+    ):
+        """Given a matching dossier, format_dossier_context returns
+        a RELATIONSHIP CONTEXT block with trust, knowledge, and notes."""
+        from agents.memory import format_dossier_context
+
+        d = MagicMock()
+        d.owner_id = "walter"
+        d.subject_id = "walter"
+        d.trust_level = 7
+        d.knowledge = json.dumps({
+            "t1": "Player bought blue meth from Jesse",
+            "t2": "Player knows Walt is Heisenberg",
+        })
+        d.relationship_notes = "[10:00] Initial meeting\n[14:30] Growing trust"
+
+        ctx = format_dossier_context([d], "walter")
+        assert "RELATIONSHIP CONTEXT" in ctx
+        assert "Trust level: 7/10" in ctx
+        assert "blue meth" in ctx
+        assert "Growing trust" in ctx

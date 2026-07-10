@@ -1,5 +1,38 @@
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
+from agents.tools import Tool, ToolResult, ToolExecutor
+
+JESSE_YIELD = Tool(
+    name="cook_yield_estimator",
+    description="Estimate meth yield (grams) and quality grade for a batch.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "batch_size_oz": {"type": "number", "description": "Batch size in ounces"},
+            "purity_target_percent": {"type": "number", "description": "Target purity percent"},
+        },
+        "required": ["batch_size_oz", "purity_target_percent"],
+    },
+)
+
+
+async def _run_yield(arguments: dict) -> ToolResult:
+    try:
+        oz = float(arguments.get("batch_size_oz", 0))
+        purity = float(arguments.get("purity_target_percent", 0))
+    except (TypeError, ValueError):
+        return ToolResult(content="invalid numbers", is_error=True)
+    grams = oz * 28.35 * (purity / 100.0) * 0.8
+    if purity >= 99:
+        quality = "PHARM-GRADE"
+    elif purity >= 90:
+        quality = "GOOD"
+    elif purity >= 70:
+        quality = "CUT"
+    else:
+        quality = "SCRAP"
+    return ToolResult(content=f"batch_oz={oz} purity={purity}% est_grams={grams:.0f} quality={quality}")
+
 
 JESSE_SYSTEM_PROMPT = """You are Jesse Pinkman from Breaking Bad.
 
@@ -65,3 +98,11 @@ class JessePinkman(BaseCharacter):
 
     def system_prompt(self) -> str:
         return JESSE_SYSTEM_PROMPT
+
+    @property
+    def tools(self) -> list[Tool]:
+        return [JESSE_YIELD]
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        return {"cook_yield_estimator": _run_yield}

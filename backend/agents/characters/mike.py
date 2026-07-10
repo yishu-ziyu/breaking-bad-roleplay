@@ -1,5 +1,32 @@
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
+from agents.tools import Tool, ToolResult, ToolExecutor
+
+MIKE_SECURITY = Tool(
+    name="security_posture_reader",
+    description="Read the current security posture / threat level for a location.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {"location": {"type": "string", "description": "Site to assess"}},
+        "required": ["location"],
+    },
+)
+
+_POSTURE = {
+    "superlab": "SECURE",
+    "lab": "ELEVATED",
+    "desert": "EXPOSED",
+    "car wash": "LOW",
+    "bail bonds": "MODERATE",
+}
+
+
+async def _run_security(arguments: dict) -> ToolResult:
+    loc = str(arguments.get("location", "")).strip().lower()
+    level = _POSTURE.get(loc, "UNKNOWN")
+    note = "known site" if loc in _POSTURE else "unrecognised — assume hostile"
+    return ToolResult(content=f"location={loc} posture={level} note={note}")
+
 
 MIKE_SYSTEM_PROMPT = """You are Mike Ehrmantraut from Breaking Bad.
 
@@ -39,3 +66,11 @@ class MikeEhrmantraut(BaseCharacter):
 
     def system_prompt(self) -> str:
         return MIKE_SYSTEM_PROMPT
+
+    @property
+    def tools(self) -> list[Tool]:
+        return [MIKE_SECURITY]
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        return {"security_posture_reader": _run_security}

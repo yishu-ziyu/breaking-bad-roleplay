@@ -1,5 +1,40 @@
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
+from agents.tools import Tool, ToolResult, ToolExecutor
+
+LAB_PRESSURE_SIMULATOR = Tool(
+    name="lab_pressure_simulator",
+    description="Simulate the reactor pressure/temperature state for a compound and return STABLE/CRITICAL/UNSTABLE.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "compound": {"type": "string", "description": "Chemical compound being cooked"},
+            "temperature_c": {"type": "number", "description": "Reactor temperature in Celsius"},
+            "pressure_psi": {"type": "number", "description": "Reactor pressure in PSI"},
+        },
+        "required": ["compound", "temperature_c", "pressure_psi"],
+    },
+)
+
+
+async def _run_lab_pressure_simulator(arguments: dict) -> ToolResult:
+    try:
+        temp = float(arguments.get("temperature_c", 0))
+        psi = float(arguments.get("pressure_psi", 0))
+    except (TypeError, ValueError):
+        return ToolResult(content="invalid numeric inputs", is_error=True)
+    compound = str(arguments.get("compound", "unknown"))
+    stress = psi * (temp / 100.0)
+    if stress > 9000:
+        state = "UNSTABLE — vent immediately"
+    elif stress > 4500:
+        state = "CRITICAL — monitor closely"
+    else:
+        state = "STABLE"
+    return ToolResult(
+        content=f"compound={compound} temp_c={temp} pressure_psi={psi} stress_index={stress:.0f} state={state}"
+    )
+
 
 WALTER_SYSTEM_PROMPT = """You are Walter White from Breaking Bad.
 
@@ -64,3 +99,11 @@ class WalterWhite(BaseCharacter):
 
     def system_prompt(self) -> str:
         return WALTER_SYSTEM_PROMPT
+
+    @property
+    def tools(self) -> list[Tool]:
+        return [LAB_PRESSURE_SIMULATOR]
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        return {"lab_pressure_simulator": _run_lab_pressure_simulator}

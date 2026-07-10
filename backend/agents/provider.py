@@ -1,7 +1,16 @@
 import httpx
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from config import settings
+from agents.tools import (
+    Tool,
+    ToolCall,
+    translate_tools_to_anthropic,
+    translate_tools_to_openai,
+    parse_tool_calls_anthropic,
+    parse_tool_calls_openai,
+)
 
 
 class ProviderFacade:
@@ -26,8 +35,11 @@ class ProviderFacade:
         self.cli_proxy_base_url = settings.cli_proxy_base_url.rstrip("/")
         self.cli_proxy_key = settings.cli_proxy_api_key or self._load_cli_proxy_api_key()
         self.cli_proxy_default_model = settings.cli_proxy_default_model
+        # trust_env=False disables env-level proxies (e.g. Clash socks5h) which
+        # httpx cannot parse. The cli-proxy is reached via explicit base_url.
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0)
+            timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0),
+            trust_env=False,
         )
 
     def _load_cli_proxy_api_key(self) -> str:
@@ -151,15 +163,7 @@ class ProviderFacade:
         if not self.cli_proxy_key:
             raise RuntimeError("CLIProxy API key is not configured")
 
-        system_parts: list[str] = []
-        anthropic_messages: list[dict] = []
-        for message in messages:
-            role = message.get("role")
-            content = message.get("content", "")
-            if role == "system":
-                system_parts.append(str(content))
-            elif role in ("user", "assistant"):
-                anthropic_messages.append({"role": role, "content": str(content)})
+        system_parts, anthropic_messages = _split_anthropic_messages(messages)
 
         payload = {
             "model": model,
@@ -216,3 +220,219 @@ class ProviderFacade:
         still override the provider prefix for Direct/Crew chat.
         """
         return f"cliproxy/{self.cli_proxy_default_model}"
+
+    # ------------------------------------------------------------------
+    # Native function-calling support (DEC-0001 / ARCH-DESIGN-function-calling)
+    # ------------------------------------------------------------------
+
+    async def call_model_with_tools(
+        self,
+        messages: list[dict],
+        model_route: str,
+        tools: list[Tool],
+        tool_choice: str = "auto",
+        max_tokens: int = 4096,
+    ) -> "ModelResult":
+        """Call a model with native function-calling tools.
+
+        Returns a :class:`ModelResult` carrying the final text and/or a list of
+        ``ToolCall`` requests. When the model requests tools the caller must
+        execute them and feed results back (see the tool loop in
+        ``ARCH-DESIGN-function-calling.md``). ``call_model`` (text-only) is
+        unchanged, so non-tool paths keep working.
+        """
+        if "/" not in model_route:
+            raise ValueError(
+                f"Invalid model_route '{model_route}'. Expected 'provider/model'."
+            )
+        provider, model = model_route.split("/", 1)
+        if provider == "minimax":
+            return await self._call_minimax_with_tools(messages, model, tools, max_tokens)
+        if provider == "stepfun":
+            try:
+                return await self._call_stepfun_with_tools(messages, model, tools, tool_choice)
+            except httpx.HTTPStatusError:
+                if not self.minimax_key:
+                    raise
+                return await self._call_minimax_with_tools(messages, "MiniMax-M3", tools, max_tokens)
+        if provider == "cliproxy":
+            return await self._call_cli_proxy_with_tools(messages, model, tools, max_tokens)
+        raise ValueError(f"Unknown provider '{provider}'. Use 'minimax', 'stepfun', or 'cliproxy'.")
+
+    async def _call_minimax_with_tools(
+        self, messages: list[dict], model: str, tools: list[Tool], max_tokens: int
+    ) -> "ModelResult":
+        resp = await self._client.post(
+            "https://api.minimaxi.com/anthropic/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "x-api-key": self.minimax_key,
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                **({"tools": translate_tools_to_anthropic(tools)} if tools else {}),
+                "messages": messages,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            raise RuntimeError(f"MiniMax API error: {data['error'].get('message', str(data['error']))}")
+        return _model_result_from_anthropic(data)
+
+    async def _call_stepfun_with_tools(
+        self, messages: list[dict], model: str, tools: list[Tool], tool_choice: str
+    ) -> "ModelResult":
+        resp = await self._client.post(
+            "https://api.stepfun.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.stepfun_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                **(
+                    {
+                        "tools": translate_tools_to_openai(tools),
+                        "tool_choice": tool_choice,
+                    }
+                    if tools
+                    else {}
+                ),
+                "messages": messages,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            raise RuntimeError(f"StepFun API error: {data['error'].get('message', str(data['error']))}")
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"StepFun API returned no choices: {data}")
+        return _model_result_from_openai(choices[0].get("message", {}))
+
+    async def _call_cli_proxy_with_tools(
+        self, messages: list[dict], model: str, tools: list[Tool], max_tokens: int
+    ) -> "ModelResult":
+        if not self.cli_proxy_key:
+            raise RuntimeError("CLIProxy API key is not configured")
+        system_parts, anthropic_messages = _split_anthropic_messages(messages)
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": anthropic_messages,
+        }
+        if tools:
+            payload["tools"] = translate_tools_to_anthropic(tools)
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
+        resp = await self._client.post(
+            f"{self.cli_proxy_base_url}/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "x-api-key": self.cli_proxy_key,
+            },
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            error = data["error"]
+            error_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+            raise RuntimeError(f"CLIProxy API error: {error_msg}")
+        return _model_result_from_anthropic(data)
+
+
+def _split_anthropic_messages(messages: list[dict]) -> tuple[list[str], list[dict]]:
+    """Convert an internal message list into Anthropic (CLIProxy) wire form.
+
+    Preserves block-array ``content`` (text + tool_use / tool_result blocks)
+    instead of flattening it with ``str()`` — required for native tool loops.
+    OpenAI-style ``{"role": "tool", ...}`` messages are folded into the
+    preceding user turn as ``tool_result`` blocks, which is what Anthropic
+    expects (a bare ``tool`` role is not valid for Anthropic).
+    """
+    system_parts: list[str] = []
+    anthropic_messages: list[dict] = []
+    for message in messages:
+        role = message.get("role")
+        content = message.get("content", "")
+        if role == "system":
+            system_parts.append(_content_to_text(content))
+        elif role in ("user", "assistant"):
+            anthropic_messages.append(
+                {"role": role, "content": _normalize_block_content(content)}
+            )
+        elif role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": message.get("tool_call_id"),
+                "content": message.get("content", ""),
+            }
+            if (
+                anthropic_messages
+                and anthropic_messages[-1].get("role") == "user"
+                and isinstance(anthropic_messages[-1].get("content"), list)
+            ):
+                anthropic_messages[-1]["content"].append(block)
+            else:
+                anthropic_messages.append({"role": "user", "content": [block]})
+    return system_parts, anthropic_messages
+
+
+def _content_to_text(content) -> str:
+    """Flatten a message content into plain text (for the system prompt)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return str(content)
+
+
+def _normalize_block_content(content):
+    """Keep block-array content as-is; stringify plain text for Anthropic."""
+    if isinstance(content, list):
+        return content
+    return str(content)
+
+
+def _model_result_from_anthropic(data: dict) -> "ModelResult":
+    content_blocks = data.get("content", [])
+    content = "".join(
+        block.get("text", "") for block in content_blocks if block.get("type") == "text"
+    )
+    stop_reason = data.get("stop_reason")
+    # Some Anthropic-compatible endpoints return tool_use blocks without the
+    # canonical "tool_use" stop_reason — detect tool calls from the blocks too.
+    has_tool_use = any(
+        b.get("type") == "tool_use" for b in content_blocks if isinstance(b, dict)
+    )
+    tool_calls = (
+        parse_tool_calls_anthropic(content_blocks)
+        if (stop_reason == "tool_use" or has_tool_use)
+        else []
+    )
+    return ModelResult(content=content, tool_calls=tool_calls, stop_reason=stop_reason)
+
+
+def _model_result_from_openai(message: dict) -> "ModelResult":
+    content = message.get("content", "") or ""
+    tool_calls = parse_tool_calls_openai(message)
+    stop_reason = "tool_use" if tool_calls else "stop"
+    return ModelResult(content=content, tool_calls=tool_calls, stop_reason=stop_reason)
+
+
+@dataclass
+class ModelResult:
+    """Normalised model response that may carry tool calls."""
+
+    content: str
+    tool_calls: list[ToolCall]
+    stop_reason: str | None = None

@@ -107,16 +107,53 @@ function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
     case 'world_state_delta': {
       const deltas = evt.data.deltas as Array<Record<string, string>> | undefined
       if (!deltas?.length) return lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.'
-      const first = deltas[0]
-      return `${first.target ?? first.entity}: ${first.field} → ${first.new_value ?? 'changed'}`
+      const rendered = deltas.map(d => {
+        const hasContent = d.target || d.entity || d.field || d.old_value || d.new_value
+        if (!hasContent) return null
+        const entity = d.target ?? d.entity ?? ''
+        if (!entity && !d.field) return null
+        return `${entity}: ${d.field} ${d.old_value ?? '∅'} → ${d.new_value ?? '∅'}`
+      }).filter(Boolean)
+      return rendered.length > 0 ? rendered.join('\n') : (lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.')
     }
     case 'status':
     case 'complete':
     case 'error':
-      return (evt.data.message as string) ?? ''
+      return translateBackendMessage(evt.data.message as string, lang)
     default:
       return ''
   }
+}
+
+/* P1-3: translate known backend-emitted English status strings */
+const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
+  'Director is analysing the task...': {
+    en: 'Director is analysing the task...',
+    zh: '导演正在分析任务…',
+  },
+  'Director outlined {n} beat(s). Beginning roleplay…': {
+    en: 'Director outlined {n} beat(s). Beginning roleplay…',
+    zh: '导演已规划 {n} 个剧情节拍。开始角色扮演…',
+  },
+  'No action received — continuing automatically.': {
+    en: 'No action received — continuing automatically.',
+    zh: '未收到玩家操作 — 自动继续…',
+  },
+}
+
+function translateBackendMessage(msg: string, lang: Language): string {
+  if (lang === 'en' || !msg) return msg
+  for (const [key, translations] of Object.entries(BACKEND_STATUS_TRANSLATIONS)) {
+    if (msg === key) return translations.zh
+    /* Handle the beat count variant */
+    if (key.includes('{n}') && msg.startsWith('Director outlined ')) {
+      const match = msg.match(/Director outlined (\d+) beat\(s\)\. Beginning roleplay…/)
+      if (match) {
+        return translations.zh.replace('{n}', match[1])
+      }
+    }
+  }
+  return msg
 }
 
 function getStoryCardHeading(evt: StoryEvent | null, fallback: string): string {
@@ -147,12 +184,6 @@ type ChatMessage = {
   thinking?: string
   toolExecuted?: string | null
   toolLog?: string | null
-}
-
-type PressureProfile = {
-  trust: string
-  pressure: string
-  conflict: string
 }
 
 type Character = {
@@ -277,6 +308,7 @@ const uiText: Record<Language, Record<string, string>> = {
     stop: 'Stop',
     storyOutline: 'Story Outline',
     paused: 'Paused',
+    toolLabel: 'Tool Call',
     eventOutline: 'Story Outline',
     eventSceneChange: 'Scene Setup',
     eventSpeaks: 'speaks',
@@ -368,6 +400,7 @@ const uiText: Record<Language, Record<string, string>> = {
     stop: '停止',
     storyOutline: '任务大纲',
     paused: '已暂停',
+    toolLabel: '工具调用',
     eventOutline: '故事大纲',
     eventSceneChange: '场景建立',
     eventSpeaks: '说',
@@ -419,85 +452,8 @@ const uiText: Record<Language, Record<string, string>> = {
   },
 }
 
-const pressureProfiles: Record<CharacterId, Record<Language, PressureProfile>> = {
-  walter: {
-    en: {
-      trust: 'conditional, usefulness first',
-      pressure: 'control through expertise and shame',
-      conflict: 'respect, obedience, and proof of competence',
-    },
-    zh: {
-      trust: '有条件，先看你是否有用',
-      pressure: '用专业和羞辱建立控制',
-      conflict: '尊重、服从、证明自己够格',
-    },
-  },
-  jesse: {
-    en: {
-      trust: 'fragile loyalty',
-      pressure: 'emotion, guilt, and sudden honesty',
-      conflict: 'abandonment, respect, and being used',
-    },
-    zh: {
-      trust: '脆弱但重情义',
-      pressure: '情绪、愧疚和突然的真话',
-      conflict: '被抛下、被尊重、被利用',
-    },
-  },
-  skyler: {
-    en: {
-      trust: 'earned through plain answers',
-      pressure: 'calm questions with family stakes',
-      conflict: 'safety, lies, and who controls the home',
-    },
-    zh: {
-      trust: '靠坦白一点点换来',
-      pressure: '用冷静追问把家庭风险摆上桌',
-      conflict: '安全、谎言、家里谁说了算',
-    },
-  },
-  saul: {
-    en: {
-      trust: 'transactional until the fee clears',
-      pressure: 'jokes that expose legal danger',
-      conflict: 'cash, leverage, and plausible deniability',
-    },
-    zh: {
-      trust: '交易型，先看钱和风险',
-      pressure: '用玩笑点破法律危险',
-      conflict: '现金、把柄、可否撇清关系',
-    },
-  },
-  mike: {
-    en: {
-      trust: 'low, proven by discipline',
-      pressure: 'few words, practical consequences',
-      conflict: 'competence, silence, and loose ends',
-    },
-    zh: {
-      trust: '很低，只相信纪律',
-      pressure: '少说话，只讲后果',
-      conflict: '能力、沉默、未清理风险',
-    },
-  },
-  gus: {
-    en: {
-      trust: 'professional until broken',
-      pressure: 'courtesy as an implied threat',
-      conflict: 'performance, loyalty, and discretion',
-    },
-    zh: {
-      trust: '职业化，破一次就结束',
-      pressure: '礼貌本身就是威胁',
-      conflict: '表现、忠诚、守口如瓶',
-    },
-  },
-}
 
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
-
 function getRelationLabel(relation: string, lang: Language): string {
   return relationLabels[relation]?.[lang] ?? relation
 }
@@ -507,18 +463,6 @@ function formatRelation(char: Character, relation: string, lang: Language): stri
   return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
 }
 
-function getPressureProfile(characterId: CharacterId, relation: string, lang: Language): PressureProfile {
-  const profile = pressureProfiles[characterId][lang]
-  const relationLabel = getRelationLabel(relation, lang)
-  return {
-    ...profile,
-    conflict: lang === 'zh'
-      ? `${relationLabel}：${profile.conflict}`
-      : `${relationLabel}: ${profile.conflict}`,
-  }
-}
-
-/* ------------------------------------------------------------------ */
 /*  BeatControls — decision UI at beat_ready                          */
 /* ------------------------------------------------------------------ */
 
@@ -653,10 +597,6 @@ function App() {
   // Relation per character (persist across character switches)
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
   const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
-  const pressureProfile = useMemo(
-    () => getPressureProfile(selectedCharId, relation, language),
-    [selectedCharId, relation, language],
-  )
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
@@ -860,17 +800,18 @@ function App() {
   const showSavePrompt = !auth.user && userTurnCount >= 3
 
   /* ---- Story start ---- */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const handleStartStory = useCallback(async () => {
     if (!storyTask.trim()) return
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     setError(null)
     try {
-      await story.startStory(storyTask, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
+      await story.startStory(storyTask, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [storyTask, story, selectedCharId, relation])
+  }, [storyTask, story, selectedCharId, relation, language])
 
   /* ---- Enter world from landing screen ---- */
   const handleEnterWorld = useCallback(() => {
@@ -1079,18 +1020,18 @@ function App() {
 
   const handleContinueChapter = useCallback(async () => {
     const prompt = `${DEFAULT_STORY_PROMPT}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
-    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
-  }, [relation, selectedCharId, story, storyContextSummary])
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+  }, [relation, selectedCharId, story, storyContextSummary, language])
 
   const handleBranchStory = useCallback(async () => {
     const prompt = `${DEFAULT_STORY_PROMPT}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.\n\nOriginal context:\n${storyContextSummary || 'No previous context was captured.'}`
-    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
-  }, [relation, selectedCharId, story, storyContextSummary])
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+  }, [relation, selectedCharId, story, storyContextSummary, language])
 
   const handleReplayBeat = useCallback(async () => {
     const prompt = `${DEFAULT_STORY_PROMPT}\n\nReplay the last beat from a more intimate angle. Keep the same premise, but reveal a hidden motive or unspoken fear that was not explicit before.\n\nPrevious context:\n${storyContextSummary || 'No previous context was captured.'}`
-    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null)
-  }, [relation, selectedCharId, story, storyContextSummary])
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+  }, [relation, selectedCharId, story, storyContextSummary, language])
 
   /* ---- Render ---- */
   if (!hasEnteredWorld) {
@@ -1162,10 +1103,19 @@ function App() {
         </div>
       )}
       <main className="app-shell" lang={language === 'zh' ? 'zh-CN' : 'en'}>
-      {/* ===================== SIDEBAR ===================== */}
-      <aside className="sidebar">
-        {/* Brand */}
-        <div className="brand">
+        <div className={`sidebar-wrapper ${sidebarCollapsed ? 'sidebar-wrapper--collapsed' : ''}`}>
+          <button
+            type="button"
+            className="sidebar__toggle"
+            onClick={() => setSidebarCollapsed(v => !v)}
+            aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            aria-expanded={!sidebarCollapsed}
+          >
+            {sidebarCollapsed ? '◂ Sidebar' : '▸'}
+          </button>
+          <aside className="sidebar">
+            {/* Brand */}
+            <div className="brand">
           <span className="brand-icon" />
           <div>
             <h1>{t.storyTitle}</h1>
@@ -1231,23 +1181,6 @@ function App() {
               <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
             ))}
           </select>
-          <div className="pressure-dossier" aria-label={t.pressureDossier}>
-            <span className="pressure-dossier__eyebrow">{t.pressureDossier}</span>
-            <dl>
-              <div>
-                <dt>{t.pressureTrust}</dt>
-                <dd>{pressureProfile.trust}</dd>
-              </div>
-              <div>
-                <dt>{t.pressureStyle}</dt>
-                <dd>{pressureProfile.pressure}</dd>
-              </div>
-              <div>
-                <dt>{t.pressureConflict}</dt>
-                <dd>{pressureProfile.conflict}</dd>
-              </div>
-            </dl>
-          </div>
         </section>
 
         {/* Mode (chat only) */}
@@ -1273,7 +1206,8 @@ function App() {
             <option value="cliproxy">CLIProxy (本地)</option>
           </select>
         </section>
-      </aside>
+          </aside>
+        </div>
 
       {/* ===================== MAIN PANEL ===================== */}
       {view === 'story' ? (
@@ -1299,12 +1233,9 @@ function App() {
             <div className="story-hud__metric">
               <span>{t.tension}</span>
               <strong>
-                {story.connectionState === 'idle' && t.setStage}
-                {story.connectionState === 'connecting' && t.connecting}
-                {story.connectionState === 'streaming' && t.streaming}
-                {story.connectionState === 'beat_paused' && t.paused}
-                {story.connectionState === 'complete' && t.eventComplete}
-                {story.connectionState === 'error' && t.eventError}
+                {currentStoryEvent?.data?.emotion_state
+                  ? currentStoryEvent.data.emotion_state as string
+                  : ''}
               </strong>
             </div>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
@@ -1372,10 +1303,6 @@ function App() {
                     <p className="story-outline__body">{story.outline}</p>
                   </div>
                 )}
-
-                <div className="story-progress">
-                  <span>{storyBeatLabel}</span>
-                </div>
               </div>
 
               <div className="story-board__grid">
@@ -1418,11 +1345,17 @@ function App() {
                           )}
                           {evt.type === 'world_state_delta' && (
                             <ul className="world-delta">
-                              {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => (
-                                <li key={j}>
-                                  {d.target ?? d.entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
-                                </li>
-                              ))}
+                              {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => {
+                                const hasContent = d.target || d.entity || d.field || d.old_value || d.new_value
+                                if (!hasContent) return null
+                                const entity = d.target ?? d.entity ?? ''
+                                if (!entity && !d.field) return null
+                                return (
+                                  <li key={j}>
+                                    {entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
+                                  </li>
+                                )
+                              })}
                             </ul>
                           )}
                           {evt.type === 'status' && (
@@ -1432,7 +1365,7 @@ function App() {
                             <p>{(evt.data.message as string) ?? t.storyComplete}</p>
                           )}
                           {evt.type === 'error' && (
-                            <p className="status-msg">⚠ {(evt.data.message as string) ?? 'Error'}</p>
+                            <p className="status-msg">⚠ {(evt.data.message as string) ?? t.eventError}</p>
                           )}
                         </div>
                       </div>
@@ -1452,20 +1385,6 @@ function App() {
                       <VoicePlayer text={currentStorySpeakerText} characterId={currentStorySpeakerId} language={language} />
                     )}
                     <GifCard src={currentStoryEvent ? getStoryEventGif(currentStoryEvent) : null} alt={t.gifTrigger} />
-                  </div>
-                  <div className="story-scene-card__pressure">
-                    <div>
-                      <strong>{t.unspokenPressure}</strong>
-                      <p>{pressureProfile.pressure}</p>
-                    </div>
-                    <div>
-                      <strong>{t.possibleConsequences}</strong>
-                      <p>{pressureProfile.conflict}</p>
-                    </div>
-                    <div>
-                      <strong>{t.relationshipImpact}</strong>
-                      <p>{t.pressureTrust}: {pressureProfile.trust}</p>
-                    </div>
                   </div>
                 </section>
               </div>
@@ -1534,10 +1453,6 @@ function App() {
                   <h2>
                     {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
                   </h2>
-                  <div className="chat-pressure-line">
-                    <span>{t.pressureTrust}: {pressureProfile.trust}</span>
-                    <span>{t.pressureConflict}: {pressureProfile.conflict}</span>
-                  </div>
                   {showSavePrompt && (
                     <div className="save-prompt">
                       {t.savePrompt}
@@ -1570,7 +1485,7 @@ function App() {
                     <p>{msg.text}</p>
                     {msg.toolExecuted && (
                       <div className="tool-pill">
-                        <span>Tool: <code>{msg.toolExecuted}</code></span>
+                        <span>{t.toolLabel}: <code>{msg.toolExecuted}</code></span>
                         {msg.toolLog && <p>{msg.toolLog}</p>}
                       </div>
                     )}

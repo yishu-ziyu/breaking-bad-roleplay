@@ -152,7 +152,7 @@ export interface UseStoryStreamReturn {
   autoContinued: boolean
   isResuming: boolean
   resumeToast: string | null
-  startStory: (taskPrompt: string, characterId?: string, voiceExample?: string | null) => Promise<void>
+  startStory: (taskPrompt: string, characterId?: string, voiceExample?: string | null, language?: string) => Promise<void>
   sendAction: (action: StoryAction, params?: StoryActionParams, characterId?: string) => Promise<void>
   reconnect: () => void
   reset: () => void
@@ -229,10 +229,13 @@ export function useStoryStream(): UseStoryStreamReturn {
     })
   }, [])
 
-  const connectStream = useCallback((sid: string, voiceExample?: string | null) => {
+  const connectStream = useCallback((sid: string, voiceExample?: string | null, language?: string) => {
     closeEventSource()
-    const params = voiceExample ? `?voice_example=${encodeURIComponent(voiceExample)}` : ''
-    const es = new EventSource(`/api/session/${sid}/stream${params}`)
+    const parts: string[] = []
+    if (voiceExample) parts.push(`voice_example=${encodeURIComponent(voiceExample)}`)
+    if (language) parts.push(`language=${encodeURIComponent(language)}`)
+    const qs = parts.length ? `?${parts.join('&')}` : ''
+    const es = new EventSource(`/api/session/${sid}/stream${qs}`)
     esRef.current = es
 
     es.addEventListener('outline', (e: MessageEvent) => {
@@ -317,7 +320,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     })
   }, [appendEvent, closeEventSource, setSessionError])
 
-  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', voiceExample?: string | null): Promise<void> => {
+  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', voiceExample?: string | null, language?: string): Promise<void> => {
     clearStorySessionState()
     setSessionError(null)
     setConnectionState('connecting')
@@ -330,6 +333,7 @@ export function useStoryStream(): UseStoryStreamReturn {
           title: taskPrompt.slice(0, 80),
           task_prompt: taskPrompt,
           active_character_id: characterId,
+          language: language || 'en',
         }),
       })
       if (!res.ok) {
@@ -341,7 +345,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       setSessionId(sid)
       sessionRef.current = sid
       writeSavedSessionId(sid)
-      connectStream(sid, voiceExample)
+      connectStream(sid, voiceExample, language)
     } catch (e) {
       setSessionError(e instanceof Error ? e.message : 'Unknown error')
       setConnectionState('error')

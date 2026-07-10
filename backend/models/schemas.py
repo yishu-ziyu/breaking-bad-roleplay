@@ -7,6 +7,7 @@ class SessionCreate(BaseModel):
     title: str
     task_prompt: str
     active_character_id: Optional[str] = None
+    language: str = "en"
 
 
 class SessionAction(BaseModel):

@@ -9,6 +9,17 @@ from fastapi import HTTPException
 
 from api.routes import _session_queues, session_action
 from models.schemas import SessionAction
+from agents.provider import ModelResult
+
+
+def _mr(text: str, tool_calls=None) -> ModelResult:
+    """Build a ModelResult for a character sub-agent call (native function
+    calling path, DEC-0001)."""
+    return ModelResult(
+        content=text,
+        tool_calls=tool_calls or [],
+        stop_reason="tool_use" if tool_calls else "end_turn",
+    )
 
 
 class _ScalarResult:
@@ -156,16 +167,21 @@ class TestLoop4DirectorVoiceAnchor:
         ])
         captured_messages: list = []
 
-        async def capture(messages, route):
+        # Director planning call (call_model) returns the beat events; the
+        # character sub-agent rewrite now routes through call_model_with_tools
+        # (native function calling, DEC-0001) returning a ModelResult. Both
+        # capture their message list so we can inspect the VOICE ANCHOR block
+        # prepended to the sub-agent system prompt.
+        def _plan_capture(messages, route):
             captured_messages.append(messages)
-            # First capture returns the beat event JSON; subsequent
-            # captures are the sub-agent rewrite call - return a plain
-            # string so we can inspect the system message that framed it.
-            if len(captured_messages) == 1:
-                return beat_events
-            return "starter reply"
+            return beat_events
 
-        mock_provider.call_model = AsyncMock(side_effect=capture)
+        async def _rewrite_capture(messages, *args, **kwargs):
+            captured_messages.append(messages)
+            return _mr("starter reply")
+
+        mock_provider.call_model = AsyncMock(side_effect=_plan_capture)
+        mock_provider.call_model_with_tools = AsyncMock(side_effect=_rewrite_capture)
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
         )

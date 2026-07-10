@@ -1,5 +1,6 @@
-task_id: breaking-bad-roleplay-qa-1-ui-2-a-b-qa-3
+task_id: bb-roleplay-architecture-audit-2026-07
 active: true
 current_phase: pm-intake
-status: in_progress
-phase: complete
+status: loop-8-complete
+loop: 8
+next_action: Loop 9 PM Intake

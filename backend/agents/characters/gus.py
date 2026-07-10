@@ -1,5 +1,27 @@
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
+from agents.tools import Tool, ToolResult, ToolExecutor
+
+GUS_COMPLIANCE = Tool(
+    name="compliance_checker",
+    description="Check an operation against Gus's compliance rules; returns COMPLIANT or NON_COMPLIANT with gaps.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {"operation": {"type": "string", "description": "Operation to vet"}},
+        "required": ["operation"],
+    },
+)
+
+_BANNED = ["kill civilian", "expose front", "skip verification"]
+
+
+async def _run_compliance(arguments: dict) -> ToolResult:
+    op = str(arguments.get("operation", "")).lower()
+    gaps = [b for b in _BANNED if b in op]
+    if gaps:
+        return ToolResult(content=f"NON_COMPLIANT gaps={gaps}")
+    return ToolResult(content="COMPLIANT no gaps")
+
 
 GUS_SYSTEM_PROMPT = """You are Gustavo Fring from Breaking Bad.
 
@@ -39,3 +61,11 @@ class GusFring(BaseCharacter):
 
     def system_prompt(self) -> str:
         return GUS_SYSTEM_PROMPT
+
+    @property
+    def tools(self) -> list[Tool]:
+        return [GUS_COMPLIANCE]
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        return {"compliance_checker": _run_compliance}

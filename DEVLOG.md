@@ -1,5 +1,32 @@
 # Breaking Bad Roleplay — 开发日志
 
+## 2026-07-10 Loop 8: Story mode language enforcement + hardening ✅
+
+### 背景
+- Loop 8 PM Intake 由子 Agent 完成（`.ship/loop-8-brief.md`）。
+- Track A: 线上体验加固（SSE heartbeat 分析后判定不适合当前应用节奏，revert + 删除 dead code；修复后端错误消息敏感信息泄漏回归）。
+- Track B: Story 模式强制角色 prompt 遵守玩家语言选择。
+
+### 改动
+- `backend/agents/director.py` — 新增 `LANG_DIRECTIVE` dict + `_language_directive()` helper；`process()`、`_generate_outline()`、`_generate_outline_followup()`、`_generate_branch_outline()`、`_generate_beat()` 全部加 `language` 参数；outline prompt user message 和角色 sub-agent prompt 注入语言指令。
+- `backend/api/routes.py` — `stream_session()` 加 `language` query param，传入 `director.process()`。
+- `backend/models/schemas.py` — `SessionCreate` 新增 `language: str = "en"`。
+- `src/hooks/useStoryStream.ts` — `startStory` 和 `connectStream` 加 `language` 参数，session create body 和 SSE URL query string 都传 language。
+- `src/App.tsx` — 4 个 `startStory` 调用点（handleStartStory、handleContinueChapter、handleBranchStory、handleReplayBeat）全部传 `language`，dependency array 同步更新。
+- `backend/tests/test_story_language.py` — 新增 3 个 TDD 测试（zh directive、en directive、outline prompt 语言指令）。
+- 删除 `src/lib/sseClient.ts` — 整个文件是 dead code（零导入），heartbeat 修复无意义。
+
+### 决策记录
+- SSE heartbeat: 从第一性原理分析，应用 beat 之间合法沉默 5 分钟，45s 超时会打断正常等待流程。结论：revert，删除 dead code 文件。如果未来需要 heartbeat，需服务端 keepalive 配合。
+
+### 验证
+- `npm test` — 55 passed
+- `npm run lint` — passed
+- `npm run build` — passed
+- `cd backend && uv run pytest` — 172 passed (169 原有 + 3 新)
+- `npx playwright test` — 25 passed, 1 skipped
+- Playwright playthrough: 中文 UI + Story 模式语言强制验证通过
+
 ## 2026-07-07 Story Board HUD reference pass ✅
 
 ### 背景

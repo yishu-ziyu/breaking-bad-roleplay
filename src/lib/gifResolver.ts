@@ -184,7 +184,9 @@ export function resolveGifUrl(
   characterId: RoleAssetCharacterId,
   emotion?: string | null,
   gifQuery?: string | null,
+  skipGif?: boolean,
 ): string | null {
+  if (skipGif) return null
   const pool = roleAssets[characterId]?.gifPools ?? []
   if (pool.length === 0) return null
 

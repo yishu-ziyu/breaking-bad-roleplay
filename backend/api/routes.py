@@ -225,6 +225,7 @@ async def session_action(
 async def stream_session(
     session_id: str,
     voice_example: str | None = Query(default=None),
+    language: str = Query(default="en"),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -277,6 +278,7 @@ async def stream_session(
                 session_id=resolved_session_id,
                 action_queue=beat_queue,
                 voice_example=voice_example,
+                language=language,
             ):
                 # Stop-signal check: POST /session/{id}/action with
                 # action=stop flips session.status to "paused" in a
@@ -481,6 +483,7 @@ async def chat(
                 "llmProvider": payload.llmProvider,
                 "voiceExample": payload.voiceExample,
             },
+            session_factory=async_session_factory,
         )
         return result
     except HTTPException:
