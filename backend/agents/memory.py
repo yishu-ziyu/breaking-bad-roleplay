@@ -17,10 +17,10 @@ import re
 from typing import Any
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import CharacterDossier, CharacterState, Session
+from db.models import CharacterDossier
 
 logger = logging.getLogger(__name__)
 

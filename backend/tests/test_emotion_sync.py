@@ -213,7 +213,7 @@ class TestCycle37_EmotionSync:
             return_value="stepfun/step-3.7-flash"
         )
 
-        events = await _run_beat(director, mock_provider, mock_db)
+        await _run_beat(director, mock_provider, mock_db)
 
         msgs = _added_messages(mock_db)
         assert len(msgs) == 1
@@ -279,7 +279,7 @@ class TestCycle37_EmotionSync:
             return_value="stepfun/step-3.7-flash"
         )
 
-        events = await _run_beat(director, mock_provider, mock_db)
+        await _run_beat(director, mock_provider, mock_db)
 
         msgs = _added_messages(mock_db)
         assert len(msgs) == 2, f"Expected 2 Messages, got {len(msgs)}"

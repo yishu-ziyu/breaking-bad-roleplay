@@ -1,5 +1,4 @@
 """Tests for Director beat JSON parsing resilience."""
-import pytest
 from agents.director import DirectorAgent
 
 
