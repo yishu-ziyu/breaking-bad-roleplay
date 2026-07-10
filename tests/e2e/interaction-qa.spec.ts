@@ -435,8 +435,7 @@ test('TC-IX-9: beat_paused shows all 4 decision buttons enabled', async ({ page 
    TC-IX-10: Redirect flow — opens input, validates, submits
    ================================================================= */
 test('TC-IX-10: redirect opens input, validates empty, submits with text', async ({ page }) => {
-  const actionLog: Array<Record<string, unknown>> = []
-  await driveToBeatPaused(page, { outline: '1. Plan\n2. Execute' })
+  const actionLog = await driveToBeatPaused(page, { outline: '1. Plan\n2. Execute' })
 
   // Click Redirect
   await page.locator('.beat-controls button', { hasText: /Redirect|重定向/ }).click()
@@ -467,17 +466,17 @@ test('TC-IX-10: redirect opens input, validates empty, submits with text', async
   await expect.poll(() => actionLog.some((e) => e.action === 'redirect')).toBe(true)
   expect(actionLog.find((e) => e.action === 'redirect')?.redirect_prompt).toBe('Walter decides to betray Gus.')
 
-  // After submission, redirect input hidden, BeatControls shown again
+  // After submission, redirect input and BeatControls are replaced by streaming state
   await expect(page.locator('.redirect-control')).toHaveCount(0)
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expect(page.locator('.beat-controls')).toHaveCount(0)
+  await expect(page.locator('.streaming-indicator')).toBeVisible()
 })
 
 /* =================================================================
    TC-IX-11: Switch perspective — opens select, validates, submits
    ================================================================= */
 test('TC-IX-11: switch perspective opens select, validates empty, submits with character', async ({ page }) => {
-  const actionLog: Array<Record<string, unknown>> = []
-  await driveToBeatPaused(page)
+  const actionLog = await driveToBeatPaused(page)
 
   // Click Switch Perspective
   await page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ }).click()
@@ -505,8 +504,7 @@ test('TC-IX-11: switch perspective opens select, validates empty, submits with c
    TC-IX-12: Continue — transitions to streaming then back to beat_paused
    ================================================================= */
 test('TC-IX-12: continue action transitions through streaming to next beat', async ({ page }) => {
-  const actionLog: Array<Record<string, unknown>> = []
-  await driveToBeatPaused(page)
+  const actionLog = await driveToBeatPaused(page)
 
   // Click Continue
   await page.locator('.beat-controls button', { hasText: /Continue|继续/ }).click()
@@ -532,7 +530,7 @@ test('TC-IX-12: continue action transitions through streaming to next beat', asy
 
   // Back to beat_paused
   await expect(page.locator('.beat-controls')).toBeVisible()
-  await expect(page.locator('.story-progress span')).toContainText(/Beat 2|节点 2/)
+  await expect(page.locator('.story-hud__metric').filter({ hasText: /Beat 2|节点 2/ }).locator('strong')).toBeVisible()
 })
 
 /* =================================================================
@@ -587,11 +585,12 @@ test('TC-IX-15: error event shows error message and reconnect/restart buttons', 
 /* =================================================================
    TC-IX-16: Pending state prevents double-clicking actions
    ================================================================= */
-test('TC-IX-16: pending state disables all beat-controls buttons during action', async ({ page }) => {
+test('TC-IX-16: pending action hides beat-controls to prevent double submit', async ({ page }) => {
   const actionLog: Array<Record<string, unknown>> = []
   await driveToBeatPaused(page)
 
   // Mock action endpoint to delay response
+  await page.unroute('**/api/session/*/action')
   await page.route('**/api/session/*/action', async (route) => {
     const body = route.request().postDataJSON()
     actionLog.push(body as Record<string, unknown>)
@@ -608,21 +607,14 @@ test('TC-IX-16: pending state disables all beat-controls buttons during action',
   await page.locator('.beat-controls button', { hasText: /Continue|继续/ }).click()
   await page.waitForTimeout(50)
 
-  // All other buttons should be disabled while pending
-  const stopBtn = page.locator('.beat-controls button', { hasText: /Stop|停止/ })
-  await expect(stopBtn).toBeDisabled()
-
-  const redirectBtn = page.locator('.beat-controls button', { hasText: /Redirect|重定向/ })
-  await expect(redirectBtn).toBeDisabled()
-
-  const switchBtn = page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ })
-  await expect(switchBtn).toBeDisabled()
+  // Optimistic streaming state removes every action control while pending.
+  await expect(page.locator('.beat-controls')).toHaveCount(0)
+  await expect(page.locator('.streaming-indicator')).toBeVisible()
 
   // Wait for response
   await page.waitForTimeout(600)
 
-  // Now buttons should be enabled again (but beat-controls is gone since streaming)
-  await expect(page.locator('.beat-controls')).toHaveCount(0)
+  expect(actionLog).toHaveLength(1)
 })
 
 /* =================================================================
@@ -669,7 +661,10 @@ test('TC-IX-17: chat send button disabled during API call', async ({ page }) => 
   // Wait for response
   await page.waitForTimeout(600)
 
-  // Send button re-enabled
+  // The request is done, but the cleared input keeps submit disabled.
+  await expect(sendBtn).toContainText(/Send|发送/)
+  await expect(sendBtn).toBeDisabled()
+  await input.fill('Next message')
   await expect(sendBtn).toBeEnabled()
 
   await page.waitForTimeout(500)
@@ -710,8 +705,10 @@ test('TC-IX-19: beat-controls buttons have pointer cursor and visible focus', as
   const cursor = await continueBtn.evaluate((el) => getComputedStyle(el).cursor)
   expect(cursor).toBe('pointer')
 
-  // Focus visible via keyboard
-  await continueBtn.focus()
+  // Move away and back with the keyboard so :focus-visible applies.
+  await continueBtn.press('Tab')
+  await page.keyboard.press('Shift+Tab')
+  await expect(continueBtn).toBeFocused()
   await page.waitForTimeout(50)
 
   const focusVisible = await continueBtn.evaluate((el) => {
@@ -804,14 +801,14 @@ test('TC-IX-23: mode toggle visible only in chat view, not story view', async ({
   })
 
   // Mode toggle visible in chat
-  await expect(page.locator('.field-label', { hasText: /Mode/ })).toBeVisible()
+  await expect(page.locator('.field-label', { hasText: /^Mode$/ })).toBeVisible()
 
   // Switch to story
   await page.locator('.seg-control button', { hasText: /Story/ }).click()
   await page.waitForTimeout(100)
 
   // Mode toggle NOT visible in story
-  await expect(page.locator('.field-label', { hasText: /Mode/ })).toHaveCount(0)
+  await expect(page.locator('.field-label', { hasText: /^Mode$/ })).toHaveCount(0)
 })
 
 /* =================================================================
@@ -821,7 +818,7 @@ test('TC-IX-24: story progress indicator updates correctly across beats', async 
   await driveToBeatPaused(page)
 
   // Beat 1
-  await expect(page.locator('.story-progress span')).toContainText(/Beat 1|节点 1/)
+  await expect(page.locator('.story-hud__metric').filter({ hasText: /Beat 1|节点 1/ }).locator('strong')).toBeVisible()
 
   // Continue to beat 2
   await page.locator('.beat-controls button', { hasText: /Continue|继续/ }).click()
@@ -836,7 +833,7 @@ test('TC-IX-24: story progress indicator updates correctly across beats', async 
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
-  await expect(page.locator('.story-progress span')).toContainText(/Beat 2|节点 2/)
+  await expect(page.locator('.story-hud__metric').filter({ hasText: /Beat 2|节点 2/ }).locator('strong')).toBeVisible()
 })
 
 /* =================================================================
@@ -850,7 +847,7 @@ test('TC-IX-25: error message clears when story recovers', async ({ page }) => {
   await expect(page.locator('.story-error')).toBeVisible()
 
   // Click restart (which goes back to idle)
-  await page.locator('.story-error button', { hasText: /Restart/ }).click()
+  await page.locator('.story-error button', { hasText: /Restart|重新开始/ }).click()
   await page.waitForTimeout(100)
 
   // Error state cleared
