@@ -274,10 +274,20 @@ export function useStoryStream(): UseStoryStreamReturn {
         const payload = JSON.parse(e.data)
         const beatId = typeof payload.data?.beat_id === 'string' ? payload.data.beat_id : null
         const parsedBeatIndex = beatIndexFromBeatId(beatId)
+        const isFinal = payload.data?.is_final === true
         setCurrentBeatId(beatId)
         setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
         setAutoContinued(false)
-        setConnectionState('beat_paused')
+        if (isFinal) {
+          // The server sends `complete` immediately after the final beat.
+          // Keep this source alive long enough to receive that terminal frame.
+          setConnectionState('streaming')
+        } else {
+          // Vercel renders one beat per invocation. Close the completed source
+          // and wait for a successful player action before opening the next.
+          setConnectionState('beat_paused')
+          closeEventSource()
+        }
       } catch { /* ignore */ }
     })
 
