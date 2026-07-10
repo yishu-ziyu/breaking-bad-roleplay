@@ -53,7 +53,7 @@ console.log('Textarea count:', textareaCount);
 if (textareaCount > 0) {
   await textarea.click();
   await page.waitForTimeout(200);
-  
+
   // Clear and type
   await textarea.fill('');
   await page.keyboard.type('Jesse 想要退出制毒生意，但 Walter 不同意', { delay: 30 });

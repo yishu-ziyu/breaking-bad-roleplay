@@ -31,31 +31,31 @@ console.log('Page info:', JSON.stringify(info, null, 2));
 if (info.hasAppShell) {
   // Screenshot main UI
   await page.screenshot({ path: '/tmp/bbr-r1-main-ui.png', fullPage: false });
-  
+
   // Switch to Chinese
   await page.locator('text=中文').first().click();
   await page.waitForTimeout(600);
-  
+
   // Switch to Story mode
   await page.locator('text=剧情任务').first().click();
   await page.waitForTimeout(600);
-  
+
   await page.screenshot({ path: '/tmp/bbr-r1-story-setup.png', fullPage: false });
-  
+
   // Fill story prompt
   const textarea = await page.locator('textarea').first();
   if (await textarea.count() > 0) {
     await textarea.fill('Walter 和 Jesse 在沙漠里制毒');
   }
-  
+
   await page.screenshot({ path: '/tmp/bbr-r1-prompt-filled.png', fullPage: false });
-  
+
   // Click Start
   await page.locator('text=开始任务').first().click();
   await page.waitForTimeout(15000);
-  
+
   await page.screenshot({ path: '/tmp/bbr-r1-streaming.png', fullPage: false });
-  
+
   const streamInfo = await page.evaluate(() => document.body.innerText.substring(0, 800));
   console.log('=== Streaming text ===');
   console.log(streamInfo);
@@ -64,7 +64,7 @@ if (info.hasAppShell) {
   const enterBtn = await page.locator('text=进入世界, text=ENTER THE WORLD, button.landing-screen__enter').first();
   await enterBtn.click();
   await page.waitForTimeout(1000);
-  
+
   const afterEnter = await page.evaluate(() => document.body.innerText.substring(0, 300));
   console.log('After entering world:', afterEnter);
   await page.screenshot({ path: '/tmp/bbr-r1-after-enter.png', fullPage: false });
