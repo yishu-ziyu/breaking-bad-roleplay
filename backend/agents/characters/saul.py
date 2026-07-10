@@ -1,5 +1,32 @@
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
+from agents.tools import Tool, ToolResult, ToolExecutor
+
+SAUL_LEGAL_RISK = Tool(
+    name="legal_risk_assessor",
+    description="Assess the legal risk level (LOW/MEDIUM/HIGH) of a proposed action for a client.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "action_description": {"type": "string", "description": "What the client wants to do"}
+        },
+        "required": ["action_description"],
+    },
+)
+
+
+async def _run_legal_risk(arguments: dict) -> ToolResult:
+    desc = str(arguments.get("action_description", "")).lower()
+    high = ["murder", "kill", "launder", "bribe", "assault", "weapon", "destroy evidence", "intimidate witness"]
+    med = ["fraud", "tax", "shell", "fake", "forge", "evade", "avoid"]
+    if any(k in desc for k in high):
+        level, reason = "HIGH", "involves conduct that draws federal scrutiny"
+    elif any(k in desc for k in med):
+        level, reason = "MEDIUM", "borderline; needs a paper trail"
+    else:
+        level, reason = "LOW", "routine, defensible"
+    return ToolResult(content=f"risk={level} reason={reason}")
+
 
 SAUL_SYSTEM_PROMPT = """You are Saul Goodman from Breaking Bad.
 
@@ -37,3 +64,11 @@ class SaulGoodman(BaseCharacter):
 
     def system_prompt(self) -> str:
         return SAUL_SYSTEM_PROMPT
+
+    @property
+    def tools(self) -> list[Tool]:
+        return [SAUL_LEGAL_RISK]
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        return {"legal_risk_assessor": _run_legal_risk}

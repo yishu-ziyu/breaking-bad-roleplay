@@ -1,4 +1,4 @@
-import { roleAssets, type RoleAssetCharacterId, type RoleGifTag } from '../roleAssets'
+import { roleAssets, type RoleAssetCharacterId, type RoleGifAsset, type RoleGifTag } from '../roleAssets'
 
 type LS = { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
 
@@ -141,7 +141,7 @@ function candidateTags(query: string | null | undefined, emotion: string | null 
 
 function resolveBestTag(
   candidates: RoleGifTag[][],
-  pool: typeof roleAssets[string]['gifPools'],
+  pool: RoleGifAsset[],
   recent: string[],
 ): RoleGifTag | null {
   for (const group of candidates) {
@@ -159,7 +159,7 @@ function resolveBestTag(
   return null
 }
 
-function weightedRandom(matches: typeof roleAssets[string]['gifPools']): typeof matches[number] {
+function weightedRandom(matches: RoleGifAsset[]): typeof matches[number] {
   const weights = parseWeights()
   const entries = matches.map(g => ({
     gif: g,
@@ -184,31 +184,42 @@ export function resolveGifUrl(
   characterId: RoleAssetCharacterId,
   emotion?: string | null,
   gifQuery?: string | null,
+  skipGif?: boolean,
 ): string | null {
+  if (skipGif) return null
   const pool = roleAssets[characterId]?.gifPools ?? []
   if (pool.length === 0) return null
 
   const candidates = candidateTags(gifQuery, emotion)
   const recent = parseRecent()[characterId] ?? []
-
-  const bestTag = resolveBestTag(candidates, pool, recent)
-  if (bestTag) {
-    const taggedMatches = pool.filter(g => g.tags.includes(bestTag) && !recent.includes(g.url))
-    if (taggedMatches.length > 0) {
-      const choice = weightedRandom(taggedMatches)
-      pushRecent(characterId, choice.url)
-      incrementWeight(choice.url)
-      return choice.url
-    }
-  }
-
-  const defaultMatches = pool.filter(g => g.tags.includes('default') && !recent.includes(g.url))
-  if (defaultMatches.length > 0) {
-    const choice = weightedRandom(defaultMatches)
+  const chooseAndRecord = (matches: RoleGifAsset[]): string | null => {
+    if (matches.length === 0) return null
+    const choice = weightedRandom(matches)
     pushRecent(characterId, choice.url)
     incrementWeight(choice.url)
     return choice.url
   }
 
+  const bestTag = resolveBestTag(candidates, pool, recent)
+  if (bestTag) {
+    const taggedMatches = pool.filter(g => g.tags.includes(bestTag) && !recent.includes(g.url))
+    const taggedUrl = chooseAndRecord(taggedMatches)
+    if (taggedUrl) return taggedUrl
+  }
+
+  const defaultMatches = pool.filter(g => g.tags.includes('default') && !recent.includes(g.url))
+  const defaultUrl = chooseAndRecord(defaultMatches)
+  if (defaultUrl) return defaultUrl
+
+  const fallbackTag = resolveBestTag(candidates, pool, [])
+  if (fallbackTag) {
+    const taggedMatches = pool.filter(g => g.tags.includes(fallbackTag))
+    const taggedUrl = chooseAndRecord(taggedMatches)
+    if (taggedUrl) return taggedUrl
+  }
+
+  const defaultPool = pool.filter(g => g.tags.includes('default'))
+  const fallbackUrl = chooseAndRecord(defaultPool)
+  if (fallbackUrl) return fallbackUrl
   return null
 }

@@ -3,8 +3,12 @@ import { test, expect, type Page } from '@playwright/test'
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173'
 
 async function gotoFresh(page: Page) {
+  // Bypass landing screen so tests land directly in the app
+  await page.addInitScript(() => {
+    window.localStorage.setItem('abq_enteredWorld', 'true')
+  })
   await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 }
 
 async function sendChatMessage(page: Page, text: string) {
@@ -17,7 +21,9 @@ async function seedRawStorage(page: Page, values: Record<string, string>) {
     for (const [key, value] of Object.entries(data)) {
       window.localStorage.setItem(key, value)
     }
-  }, values)
+  }, { ...values, abq_enteredWorld: 'true' })
+  await page.goto(BASE_URL)
+  await page.waitForLoadState('domcontentloaded')
 }
 
 async function installMockEventSource(page: Page) {
@@ -92,10 +98,10 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
   })
 
   await gotoFresh(page)
-  await page.getByRole('button', { name: 'EN' }).click()
+  await page.locator('.seg-control button:has-text("EN")').click()
   await page.locator('.char-card', { hasText: 'Saul' }).click()
   await page.locator('#relation').selectOption('witness')
-  await page.locator('#llmProvider').selectOption('minimax')
+  await page.locator('section', { hasText: 'Model Backend' }).locator('select').selectOption('cliproxy')
   await sendChatMessage(page, 'I need representation.')
 
   await expect(page.locator('.msg--char p', { hasText: 'For a client' })).toBeVisible()
@@ -106,7 +112,7 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
     relation: 'witness',
     mode: 'direct',
     language: 'en',
-    llmProvider: 'minimax',
+    llmProvider: 'cliproxy',
   })
 })
 
@@ -149,10 +155,7 @@ test('FC-3: Story Stop sends stop action, clears saved session, and returns to i
   const actionLog: Array<Record<string, unknown>> = []
 
   await installMockEventSource(page)
-  await seedRawStorage(page, {
-    abq_view: JSON.stringify('story'),
-    abq_language: JSON.stringify('en'),
-  })
+  // Register routes BEFORE navigation so they intercept API calls
   await page.route('**/api/session/create', async (route) => {
     await route.fulfill({
       status: 200,
@@ -164,8 +167,10 @@ test('FC-3: Story Stop sends stop action, clears saved session, and returns to i
     actionLog.push(route.request().postDataJSON() as Record<string, unknown>)
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   })
-
-  await gotoFresh(page)
+  await seedRawStorage(page, {
+    abq_view: JSON.stringify('story'),
+    abq_language: JSON.stringify('en'),
+  })
   await page.locator('.story-setup textarea').fill('Stop after the first beat.')
   await page.locator('.story-setup button').click()
   await page.waitForFunction(() => (window as Window & { __mockSSE?: unknown }).__mockSSE !== null)
@@ -195,12 +200,10 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
   const actionLog: Array<Record<string, unknown>> = []
 
   await installMockEventSource(page)
-  await seedRawStorage(page, {
-    abq_story_session_id: 'resume-sid',
-    abq_view: JSON.stringify('story'),
-    abq_language: JSON.stringify('en'),
-  })
-  await page.route('**/api/session/resume-sid/messages', async (route) => {
+  // Register routes BEFORE navigation
+  let messagesRouteHits = 0
+  await page.route('**/api/session/resume-sid/messages*', async (route) => {
+    messagesRouteHits += 1
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -223,8 +226,12 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
     actionLog.push(route.request().postDataJSON() as Record<string, unknown>)
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   })
-
-  await gotoFresh(page)
+  await seedRawStorage(page, {
+    abq_story_session_id: 'resume-sid',
+    abq_view: JSON.stringify('story'),
+    abq_language: JSON.stringify('en'),
+  })
+  await expect.poll(() => messagesRouteHits).toBeGreaterThanOrEqual(2)
   await expect(page.locator('.story-event--agent_speak p', { hasText: 'Restored line.' })).toBeVisible()
   await expect(page.locator('.beat-controls')).toBeVisible()
 
