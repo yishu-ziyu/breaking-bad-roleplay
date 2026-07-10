@@ -20,6 +20,18 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.schemas import AgentEvent
+from agents.provider import ModelResult
+
+
+def _mr(text: str, tool_calls=None) -> ModelResult:
+    """Build a ModelResult for a character sub-agent call (the rewrite
+    path now routes through BaseCharacter.respond_structured →
+    ProviderFacade.call_model_with_tools, which returns a ModelResult)."""
+    return ModelResult(
+        content=text,
+        tool_calls=tool_calls or [],
+        stop_reason="tool_use" if tool_calls else "end_turn",
+    )
 
 
 # ---------------------------------------------------------------------
@@ -102,15 +114,20 @@ class TestCycle37_EmotionSync:
         returns an angry rewrite, the persisted Message and the yielded
         agent_speak event both carry emotion=angry and the new
         gif_search_query — not the stale Director values."""
+        # Director planning call (call_model) yields the beat events; the
+        # character sub-agent rewrite now goes through call_model_with_tools
+        # (native function calling, DEC-0001) returning a ModelResult.
         mock_provider.call_model = AsyncMock(
-            side_effect=[
-                _beat_events_json("calm", "walter white calm"),
+            return_value=_beat_events_json("calm", "walter white calm")
+        )
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(
                 _structured_sub_agent_reply(
                     "I am the one who knocks!",
                     "angry",
                     "walter white angry determined",
-                ),
-            ]
+                )
+            )
         )
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
@@ -148,14 +165,16 @@ class TestCycle37_EmotionSync:
         and gif_search_query are set from the sub-agent payload (not
         left as the Director's draft values)."""
         mock_provider.call_model = AsyncMock(
-            side_effect=[
-                _beat_events_json("tense", "walter white tense"),
+            return_value=_beat_events_json("tense", "walter white tense")
+        )
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(
                 _structured_sub_agent_reply(
                     "We need to cook.",
                     "manipulative",
                     "walter white cold calculating",
-                ),
-            ]
+                )
+            )
         )
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
@@ -183,10 +202,12 @@ class TestCycle37_EmotionSync:
         then falls back to the Director-provided values so the UI is
         not left with nulls. Content still comes from the sub-agent."""
         mock_provider.call_model = AsyncMock(
-            side_effect=[
-                _beat_events_json("tense", "walter white tense"),
-                "Yeah, okay.",  # plain text, no JSON
-            ]
+            return_value=_beat_events_json("tense", "walter white tense")
+        )
+        # Plain-text reply (no JSON envelope) → sub-agent rewrite returns a
+        # bare string; the Director falls back to its own emotion/gif values.
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr("Yeah, okay.")
         )
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
@@ -237,14 +258,20 @@ class TestCycle37_EmotionSync:
                 "recommended_model": "stepfun/step-3.7-flash",
             },
         ])
-        mock_provider.call_model = AsyncMock(
+        mock_provider.call_model = AsyncMock(return_value=beat_events)
+        # Two agent_speak events → two character sub-agent rewrites, each a
+        # separate call_model_with_tools call.
+        mock_provider.call_model_with_tools = AsyncMock(
             side_effect=[
-                beat_events,
-                _structured_sub_agent_reply(
-                    "I will handle it.", "manipulative", "walter white cold"
+                _mr(
+                    _structured_sub_agent_reply(
+                        "I will handle it.", "manipulative", "walter white cold"
+                    )
                 ),
-                _structured_sub_agent_reply(
-                    "Yeah right, bitch!", "angry", "jesse pinkman angry yelling"
+                _mr(
+                    _structured_sub_agent_reply(
+                        "Yeah right, bitch!", "angry", "jesse pinkman angry yelling"
+                    )
                 ),
             ]
         )

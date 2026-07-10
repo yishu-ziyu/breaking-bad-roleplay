@@ -31,3 +31,4 @@ __pycache__/
 # Work artifacts (local only)
 .ship/
 dist/
+.claude/commands/

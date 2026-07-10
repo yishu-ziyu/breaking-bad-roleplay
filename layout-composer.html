@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BBR Story Layout Composer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    z-index: 100;
+  }
+  .toolbar h1 { font-size: 14px; font-weight: 600; color: #e0a830; margin-right: 16px; }
+  .toolbar .hint { font-size: 12px; color: #888; }
+  .toolbar button {
+    padding: 6px 14px;
+    border: 1px solid #e0a830;
+    border-radius: 6px;
+    background: transparent;
+    color: #e0a830;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .toolbar button:hover { background: rgba(224,168,48,0.15); }
+  .canvas {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 20% 50%, rgba(224,168,48,0.03), transparent 50%),
+      linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+  }
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+    pointer-events: none;
+  }
+  .component {
+    position: absolute;
+    border: 2px solid;
+    border-radius: 10px;
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 0.15s;
+    min-width: 120px;
+    min-height: 50px;
+  }
+  .component:active { cursor: grabbing; }
+  .component.dragging {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    z-index: 50;
+    opacity: 0.9;
+  }
+  .component.selected {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+  .comp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .comp-body {
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 10px;
+    opacity: 0.6;
+    overflow: hidden;
+  }
+  .resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    opacity: 0.4;
+  }
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+  }
+  /* Component colors */
+  .comp-hud       { border-color: #e0a830; background: rgba(224,168,48,0.08); }
+  .comp-hud .comp-header { color: #e0a830; }
+  .comp-scene     { border-color: #8ea93f; background: rgba(142,169,63,0.08); }
+  .comp-scene .comp-header { color: #8ea93f; }
+  .comp-timeline  { border-color: #93d7ff; background: rgba(147,215,255,0.08); }
+  .comp-timeline .comp-header { color: #93d7ff; }
+  .comp-pressure  { border-color: #b9c0a5; background: rgba(185,192,165,0.08); }
+  .comp-pressure .comp-header { color: #b9c0a5; }
+  .comp-decisions { border-color: #f7ce46; background: rgba(247,206,70,0.08); }
+  .comp-decisions .comp-header { color: #f7ce46; }
+  .comp-sidebar   { border-color: #b2f09a; background: rgba(178,240,154,0.08); }
+  .comp-sidebar .comp-header { color: #b2f09a; }
+  .comp-composer  { border-color: #f3d9a2; background: rgba(243,217,162,0.08); }
+  .comp-composer .comp-header { color: #f3d9a2; }
+
+  .export-area {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s;
+    z-index: 200;
+  }
+  .export-area.open { max-height: 300px; }
+  .export-area textarea {
+    width: 100%;
+    height: 250px;
+    background: #16213e;
+    color: #a0f0a0;
+    border: none;
+    border-top: 2px solid #0f3460;
+    padding: 12px 16px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 11px;
+    resize: none;
+  }
+  .export-area textarea:focus { outline: none; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <h1>BBR Story Layout Composer</h1>
+  <span class="hint">拖拽组件到想要的位置，拖右下角调整大小。完成后点击 Export。</span>
+  <button onclick="resetLayout()">Reset</button>
+  <button onclick="exportLayout()">Export JSON</button>
+  <button onclick="document.getElementById('export-area').classList.toggle('open')">Toggle Output</button>
+</div>
+
+<div class="canvas" id="canvas">
+  <div class="grid-bg"></div>
+
+  <div class="component comp-hud" data-name="hud" style="left:20px;top:10px;right:20px;height:50px;">
+    <div class="comp-header">HUD Bar (场景标题 / 节点 / 地点 / 张力)</div>
+    <div class="comp-body">顶部信息条</div>
+  </div>
+
+  <div class="component comp-timeline" data-name="timeline" style="left:20px;top:70px;width:260px;bottom:140px;">
+    <div class="comp-header">Timeline (分镜时间线)</div>
+    <div class="comp-body">事件列表 / beat 进度</div>
+    <div class="resize-handle"></div>
+  </div>
+
+  <div class="component comp-scene" data-name="scene" style="left:290px;top:70px;right:20px;bottom:140px;">
+    <div class="comp-header">Scene Card (角色台词卡)</div>
+    <div class="comp-body">角色名 / 台词 / GIF / 播放语音</div>
+    <div class="resize-handle"></div>
+  </div>
+
+  <div class="component comp-decisions" data-name="decisions" style="left:290px;bottom:20px;right:20px;height:80px;">
+    <div class="comp-header">Decision Tray (关键节点按钮)</div>
+    <div class="comp-body">继续 / 停止 / 重定向 / 切换视角</div>
+    <div class="resize-handle"></div>
+  </div>
+
+  <div class="component comp-sidebar" data-name="sidebar" style="left:290px;top:70px;width:220px;bottom:140px;">
+    <div class="comp-header">Sidebar (角色选择 / 模式 / 语言)</div>
+    <div class="comp-body">角色卡 / 游玩模式 / 引擎线路</div>
+    <div class="resize-handle"></div>
+  </div>
+
+  <div class="component comp-composer" data-name="composer" style="left:20px;bottom:20px;right:20px;height:56px;">
+    <div class="comp-header">Composer (输入框 + 发送)</div>
+    <div class="resize-handle"></div>
+  </div>
+</div>
+
+<div class="export-area" id="export-area">
+  <textarea id="export-output" readonly></textarea>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const components = document.querySelectorAll('.component');
+let selected = null;
+let drag = null;
+let resize = null;
+
+components.forEach(el => {
+  el.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('resize-handle')) {
+      resize = {
+        el,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: el.offsetWidth,
+        startH: el.offsetHeight,
+        startRight: el.offsetLeft + el.offsetWidth - canvas.offsetWidth,
+        startBottom: el.offsetTop + el.offsetHeight - canvas.offsetHeight,
+      };
+      e.preventDefault();
+    } else {
+      drag = {
+        el,
+        startX: e.clientX,
+        startY: e.clientY,
+        startLeft: el.offsetLeft,
+        startTop: el.offsetTop,
+      };
+      el.classList.add('dragging');
+    }
+    selectComponent(el);
+  });
+});
+
+function selectComponent(el) {
+  if (selected) selected.classList.remove('selected');
+  selected = el;
+  el.classList.add('selected');
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (e.target === canvas || e.target.classList.contains('grid-bg')) {
+    if (selected) selected.classList.remove('selected');
+    selected = null;
+  }
+});
+
+document.addEventListener('mousemove', e => {
+  if (drag) {
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    drag.el.style.left = (drag.startLeft + dx) + 'px';
+    drag.el.style.top = (drag.startTop + dy) + 'px';
+  }
+  if (resize) {
+    const dx = e.clientX - resize.startX;
+    const dy = e.clientY - resize.startY;
+    const newW = Math.max(120, resize.startW + dx);
+    const newH = Math.max(50, resize.startH + dy);
+    resize.el.style.width = newW + 'px';
+    resize.el.style.height = newH + 'px';
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (drag) {
+    drag.el.classList.remove('dragging');
+    drag = null;
+  }
+  resize = null;
+});
+
+function resetLayout() {
+  const defaults = {
+    hud:       { left:20, top:10, right:20, height:50, width:null, bottom:null },
+    timeline:  { left:20, top:70, width:260, bottom:140, height:null, right:null },
+    scene:     { left:290, top:70, right:20, bottom:140, height:null, width:null },
+    pressure:  { left:20, top:70, width:260, height:120, bottom:null, right:null },
+    decisions: { left:290, bottom:20, right:20, height:80, top:null, width:null },
+    sidebar:   { left:290, top:70, width:220, bottom:140, height:null, right:null },
+    composer:  { left:20, bottom:20, right:20, height:56, top:null, width:null },
+  };
+  components.forEach(el => {
+    const d = defaults[el.dataset.name];
+    Object.assign(el.style, {
+      left: d.left != null ? d.left+'px' : '',
+      top: d.top != null ? d.top+'px' : '',
+      right: d.right != null ? d.right+'px' : '',
+      bottom: d.bottom != null ? d.bottom+'px' : '',
+      width: d.width != null ? d.width+'px' : '',
+      height: d.height != null ? d.height+'px' : '',
+    });
+  });
+}
+
+function exportLayout() {
+  const layout = {};
+  const cw = canvas.offsetWidth;
+  const ch = canvas.offsetHeight;
+  components.forEach(el => {
+    const rect = el.getBoundingClientRect();
+    const cRect = canvas.getBoundingClientRect();
+    layout[el.dataset.name] = {
+      x: Math.round(rect.left - cRect.left),
+      y: Math.round(rect.top - cRect.top),
+      w: Math.round(rect.width),
+      h: Math.round(rect.height),
+      x_pct: Math.round((rect.left - cRect.left) / cw * 100),
+      y_pct: Math.round((rect.top - cRect.top) / ch * 100),
+      w_pct: Math.round(rect.width / cw * 100),
+      h_pct: Math.round(rect.height / ch * 100),
+    };
+  });
+  const json = JSON.stringify({ canvas: { w: cw, h: ch }, layout }, null, 2);
+  document.getElementById('export-output').value = json;
+  document.getElementById('export-area').classList.add('open');
+  navigator.clipboard.writeText(json).then(() => {
+    console.log('Layout JSON copied to clipboard');
+  });
+}
+</script>
+</body>
+</html>

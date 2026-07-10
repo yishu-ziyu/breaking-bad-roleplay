@@ -1,5 +1,37 @@
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
+from agents.tools import Tool, ToolResult, ToolExecutor
+
+SKYLER_EXPOSURE = Tool(
+    name="financial_exposure_check",
+    description="Assess family-asset exposure (LOW/MEDIUM/HIGH) of a venture and amount.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "venture": {"type": "string", "description": "Venture description"},
+            "amount_usd": {"type": "number", "description": "Amount in USD"},
+        },
+        "required": ["venture", "amount_usd"],
+    },
+)
+
+
+async def _run_exposure(arguments: dict) -> ToolResult:
+    venture = str(arguments.get("venture", "")).lower()
+    try:
+        amount = float(arguments.get("amount_usd", 0))
+    except (TypeError, ValueError):
+        return ToolResult(content="invalid amount", is_error=True)
+    risky = ["launder", "cash", "offshore", "fake", "front", "drug"]
+    if amount > 500000 or any(k in venture for k in risky):
+        level = "HIGH"
+    elif amount > 50000:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+    warn = "protect family assets; consult accountant" if level != "LOW" else "acceptable"
+    return ToolResult(content=f"venture={venture} amount_usd={amount:.0f} exposure={level} warning={warn}")
+
 
 SKYLER_SYSTEM_PROMPT = """You are Skyler White from Breaking Bad.
 
@@ -31,3 +63,11 @@ class SkylerWhite(BaseCharacter):
 
     def system_prompt(self) -> str:
         return SKYLER_SYSTEM_PROMPT
+
+    @property
+    def tools(self) -> list[Tool]:
+        return [SKYLER_EXPOSURE]
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        return {"financial_exposure_check": _run_exposure}

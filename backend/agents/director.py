@@ -16,10 +16,36 @@ from agents.characters import (
 )
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 DEFAULT_DIRECTOR_MODEL_ROUTE = "stepfun/step-2-16k"
 MAX_AGENT_SPEAK_PER_BEAT = 2
+LANG_DIRECTIVE = {
+    "en": "RESPONSE LANGUAGE: Write all dialogue and scene descriptions in English only.",
+    "zh": "RESPONSE LANGUAGE: 用简体中文书写所有对话和场景描述。",
+}
+STATUS_I18N = {
+    "en": {
+        "analysing": "Director is analysing the task…",
+        "outlined": "Director outlined {n} beat(s). Beginning roleplay…",
+        "no_action": "No action received — continuing automatically.",
+    },
+    "zh": {
+        "analysing": "导演正在分析任务…",
+        "outlined": "导演已规划 {n} 个剧情节拍。开始角色扮演…",
+        "no_action": "未收到玩家操作 — 自动继续…",
+    },
+}
+
+
+def _language_directive(lang: str) -> str:
+    return LANG_DIRECTIVE.get(lang, LANG_DIRECTIVE["en"])
+
+
+def _status_message(key: str, lang: str = "en", **kwargs) -> str:
+    template = STATUS_I18N.get(lang, STATUS_I18N["en"]).get(key, STATUS_I18N["en"].get(key, ""))
+    return template.format(**kwargs)
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
 # ---------------------------------------------------------------------------
@@ -158,6 +184,8 @@ class DirectorAgent:
         session_id: str | None = None,
         action_queue: Any = None,
         db: Any = None,
+        voice_example: str | None = None,
+        language: str = "en",
     ) -> AsyncIterator[AgentEvent]:
         """
         Main entry point.  Consumes a task description and yields
@@ -174,10 +202,10 @@ class DirectorAgent:
         both are supplied, ``session_factory`` wins.
         """
         yield AgentEvent(
-            type="status", data={"message": "Director is analysing the task…"}
+            type="status", data={"message": _status_message("analysing", language)}
         )
         # ---- Step 1: generate the outline -----------------------------------
-        outline_text = await self._generate_outline(task)
+        outline_text = await self._generate_outline(task, language=language)
         if outline_text is None:
             yield AgentEvent(
                 type="error",
@@ -189,7 +217,7 @@ class DirectorAgent:
         yield AgentEvent(
             type="status",
             data={
-                "message": f"Director outlined {len(scenes)} beat(s). Beginning roleplay…"
+                "message": _status_message("outlined", language, n=len(scenes))
             },
         )
         # ---- Step 2: render each beat (beat-by-beat with pause) ----------
@@ -209,6 +237,8 @@ class DirectorAgent:
                 session_factory=session_factory,
                 session_id=session_id,
                 active_character_id=active_character_id,
+                voice_example=voice_example,
+                language=language,
             ):
                 yield event
             # Wait for player to continue (unless this is the last beat)
@@ -229,7 +259,7 @@ class DirectorAgent:
                         return
                     elif act_type == "redirect":
                         task = signal.get("prompt", task)
-                        new_outline = await self._generate_outline(task)
+                        new_outline = await self._generate_outline(task, language=language)
                         if new_outline is None:
                             yield AgentEvent(
                                 type="status",
@@ -284,11 +314,115 @@ class DirectorAgent:
                                 target_raw, target_raw
                             )
                         # Fall through to idx += 1 (same as old `pass`).
+                    elif act_type == "continue_chapter":
+                        # Append a brand-new chapter to the running outline.
+                        # The Director prompts the LLM to continue from
+                        # where we are; parsed scenes are concatenated onto
+                        # the existing scenes list.
+                        branch_goal = signal.get("branch_goal") if isinstance(signal, dict) else None
+                        next_outline = await self._generate_outline_followup(
+                            base_task=task,
+                            prior_outline=outline_text,
+                            existing_scenes=scenes,
+                            branch_goal=branch_goal,
+                            language=language,
+                        )
+                        if next_outline is None:
+                            yield AgentEvent(
+                                type="status",
+                                data={"message": "Chapter continuation failed — keeping current outline."},
+                            )
+                        else:
+                            next_scenes = self._parse_outline(next_outline)
+                            yield AgentEvent(
+                                type="outline",
+                                data={
+                                    "content": next_outline,
+                                    "appended": True,
+                                    "chapter": 2,
+                                },
+                            )
+                            scenes = scenes + next_scenes
+                            # Re-enter the beat loop starting at the first
+                            # newly appended scene so the next iteration
+                            # renders beat 1 of chapter 2 (not the next
+                            # unrendered beat of chapter 1).
+                            idx = len(scenes) - len(next_scenes) - 1
+                            previous_scene = current_scene
+                            continue
+                    elif act_type == "branch":
+                        # Replace everything from a chosen beat onward. Beats
+                        # before from_beat_id stay; everything after is
+                        # regenerated. ``scenes[beat_idx]`` keeps the
+                        # original beat text; ``branch_scenes`` are appended
+                        # after, so the next loop iteration renders
+                        # ``scenes[beat_idx + 1]`` which is
+                        # ``branch_scenes[0]``. The branch starts AFTER the
+                        # chosen beat, not at it.
+                        from_beat_id = signal.get("from_beat_id") if isinstance(signal, dict) else None
+                        branch_goal = signal.get("branch_goal") if isinstance(signal, dict) else None
+                        try:
+                            beat_idx = int(str(from_beat_id).rsplit("_", 1)[-1]) - 1
+                        except (ValueError, AttributeError, IndexError):
+                            beat_idx = max(0, idx - 1)
+                        beat_idx = max(0, min(beat_idx, len(scenes) - 1))
+                        branch_outline = await self._generate_branch_outline(
+                            base_task=task,
+                            prior_outline=outline_text,
+                            branch_beat_index=beat_idx,
+                            scenes=scenes,
+                            branch_goal=branch_goal,
+                            language=language,
+                        )
+                        if branch_outline is None:
+                            yield AgentEvent(
+                                type="status",
+                                data={"message": "Branch generation failed — keeping current outline."},
+                            )
+                        else:
+                            branch_scenes = self._parse_outline(branch_outline)
+                            yield AgentEvent(
+                                type="outline",
+                                data={
+                                    "content": branch_outline,
+                                    "branched": True,
+                                    "from_beat_id": from_beat_id,
+                                },
+                            )
+                            # Keep scenes[0..beat_idx] (inclusive) from the
+                            # original outline, then append the freshly
+                            # generated scenes. The next iteration of the
+                            # loop will re-render scenes[beat_idx] with new
+                            # body content but same beat position.
+                            prefix = scenes[: beat_idx + 1]
+                            scenes = prefix + branch_scenes
+                            previous_scene = ""
+                            idx = beat_idx
+                            continue  # skip trailing idx+=1 / previous_scene overwrite
+                    elif act_type == "replay":
+                        # Re-render a specific beat. ``idx`` is set one
+                        # before the target so the loop's idx+=1 lands on
+                        # it again. The next iteration regenerates that
+                        # beat's events without changing the outline.
+                        beat_id = signal.get("beat_id") if isinstance(signal, dict) else None
+                        try:
+                            replay_idx = int(str(beat_id).rsplit("_", 1)[-1]) - 1
+                        except (ValueError, AttributeError, IndexError):
+                            replay_idx = idx
+                        replay_idx = max(0, min(replay_idx, len(scenes) - 1))
+                        # If the user replays the LAST beat, splice a copy
+                        # so the loop pauses again instead of immediately
+                        # emitting ``complete``.
+                        if replay_idx == len(scenes) - 1:
+                            scenes.append(scenes[replay_idx])
+                        previous_scene = ""
+                        idx = max(0, replay_idx - 1)
+                        continue  # skip trailing idx+=1 / previous_scene overwrite
                     # "continue": fall through to next beat
                 except asyncio.TimeoutError:
                     yield AgentEvent(
                         type="status",
-                        data={"message": "No action received — continuing automatically."},
+                        data={"message": _status_message("no_action", language)},
                     )
             idx += 1
             previous_scene = current_scene
@@ -299,13 +433,15 @@ class DirectorAgent:
     # ------------------------------------------------------------------
     # Outline generation
     # ------------------------------------------------------------------
-    async def _generate_outline(self, task: str) -> str | None:
+    async def _generate_outline(self, task: str, language: str = "en") -> str | None:
         """Call the LLM to produce a numbered Breaking Bad scene outline."""
+        lang_directive = _language_directive(language)
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": (
+                    f"{lang_directive}\n\n"
                     f"Task: {task}\n\n"
                     "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
                     "Do NOT output JSON, code fences, or any structured format. "
@@ -353,6 +489,94 @@ class DirectorAgent:
         Handles both em-dash (U+2014) and en-dash (U+2013) separators."""
         name = re.split(r"[–—]", scene_desc)[0]
         return name.split(":")[0].strip()
+
+    async def _generate_outline_followup(
+        self,
+        base_task: str,
+        prior_outline: str,
+        existing_scenes: list[str],
+        branch_goal: str | None = None,
+        language: str = "en",
+    ) -> str | None:
+        """Generate the next chapter's outline as a continuation.
+
+        Returns a numbered plain-text outline (same format as
+        ``_generate_outline``). Scenes from this outline are concatenated
+        onto the existing list — beats are never re-numbered.
+        """
+        lang_directive = _language_directive(language)
+        goal_suffix = f"\nNew chapter focus: {branch_goal}" if branch_goal else ""
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"{lang_directive}\n\n"
+                    f"Original task: {base_task}\n\n"
+                    f"Existing outline (chapter 1):\n{prior_outline}\n\n"
+                    f"Existing beats so far:\n"
+                    + "\n".join(f"{i + 1}. {s}" for i, s in enumerate(existing_scenes))
+                    + f"\n\nGenerate a NEW chapter (chapter 2) that continues "
+                    f"directly from where chapter 1 ends.{goal_suffix}\n"
+                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
+                    "Do NOT output JSON, code fences, or any structured format. "
+                    "Each line should start with a number like '1. Scene title — description'. "
+                    "Numbering should restart at 1 for the new chapter."
+                ),
+            },
+        ]
+        try:
+            raw = await self.provider.call_model(messages, self.model_route)
+            if raw and raw.strip().startswith(('[', '{')):
+                return self._extract_text_from_json_outline(raw)
+            return raw
+        except Exception:
+            logger.exception("Outline followup LLM call failed")
+            return None
+
+    async def _generate_branch_outline(
+        self,
+        base_task: str,
+        prior_outline: str,
+        branch_beat_index: int,
+        scenes: list[str],
+        branch_goal: str | None = None,
+        language: str = "en",
+    ) -> str | None:
+        """Generate a new outline for everything AFTER the branch beat.
+
+        The Director keeps ``scenes[: branch_beat_index + 1]`` and replaces
+        the rest with the LLM's output. Output is a plain-text numbered
+        list (continuing the prior outline's tone, not duplicating beats).
+        """
+        lang_directive = _language_directive(language)
+        prior_beat = scenes[branch_beat_index] if 0 <= branch_beat_index < len(scenes) else ""
+        goal_suffix = f"\nBranching focus: {branch_goal}" if branch_goal else ""
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"{lang_directive}\n\n"
+                    f"Original task: {base_task}\n\n"
+                    f"Existing outline:\n{prior_outline}\n\n"
+                    f"Branching from beat {branch_beat_index + 1}: {prior_beat}\n"
+                    f"Everything before beat {branch_beat_index + 1} is preserved. "
+                    f"Generate ONLY the beats that follow.{goal_suffix}\n"
+                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
+                    "Do NOT output JSON, code fences, or any structured format. "
+                    "Each line should start with a number like '1. Scene title — description'."
+                ),
+            },
+        ]
+        try:
+            raw = await self.provider.call_model(messages, self.model_route)
+            if raw and raw.strip().startswith(('[', '{')):
+                return self._extract_text_from_json_outline(raw)
+            return raw
+        except Exception:
+            logger.exception("Branch outline LLM call failed")
+            return None
     @staticmethod
     def _parse_outline(text: str) -> list[str]:
         """Parse an LLM-generated outline into a list of scene descriptions.
@@ -392,6 +616,21 @@ class DirectorAgent:
         if raw and isinstance(raw, str) and raw.startswith(("minimax/", "stepfun/", "cliproxy/")):
             return raw
         return None
+
+    def _system_prompt_with_voice_example(self, voice_example: str | None) -> str:
+        if not voice_example:
+            return self.system_prompt
+        return (
+            f"{self.system_prompt}\n\n"
+            "VOICE ANCHOR:\n"
+            "Use this reference speaking style when drafting or rewriting story dialogue. "
+            "Keep the current scene facts, but match this cadence and relationship pressure. "
+            "The reference may be in a different language than the user's reply language; "
+            "translate the register and pressure into the target reply language rather "
+            "than transliterating the surface words.\n"
+            f"{voice_example}"
+        )
+
     async def _generate_beat(
         self,
         task: str,
@@ -403,6 +642,8 @@ class DirectorAgent:
         session_factory: Any = None,
         session_id: str | None = None,
         active_character_id: str | None = None,
+        voice_example: str | None = None,
+        language: str = "en",
     ) -> AsyncIterator[AgentEvent]:
         """
         Generate a single narrative beat with fine-grained events.
@@ -457,7 +698,7 @@ class DirectorAgent:
             f"'{self.model_route}'."
         )
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": self._system_prompt_with_voice_example(voice_example)},
             {"role": "user", "content": beat_prompt},
         ]
         try:
@@ -466,7 +707,7 @@ class DirectorAgent:
             logger.exception("Beat %d LLM call failed", beat_index + 1)
             yield AgentEvent(
                 type="error",
-                data={"message": f"Beat {beat_index + 1} LLM call failed"},
+                data={"message": f"Beat {beat_index + 1} — LLM call failed. Please check LLM service (current: {self.model_route})."},
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
             return
@@ -475,7 +716,7 @@ class DirectorAgent:
         if not events:
             yield AgentEvent(
                 type="error",
-                data={"message": f"Beat {beat_index + 1}: could not parse events from LLM."},
+                data={"message": f"剧情生成异常。AI 返回了无法解析的内容，请重试或切换模型 (当前: {self.model_route})。"},
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback).")
             return
@@ -535,14 +776,34 @@ class DirectorAgent:
                 character_cls = CHARACTER_AGENTS.get(character_id)
                 if character_cls is not None:
                     character_agent = character_cls(self.provider)
+                    # Load dossiers for this character if session_factory available
+                    dossier_context = ""
+                    if session_factory is not None:
+                        try:
+                            async with session_factory() as sess:
+                                from db.models import CharacterDossier
+                                stmt = select(CharacterDossier).where(
+                                    CharacterDossier.session_id == session_id,
+                                )
+                                result = await sess.execute(stmt)
+                                all_dossiers = result.scalars().all()
+                                from agents.memory import format_dossier_context
+                                dossier_context = format_dossier_context(
+                                    list(all_dossiers), character_id,
+                                )
+                        except Exception:
+                            logger.debug("Dossier load failed for %s", character_id)
                     try:
                         sub_result = await character_agent.respond_structured(
                             context=[],
                             user_message=(
+                                f"{_language_directive(language)}\n\n"
                                 f"Scene: {scene_desc}\nContext: {task}\n"
-                                f"Respond in character."
+                                "Respond in character."
                             ),
                             model_route=beat_model_route,
+                            voice_example=voice_example,
+                            dossier_context=dossier_context or None,
                         )
                         evt_data = {
                             **evt_data,
@@ -790,6 +1051,7 @@ class DirectorAgent:
         character_id: str,
         user_message: str,
         context: dict[str, Any],
+        session_factory: Any = None,
     ) -> dict[str, Any]:
         """
         Handle a single user message in chat mode.
@@ -807,17 +1069,15 @@ class DirectorAgent:
               { participants, scene_goal, tension_note, debate_logs }
         """
         mode = context.get("mode", "direct")
-        history: list[dict] = context.get("history", [])
-        language: str = context.get("language", "en")
-        relation: str = context.get("relation", "partner")
         if mode == "crew":
-            return await self._handle_crew_chat(character_id, user_message, context)
-        return await self._handle_direct_chat(character_id, user_message, context)
+            return await self._handle_crew_chat(character_id, user_message, context, session_factory)
+        return await self._handle_direct_chat(character_id, user_message, context, session_factory)
     async def _handle_direct_chat(
         self,
         character_id: str,
         user_message: str,
         context: dict[str, Any],
+        session_factory: Any = None,
     ) -> dict[str, Any]:
         """Direct-mode: call the character agent with structured output."""
         backend_id = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
@@ -826,6 +1086,7 @@ class DirectorAgent:
             character_cls = CHARACTER_AGENTS["Walter White"]
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
+        target_language = "Simplified Chinese" if language == "zh" else "English"
         llm_provider: str = context.get("llmProvider", "stepfun")
         # Resolve model route
         scene_context = f"{backend_id} {relation} {user_message}".lower()
@@ -849,18 +1110,43 @@ class DirectorAgent:
                 ctx_messages.append({"role": "user", "content": turn.get("text", "")})
             else:
                 ctx_messages.append({"role": "assistant", "content": turn.get("text", "")})
-        # Build relationship context string for the prompt
-        rel_label = relation
         voice_example: str | None = context.get("voiceExample")
-        user_msg_with_context = user_message
+        user_msg_with_context = (
+            f"{user_message}\n\n"
+            f"[Reply language: {target_language} only.]"
+        )
         if voice_example:
-            user_msg_with_context += f"\n\n[Reference speaking style: {voice_example}]"
+            user_msg_with_context += (
+                "\n\n[Reference speaking style: "
+                "use this only for cadence and relationship pressure. "
+                "Do not copy the reference language; translate the style into "
+                f"{target_language}: {voice_example}]"
+            )
+        # Load dossier context from DB if available
+        dossier_context = ""
+        if session_factory is not None:
+            try:
+                async with session_factory() as sess:
+                    from db.models import CharacterDossier
+                    stmt = select(CharacterDossier).where(
+                        CharacterDossier.session_id.is_(None),
+                        CharacterDossier.subject_id == backend_id,
+                    )
+                    result = await sess.execute(stmt)
+                    world_dossiers = result.scalars().all()
+                    from agents.memory import format_dossier_context
+                    dossier_context = format_dossier_context(
+                        list(world_dossiers), backend_id,
+                    )
+            except Exception:
+                logger.debug("Dossier load failed for direct chat %s", backend_id)
         # Instantiate character and call structured respond
         agent = character_cls(self.provider)
         result = await agent.respond_structured(
             context=ctx_messages,
             user_message=user_msg_with_context,
             model_route=model_route,
+            dossier_context=dossier_context or None,
         )
         # Compute updated relationship state (lightweight — no DB round-trip
         # for chat mode; frontend holds the local state).
@@ -879,6 +1165,7 @@ class DirectorAgent:
         character_id: str,
         user_message: str,
         context: dict[str, Any],
+        session_factory: Any = None,
     ) -> dict[str, Any]:
         """Crew mode: generate a multi-character debate turn."""
         llm_provider: str = context.get("llmProvider", "stepfun")
@@ -908,6 +1195,7 @@ class DirectorAgent:
         # Build the multi-turn prompt
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
+        target_language = "Simplified Chinese" if language == "zh" else "English"
         history: list[dict] = context.get("history", [])
         history_summary = ""
         if history:
@@ -920,7 +1208,7 @@ class DirectorAgent:
         crew_prompt = (
             f"User message: {user_message}\n"
             f"Relation to primary character ({backend_primary}): {relation}\n"
-            f"Language: {language}\n\n"
+            f"Reply language: {target_language} only.\n\n"
         )
         if history_summary:
             crew_prompt += f"Recent conversation:\n{history_summary}\n\n"
@@ -929,8 +1217,30 @@ class DirectorAgent:
             f"{', '.join(participants_backend)}. "
             f"Emit the JSON array as specified."
         )
+        # Inject per-character voice guides so each character in the crew
+        # retains their distinct voice (Loop 7 fix).
+        character_voice_guides: list[str] = []
+        for backend_name in participants_backend:
+            char_cls = CHARACTER_AGENTS.get(backend_name)
+            if char_cls is not None:
+                try:
+                    char_agent = char_cls(self.provider)
+                    character_voice_guides.append(
+                        f"CHARACTER VOICE: {backend_name}\n"
+                        f"{char_agent.system_prompt()}"
+                    )
+                except Exception:
+                    logger.debug("Failed to load system prompt for %s", backend_name)
+        voice_guide_block = ""
+        if character_voice_guides:
+            voice_guide_block = (
+                "\n\nCHARACTER VOICE GUIDES — follow each character's voice "
+                "exactly when writing their dialogue:\n\n"
+                + "\n\n---\n\n".join(character_voice_guides)
+            )
+        system_content = CREW_CHAT_SYSTEM_PROMPT + voice_guide_block
         messages = [
-            {"role": "system", "content": CREW_CHAT_SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": crew_prompt},
         ]
         # Use the primary character's preferred model route

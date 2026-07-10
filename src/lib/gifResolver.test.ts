@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveGifUrl, resetGifResolverState, COOLDOWN_SIZE } from './gifResolver.ts'
+import { roleAssets } from '../roleAssets.ts'
 
 // Mock localStorage before module code uses it
 const store: Record<string, string> = {}
@@ -90,7 +91,61 @@ describe('gifResolver', () => {
     assert.ok(!url.includes('10RCqM2nZpdqOQ'), 'family must not return confrontation GIF')
   })
 
+  it('generic fallback keeps returning GIFs after a small default pool is recent', () => {
+    resetGifResolverState()
+    for (let i = 0; i < 5; i++) {
+      const url = resolveGifUrl('skyler', null, null)
+      assert.ok(url, `expected a fallback GIF on call ${i}`)
+    }
+  })
+
   it('COOLDOWN_SIZE is 3', () => {
     assert.strictEqual(COOLDOWN_SIZE, 3, 'cooldown should be 3 for small pool variety')
+  })
+
+  it('all GIF URLs are well-formed (start with https://)', () => {
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
+    for (const char of characters) {
+      const pool = roleAssets[char].gifPools
+      for (const gif of pool) {
+        assert.ok(
+          gif.url.startsWith('https://'),
+          `${char} GIF ${gif.id} has malformed URL: ${gif.url}`
+        )
+      }
+    }
+  })
+
+  it('every character has at least one default-tagged GIF', () => {
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
+    for (const char of characters) {
+      const pool = roleAssets[char].gifPools
+      const hasDefault = pool.some(g => g.tags.includes('default'))
+      assert.ok(hasDefault, `${char} has no default-tagged GIF for fallback`)
+    }
+  })
+
+  it('no duplicate URLs within a character pool', () => {
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
+    for (const char of characters) {
+      const pool = roleAssets[char].gifPools
+      const urls = pool.map(g => g.url)
+      const unique = new Set(urls)
+      assert.strictEqual(unique.size, urls.length, `${char} has duplicate GIF URLs`)
+    }
+  })
+
+  it('skipGif option returns null instead of falling back to random', () => {
+    resetGifResolverState()
+    // Even with a known emotion/query, skipGif should return null
+    const url = resolveGifUrl('walter', 'tense', null, true)
+    assert.strictEqual(url, null, 'skipGif=true should return null')
+  })
+
+  it('skipGif=false behaves like default (returns a URL)', () => {
+    resetGifResolverState()
+    const url = resolveGifUrl('walter', 'tense', null, false)
+    assert.ok(url, 'skipGif=false should return a GIF URL')
+    assert.ok(url.startsWith('https://'))
   })
 })

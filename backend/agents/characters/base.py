@@ -4,9 +4,20 @@ import logging
 import re
 from typing import Sequence
 
-from agents.provider import ProviderFacade
+from agents.provider import ProviderFacade, ModelResult
+from agents.tools import (
+    Tool,
+    ToolResult,
+    ToolRegistry,
+    ToolExecutor,
+    tool_result_messages,
+    assistant_message_with_tools,
+)
 
 logger = logging.getLogger(__name__)
+
+# Max tool-calling rounds per respond_structured call (DEC-0001 / ARCH-DESIGN).
+MAX_TOOL_ROUNDS = 4
 
 # Prompt appended when structured output is requested so the LLM returns
 # a JSON envelope alongside the in-character reply.
@@ -84,16 +95,32 @@ class BaseCharacter(ABC):
     def __init__(self, name: str, provider: ProviderFacade):
         self.name = name
         self.provider = provider
+        self._tool_registry = ToolRegistry()
+        for _name, _fn in self.tool_executors.items():
+            self._tool_registry.register(_name, _fn)
+        self._last_tool_results: list[tuple[str, ToolResult]] = []
 
     @abstractmethod
     def system_prompt(self) -> str:
         """Return the character's system prompt."""
+
+    @property
+    def tools(self) -> list[Tool]:
+        """Tools this character can invoke via native function calling. Override in subclasses."""
+        return []
+
+    @property
+    def tool_executors(self) -> dict[str, ToolExecutor]:
+        """name -> async executor, matching ``tools``. Override in subclasses."""
+        return {}
 
     async def respond_structured(
         self,
         context: Sequence[dict],
         user_message: str,
         model_route: str = "stepfun/step-3.7-flash",
+        voice_example: str | None = None,
+        dossier_context: str | None = None,
     ) -> dict:
         """
         Generate an in-character reply with structured metadata.
@@ -103,16 +130,51 @@ class BaseCharacter(ABC):
           reply_text, emotion_state, gif_search_query, thinking,
           tool_executed, tool_log
 
-        Falls back gracefully if the model does not return valid JSON.
+        When ``dossier_context`` is provided (relationship state from the
+        DB), it is injected as a RELATIONSHIP CONTEXT block so the
+        character is aware of the player's history with them.
         """
+        system_prompt = self.system_prompt()
+        extras: list[str] = []
+        if dossier_context:
+            extras.append(dossier_context)
+        if voice_example:
+            extras.append(
+                "VOICE ANCHOR:\n"
+                "Match the cadence and relationship pressure of this reference "
+                "speaking style when rewriting the scene below. Keep the scene facts; "
+                "let the relationship pressure guide register and word choice.\n"
+                f"{voice_example}"
+            )
+        if extras:
+            system_prompt = system_prompt + "\n\n" + "\n\n".join(extras)
         # Build messages with structured-output instruction
         messages: list[dict] = [
-            {"role": "system", "content": self.system_prompt() + STRUCTURED_OUTPUT_PROMPT},
+            {"role": "system", "content": system_prompt + STRUCTURED_OUTPUT_PROMPT},
         ]
         messages.extend(context)
         messages.append({"role": "user", "content": user_message})
 
         try:
+            if self.tools:
+                result = await self._run_with_tools(messages, model_route)
+                parsed = _extract_structured(result.content)
+                if self._last_tool_results:
+                    _names = [n for n, _ in self._last_tool_results]
+                    _logs = [tr.content for _, tr in self._last_tool_results]
+                    parsed["tool_executed"] = (
+                        ", ".join(_names) if len(_names) > 1 else (_names[0] if _names else None)
+                    )
+                    parsed["tool_log"] = (
+                        " | ".join(_logs) if len(_logs) > 1 else (_logs[0] if _logs else None)
+                    )
+                else:
+                    # No real tool ran — clear any LLM-fabricated tool fields
+                    # (DEC-0001: tool evidence must come from real execution,
+                    # not from the model's imagination).
+                    parsed["tool_executed"] = None
+                    parsed["tool_log"] = None
+                return parsed
             raw = await self.provider.call_model(messages, model_route)
         except Exception:
             logger.exception(
@@ -129,3 +191,40 @@ class BaseCharacter(ABC):
             })
 
         return _extract_structured(raw)
+
+    async def _run_with_tools(self, messages: list[dict], model_route: str) -> ModelResult:
+        """Native function-calling loop: model -> tool_calls -> execute -> feed back.
+
+        Runs at most ``MAX_TOOL_ROUNDS`` rounds. The REAL tool results are stored
+        on ``self._last_tool_results`` so the caller can overwrite the
+        ``tool_executed``/``tool_log`` fields with grounded output (DEC-0001).
+        """
+        provider_prefix = model_route.split("/", 1)[0]
+        self._last_tool_results = []
+        result = await self.provider.call_model_with_tools(messages, model_route, self.tools)
+        rounds = 0
+        while result.tool_calls and rounds < MAX_TOOL_ROUNDS:
+            # Both Anthropic and OpenAI require the assistant turn that
+            # *requested* the tools to appear before the tool_result turn.
+            # The Facade normalises the response into a ModelResult, so we
+            # reconstruct the assistant turn here (DEC-0001 / ARCH-DESIGN).
+            messages.append(assistant_message_with_tools(provider_prefix, result))
+            executed: list[ToolResult] = []
+            for tc in result.tool_calls:
+                tr = await self._tool_registry.execute(tc.name, tc.arguments)
+                self._last_tool_results.append((tc.name, tr))
+                executed.append(tr)
+            # Anthropic-compatible providers require ALL tool_result blocks for
+            # one assistant turn to live in a SINGLE user message. OpenAI wants
+            # one role=tool message per call. tool_result_messages handles both.
+            messages.extend(tool_result_messages(provider_prefix, result.tool_calls, executed))
+            result = await self.provider.call_model_with_tools(messages, model_route, self.tools)
+            rounds += 1
+        if result.tool_calls:
+            # Hit MAX_TOOL_ROUNDS while the model still wants more tools.
+            # Force a final completion WITHOUT tools so the user never sees
+            # an empty envelope (DEC-0001 hardens the loop against runaway
+            # tool requests). An empty tool set makes providers fall back to
+            # plain text generation.
+            result = await self.provider.call_model_with_tools(messages, model_route, [])
+        return result

@@ -299,3 +299,34 @@ async def update_dossiers(
 
     await db.commit()
     return applied
+
+
+# ---------------------------------------------------------------------------
+# Dossier Read-back (Loop 4: inject into character agent prompts)
+# ---------------------------------------------------------------------------
+
+
+def format_dossier_context(dossiers: list[Any], character_name: str) -> str:
+    """Format dossiers relevant to a character as prompt context.
+
+    Returns an empty string if no relevant dossiers exist (graceful degrade).
+    """
+    lines: list[str] = []
+    for d in dossiers:
+        if character_name not in (d.owner_id, d.subject_id):
+            continue
+        trust = d.trust_level
+        knowledge = _load_knowledge(d.knowledge)
+        notes = (d.relationship_notes or "").strip()
+        parts: list[str] = [f"- Trust level: {trust}/10"]
+        if knowledge:
+            facts = [v for v in knowledge.values() if v]
+            if facts:
+                parts.append(f"- Known facts: {'; '.join(facts[-5:])}")
+        if notes:
+            recent = notes.split("\n")[-5:]
+            parts.append(f"- Relationship history: {' | '.join(recent)}")
+        lines.extend(parts)
+    if not lines:
+        return ""
+    return "RELATIONSHIP CONTEXT\n" + "\n".join(lines)
