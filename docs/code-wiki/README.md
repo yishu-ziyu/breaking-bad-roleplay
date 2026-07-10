@@ -1,6 +1,6 @@
 # ABQ Roleplay Lab Code Wiki
 
-更新时间：2026-07-01
+更新时间：2026-07-10
 
 本项目是一个《Breaking Bad》风格的 AI 角色扮演原型，正式名称建议使用 **ABQ Roleplay Lab**。它不是单一聊天 Demo，而是一个 React 前端 + FastAPI 后端 + PostgreSQL 记忆层的互动叙事系统：
 
@@ -19,7 +19,7 @@
 | [api.md](./api.md) | REST API、SSE 事件协议、请求/响应结构 |
 | [data-models.md](./data-models.md) | SQLAlchemy 模型、Pydantic schema、Supabase 表、localStorage key |
 | [dependencies.md](./dependencies.md) | npm/Python 依赖、外部服务、模块依赖关系 |
-| [deployment.md](./deployment.md) | 本地运行、迁移、测试、Docker/Render/Railway/Fly/Vercel 部署 |
+| [deployment.md](./deployment.md) | 本地运行、迁移、测试与 Vercel 主生产部署 |
 
 ## 快速代码地图
 
@@ -39,7 +39,7 @@
 | [backend/agents/memory.py](../../backend/agents/memory.py) | session/world 双层 dossier 更新 |
 | [backend/db/models.py](../../backend/db/models.py) | 后端 Story 持久化 ORM 模型 |
 | [backend/alembic/](../../backend/alembic) | 后端 PostgreSQL schema migration |
-| [api/chat.py](../../api/chat.py), [api/story.py](../../api/story.py) | Vercel serverless 遗留端点，不是当前主运行链路 |
+| [api/index.py](../../api/index.py) | Vercel Python Function 入口，导出完整 FastAPI app |
 
 ## 当前主运行链路
 
@@ -72,8 +72,8 @@ Browser src/hooks/useStoryStream.ts
 
 ## 重要维护结论
 
-- **当前 Story 主路径不是 `/api/story`**。`api/story.py` 是 legacy serverless 单次返回端点；当前前端使用 FastAPI session + SSE。
+- **Story 主路径是 FastAPI session + SSE**。Vercel 通过 `api/index.py` 导出同一个 app，不再维护重复的 legacy serverless API。
 - **后端 schema 以 Alembic 为准**。`backend/main.py` 不再启动时 `create_all`；Docker 启动命令会先跑 `alembic upgrade head`。
 - **Supabase 表和后端 SQLAlchemy 表不是同一套 schema**。Supabase 主要支持前端账号、普通聊天记录、前端角色记忆；后端 PostgreSQL 表支持 Story session、message、dossier。
 - **LLM provider 现支持 MiniMax、StepFun、CLIProxy**。前端模型下拉当前显示 `cliproxy` 和 `minimax`，后端仍能处理 `stepfun` 请求。
-- **工作区已有未提交改动**。后续修改前先看 `git status --short`，不要误回滚其他开发中的文件。
+- **每个 Vercel Story 请求只生成一个 beat**。进度由 Postgres 持久化，不依赖函数实例内存。

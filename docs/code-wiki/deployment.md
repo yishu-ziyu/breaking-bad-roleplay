@@ -81,7 +81,7 @@ uv run alembic upgrade head
 - `backend/main.py` 不会在 startup 自动 `create_all`。
 - Docker CMD 会先执行 `cd /app/backend && alembic upgrade head`。
 - [backend/scripts/setup_db.py](../../backend/scripts/setup_db.py) 仍是 `Base.metadata.create_all` 脚本，只适合作为旧本地应急路径。
-- 当前 Alembic migration 可能缺少 `sessions.current_mode`，详见 [data-models.md](./data-models.md)。新环境部署前应先补 migration 或确认数据库 schema 已对齐。
+- Alembic 会对齐 `sessions.current_mode`、dossier 默认值与 `sessions.next_beat_index`，生产库必须处于 head。
 
 ## 启动开发服务器
 
@@ -241,27 +241,6 @@ Render 注意事项：
 - 如果未来多副本部署，应把 migration 从 web startup 中移到 release job / one-off migration。
 - 生产 `ALLOWED_ORIGINS` 应设置为确切域名，不要长期使用 `*`。
 
-## Railway
-
-文件：[railway.toml](../../railway.toml)
-
-```toml
-[build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-
-[deploy]
-startCommand = ""
-healthcheckPath = "/api/health"
-```
-
-Railway 使用 Dockerfile。需要在 Railway 环境变量中配置：
-
-- `DATABASE_URL`
-- 至少一个 LLM key
-- `APP_ENV=production`
-- `ALLOWED_ORIGINS`
-
 ## Fly.io
 
 文件：[fly.toml](../../fly.toml)
@@ -286,23 +265,21 @@ fly secrets set ALLOWED_ORIGINS='https://your-app.fly.dev'
 
 ## Vercel
 
-文件：[vercel.json](../../vercel.json)
+主生产入口是 [api/index.py](../../api/index.py)，它导出与本地一致的 FastAPI app。[vercel.json](../../vercel.json) 将 `/api/*` 路由到该 Python Function，其余路径交给 Vite SPA。
 
-当前配置：
+Story 每次函数调用只渲染一个 beat；`next_beat_index`、outline 和消息持久化到 Supabase Postgres。前端在收到非最终 `beat_ready` 后关闭 SSE，玩家操作成功后再发起下一次请求。
 
-```json
-{
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}
-```
+Vercel Production 必需变量：
 
-注意：
+- `DATABASE_URL`
+- `MINIMAX_API_KEY`（或另一个可用 provider key）
+- `DIRECTOR_MODEL_ROUTE=minimax/MiniMax-M3`
+- `ENABLE_DOSSIER_UPDATES=false`
+- `APP_ENV=production`
+- `ALLOWED_ORIGINS=https://bb.yishuziyu.cn,https://breaking-bad-roleplay.vercel.app`
+- `VITE_SUPABASE_URL` 与 `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-- 根目录 [api/chat.py](../../api/chat.py) 和 [api/story.py](../../api/story.py) 是 serverless 遗留函数。
-- 当前 Story 主路径依赖 FastAPI long-running SSE + PostgreSQL + in-process `_session_queues`，不适合直接用静态 Vercel rewrite 代替。
-- 如果继续使用 Vercel 托管前端，应把 `/api/*` 指向 FastAPI 后端服务，或保留 legacy serverless 但接受功能差异。
+数据库迁移不在函数冷启动时执行；部署前单独运行 `alembic upgrade head`。公开域名为 `https://bb.yishuziyu.cn`。
 
 ## Nixpacks
 
