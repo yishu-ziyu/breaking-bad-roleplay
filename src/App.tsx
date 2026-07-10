@@ -40,8 +40,12 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Gus Fring': 'gus', 'Gus': 'gus',
 }
 
+const STORY_CARD_EVENT_TYPES = new Set(['scene_change', 'agent_speak', 'agent_think', 'agent_act'])
+
 function resolveStoryEventGif(evt: StoryEvent): string | null {
   if (evt.type !== 'agent_speak') return null
+  if (evt.data.show_gif === false) return null
+  if (!evt.data.gif_search_query && !evt.data.emotion_state) return null
   const charId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
   if (!charId) return null
   return resolveGifUrl(
@@ -51,21 +55,123 @@ function resolveStoryEventGif(evt: StoryEvent): string | null {
   )
 }
 
+const STORY_EVENT_GIF_CACHE = new WeakMap<StoryEvent, string | null>()
+
+function getStoryEventGif(evt: StoryEvent): string | null {
+  const cached = STORY_EVENT_GIF_CACHE.get(evt)
+  if (cached !== undefined) return cached
+  const resolved = resolveStoryEventGif(evt)
+  STORY_EVENT_GIF_CACHE.set(evt, resolved)
+  return resolved
+}
+
 function getEventTitle(evt: StoryEvent, lang: Language): string {
   const charId = (evt.data.character_id as string) ?? ''
+  const t = uiText[lang]
   switch (evt.type) {
-    case 'outline': return lang === 'zh' ? '故事大纲' : 'Story Outline'
-    case 'scene_change': return lang === 'zh' ? '场景切换' : 'Scene Change'
-    case 'agent_speak': return lang === 'zh' ? `${charId} 说` : `${charId} speaks`
-    case 'agent_think': return lang === 'zh' ? `${charId} 思考` : `${charId} thinks`
-    case 'agent_act': return lang === 'zh' ? `${charId} 行动` : `${charId} acts`
-    case 'beat_ready': return lang === 'zh' ? '🎬 导演等你决策' : '🎬 Director awaits your decision'
-    case 'world_state_delta': return lang === 'zh' ? '📊 世界状态变化' : '📊 World State Delta'
-    case 'status': return lang === 'zh' ? '状态更新' : 'Status'
-    case 'complete': return lang === 'zh' ? '🎬 剧情完结' : '🎬 Story Complete'
-    case 'error': return lang === 'zh' ? '⚠ 错误' : '⚠ Error'
+    case 'outline': return t.eventOutline
+    case 'scene_change': return t.eventSceneChange
+    case 'agent_speak': return `${charId} ${t.eventSpeaks}`
+    case 'agent_think': return `${charId} ${t.eventThinks}`
+    case 'agent_act': return `${charId} ${t.eventActs}`
+    case 'beat_ready': return t.eventBeatReady
+    case 'world_state_delta': return t.eventWorldDelta
+    case 'status': return t.eventStatus
+    case 'complete': return t.eventComplete
+    case 'error': return t.eventError
     default: return evt.type
   }
+}
+
+function formatStoryPlanPreview(outline: string, lang: Language): string {
+  const beats = outline
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => /^\d+[.)]\s+/.test(line))
+  const count = Math.max(beats.length, 1)
+  return lang === 'zh'
+    ? `已规划 ${count} 个剧情节拍。具体走向会随游玩逐步揭示。`
+    : `${count} story beats planned. The details will reveal as you play.`
+}
+
+function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
+  switch (evt.type) {
+    case 'scene_change':
+      return ((evt.data.description as string) ?? '').replace(/^Transitioning to:\s*/i, '')
+    case 'agent_speak':
+      return (evt.data.content as string) ?? ''
+    case 'agent_think':
+      return (evt.data.thought_content as string) ?? ''
+    case 'agent_act':
+      return (evt.data.action as string) ?? ''
+    case 'world_state_delta': {
+      const deltas = evt.data.deltas as Array<Record<string, string>> | undefined
+      if (!deltas?.length) return lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.'
+      const rendered = deltas.map(d => {
+        const hasContent = d.target || d.entity || d.field || d.old_value || d.new_value
+        if (!hasContent) return null
+        const entity = d.target ?? d.entity ?? ''
+        if (!entity && !d.field) return null
+        return `${entity}: ${d.field} ${d.old_value ?? '∅'} → ${d.new_value ?? '∅'}`
+      }).filter(Boolean)
+      return rendered.length > 0 ? rendered.join('\n') : (lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.')
+    }
+    case 'status':
+    case 'complete':
+    case 'error':
+      return translateBackendMessage(evt.data.message as string, lang)
+    default:
+      return ''
+  }
+}
+
+/* P1-3: translate known backend-emitted English status strings */
+const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
+  'Director is analysing the task...': {
+    en: 'Director is analysing the task...',
+    zh: '导演正在分析任务…',
+  },
+  'Director outlined {n} beat(s). Beginning roleplay…': {
+    en: 'Director outlined {n} beat(s). Beginning roleplay…',
+    zh: '导演已规划 {n} 个剧情节拍。开始角色扮演…',
+  },
+  'No action received — continuing automatically.': {
+    en: 'No action received — continuing automatically.',
+    zh: '未收到玩家操作 — 自动继续…',
+  },
+}
+
+function translateBackendMessage(msg: string, lang: Language): string {
+  if (lang === 'en' || !msg) return msg
+  for (const [key, translations] of Object.entries(BACKEND_STATUS_TRANSLATIONS)) {
+    if (msg === key) return translations.zh
+    /* Handle the beat count variant */
+    if (key.includes('{n}') && msg.startsWith('Director outlined ')) {
+      const match = msg.match(/Director outlined (\d+) beat\(s\)\. Beginning roleplay…/)
+      if (match) {
+        return translations.zh.replace('{n}', match[1])
+      }
+    }
+  }
+  return msg
+}
+
+function getStoryCardHeading(evt: StoryEvent | null, fallback: string): string {
+  if (!evt) return fallback
+  const characterId = typeof evt.data.character_id === 'string' ? evt.data.character_id : ''
+  if (characterId) return characterId
+  return fallback
+}
+
+function findLastStoryEvent(
+  events: StoryEvent[],
+  predicate: (evt: StoryEvent) => boolean,
+): StoryEvent | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const evt = events[i]
+    if (evt && predicate(evt)) return evt
+  }
+  return null
 }
 
 type ChatMessage = {
@@ -159,10 +265,10 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'person being evaluated': { en: '被评估的人', zh: '被评估的人' },
 }
 
-const uiText = {
+const uiText: Record<Language, Record<string, string>> = {
   en: {
-    tagline: 'Stateful Breaking Bad autonomous agents running Plan-Reflect cognitive loops.',
-    landingSubtitle: 'Pick a character. Choose your relationship. Start a conversation that matters.',
+    tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
+    landingSubtitle: 'Step into Albuquerque. Everything you say stays with them.',
     landingStep1: 'Choose',
     landingStep2: 'Anchor',
     landingStep3: 'Chat',
@@ -178,13 +284,13 @@ const uiText = {
     model: 'Model Backend',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: 'Set the Stage',
-    setStageHint: 'Describe the story you want in natural language. The Director will autonomously act out the plot, pausing at each beat for your decision.',
+    setStageHint: 'Describe the story you want in natural language. The scene board will play it beat by beat, pausing at pressure points for your decision.',
     placeholder: 'e.g. Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out…',
     startStory: 'Start Story',
-    directing: 'Directing…',
+    directing: 'Blocking the scene…',
     narrativeStream: 'Narrative Stream',
     eventFeed: 'Fine-grained event-driven narrative',
-    directorDecision: 'Director awaits your decision:',
+    directorDecision: 'Choose the next move:',
     switchToChat: 'Switch to Chat',
     you: 'You',
     send: 'Send',
@@ -192,8 +298,8 @@ const uiText = {
     messagePlaceholder: 'Negotiate with {character} as their {relation}…',
     privateScene: 'Private Scene',
     crewScene: 'Crew Debate',
-    schema: 'Director-Driven',
-    gifTrigger: 'GIF',
+    schema: 'Scene Board',
+    gifTrigger: 'Scene beat',
     connected: 'Stream live',
     connecting: 'Connecting…',
     disconnected: 'Disconnected',
@@ -202,10 +308,59 @@ const uiText = {
     stop: 'Stop',
     storyOutline: 'Story Outline',
     paused: 'Paused',
+    toolLabel: 'Tool Call',
+    eventOutline: 'Story Outline',
+    eventSceneChange: 'Scene Setup',
+    eventSpeaks: 'speaks',
+    eventThinks: 'unspoken pressure',
+    eventActs: 'acts',
+    eventBeatReady: 'Beat decision',
+    eventWorldDelta: 'Consequences Changed',
+    eventStatus: 'Scene Status',
+    eventComplete: 'Scene Wrapped',
+    eventError: 'Error',
+    openingEmotion: 'opening pressure',
+    enterWorld: 'ENTER THE WORLD',
+    langEn: 'EN',
+    beatRedirect: '↩ Redirect',
+    beatSwitchPerspective: '👤 Switch Perspective',
+    beatSubmit: 'Submit',
+    beatCancel: 'Cancel',
+    beatSelectCharacter: 'Select character…',
+    beatRedirectPlaceholder: 'Enter new plot direction…',
+    chatHeaderWith: '{character} with their {relation}',
+    savePrompt: 'Sign in to save this conversation to the cloud.',
+    langZh: '中文',
+    resumingStory: 'Resuming previous story...',
+    reconnect: 'Reconnect',
+    restart: 'Restart',
+    autoContinue: 'Scene resumes after 5min idle...',
+    streaming: 'Streaming',
+    returnToLanding: '↩ Return to Landing',
+    continueChapter: 'Start Chapter 2',
+    branchStory: 'Try a Different Branch',
+    replayBeat: 'Replay Last Beat',
+    startAgain: 'Start Again',
+    storyCompleteHint: 'Each new beat will pick up the last chapter\'s context.',
+    pressureDossier: 'Relationship pressure',
+    pressureTrust: 'Trust',
+    pressureStyle: 'Pressure',
+    pressureConflict: 'Conflict',
+    scene: 'Scene',
+    location: 'Location',
+    tension: 'Tension',
+    time: 'Time',
+    sceneTimeline: 'Scene Timeline',
+    unspokenPressure: 'Unspoken Pressure',
+    possibleConsequences: 'Possible Consequences',
+    relationshipImpact: 'Relationship Impact',
+    currentBeat: 'Current Beat',
+    sceneFallback: 'Scene board is waiting for the first beat.',
+    storyLocationFallback: 'North of ABQ',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
-    landingSubtitle: '选一个角色。确定你的关系。开始一段有分量的对话。',
+    landingSubtitle: '走进阿尔伯克基。你的每一句话，他们都会记住。',
     landingStep1: '选择',
     landingStep2: '锚定',
     landingStep3: '对话',
@@ -221,10 +376,10 @@ const uiText = {
     model: '引擎线路',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: '任务简报',
-    setStageHint: '写下这局的目标、风险和想看到的冲突。导演会分镜推进剧情，并在关键节点等待你的选择。',
+    setStageHint: '写下这局的目标、风险和想看到的冲突。场景会分镜推进剧情，并在关键节点等待你的选择。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
     startStory: '开始任务',
-    directing: '导演正在分镜…',
+    directing: '现场正在调度…',
     narrativeStream: '任务现场',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
@@ -235,8 +390,8 @@ const uiText = {
     messagePlaceholder: '以{relation}身份对 {character} 说…',
     privateScene: '单人场景',
     crewScene: '群像会谈',
-    schema: '导演系统',
-    gifTrigger: '镜头参考',
+    schema: '场景记录',
+    gifTrigger: '镜头节点',
     connected: '现场已连接',
     connecting: '连接现场…',
     disconnected: '已断开',
@@ -245,13 +400,60 @@ const uiText = {
     stop: '停止',
     storyOutline: '任务大纲',
     paused: '已暂停',
+    toolLabel: '工具调用',
+    eventOutline: '故事大纲',
+    eventSceneChange: '场景建立',
+    eventSpeaks: '说',
+    eventThinks: '未说出口',
+    eventActs: '行动',
+    eventBeatReady: '关键选择',
+    eventWorldDelta: '后果变化',
+    eventStatus: '现场状态',
+    eventComplete: '任务收束',
+    eventError: '错误',
+    reconnect: '重连',
+    restart: '重新开始',
+    autoContinue: '5 分钟无操作，现场自动继续中…',
+    streaming: '播放中',
+    resumingStory: '正在恢复上次剧情…',
+    openingEmotion: '开场压迫',
+    langZh: '中文',
+    enterWorld: '进入世界',
+    langEn: 'EN',
+    beatRedirect: '↩ 重定向',
+    beatSwitchPerspective: '👤 切换视角',
+    beatSubmit: '提交',
+    beatCancel: '取消',
+    beatSelectCharacter: '选择角色…',
+    beatRedirectPlaceholder: '输入新的剧情方向…',
+    chatHeaderWith: '{character} 与{relation}',
+    savePrompt: '同步档案后，可在云端保存这段会谈。',
+    returnToLanding: '↩ 回到主页',
+    continueChapter: '开始第二章',
+    branchStory: '换一个分支重开',
+    replayBeat: '重演最后节点',
+    startAgain: '重新开始',
+    storyCompleteHint: '下一节会用上一章的剧情作为起点。',
+    pressureDossier: '关系压力',
+    pressureTrust: '信任',
+    pressureStyle: '施压方式',
+    pressureConflict: '冲突钩子',
+    scene: '场次',
+    location: '地点',
+    tension: '张力',
+    time: '时间',
+    sceneTimeline: '分镜时间线',
+    unspokenPressure: '未说出口的压力',
+    possibleConsequences: '可能后果',
+    relationshipImpact: '关系影响',
+    currentBeat: '当前节点',
+    sceneFallback: '场景记录正在等待第一个剧情节点。',
+    storyLocationFallback: '阿尔伯克基北部',
   },
-} satisfies Record<Language, Record<string, string>>
+}
+
 
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
-
 function getRelationLabel(relation: string, lang: Language): string {
   return relationLabels[relation]?.[lang] ?? relation
 }
@@ -261,7 +463,6 @@ function formatRelation(char: Character, relation: string, lang: Language): stri
   return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
 }
 
-/* ------------------------------------------------------------------ */
 /*  BeatControls — decision UI at beat_ready                          */
 /* ------------------------------------------------------------------ */
 
@@ -269,7 +470,6 @@ type BeatAction = 'continue' | 'stop' | 'redirect' | 'switch_perspective'
 
 interface BeatControlsProps {
   t: Record<string, string>
-  language: Language
   characters: Character[]
   onContinue: () => void | Promise<void>
   onStop: () => void | Promise<void>
@@ -277,7 +477,7 @@ interface BeatControlsProps {
   onSwitchPerspective: (charId: string) => void | Promise<void>
 }
 
-function BeatControls({ t, language, characters, onContinue, onStop, onRedirect, onSwitchPerspective }: BeatControlsProps) {
+function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchPerspective }: BeatControlsProps) {
   const [pending, setPending] = useState<BeatAction | null>(null)
   const [redirectOpen, setRedirectOpen] = useState(false)
   const [redirectText, setRedirectText] = useState('')
@@ -293,14 +493,13 @@ function BeatControls({ t, language, characters, onContinue, onStop, onRedirect,
     }
   }
 
-  const zh = language === 'zh'
   const labels = {
-    redirect: zh ? '↩ 重定向' : '↩ Redirect',
-    switchPerspective: zh ? '👤 切换视角' : '👤 Switch Perspective',
-    submit: zh ? '提交' : 'Submit',
-    cancel: zh ? '取消' : 'Cancel',
-    selectCharacter: zh ? '选择角色…' : 'Select character…',
-    redirectPlaceholder: zh ? '输入新的剧情方向…' : 'Enter new plot direction…',
+    redirect: t.beatRedirect,
+    switchPerspective: t.beatSwitchPerspective,
+    submit: t.beatSubmit,
+    cancel: t.beatCancel,
+    selectCharacter: t.beatSelectCharacter,
+    redirectPlaceholder: t.beatRedirectPlaceholder,
   }
 
   return (
@@ -383,8 +582,17 @@ function App() {
   const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
 
-  const [hasEnteredWorld, setHasEnteredWorld] = useState(false)
-  const [autoPlayMode, setAutoPlayMode] = useState(false)
+  const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
+
+  // P0-4: when switching to a character that already has a saved relation,
+  // surface a brief inline notice so the user understands the relation
+  // was kept (instead of silently defaulting back to the first option).
+  const [relationNotice, setRelationNotice] = useState<string | null>(null)
+  useEffect(() => {
+    if (!relationNotice) return
+    const id = window.setTimeout(() => setRelationNotice(null), 3500)
+    return () => window.clearTimeout(id)
+  }, [relationNotice])
 
   // Relation per character (persist across character switches)
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
@@ -392,7 +600,7 @@ function App() {
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
-  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm-v2', 'cliproxy')
+  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm-v2', 'minimax')
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -480,7 +688,6 @@ function App() {
      fetch cloud → merge with local → if merged is empty, insert opener. */
   useEffect(() => {
     const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
-    const openerGif = resolveGifUrl(selectedCharId, 'opening pressure', null)
 
     ;(async () => {
       let cloudMsgs: ChatMessage[] = []
@@ -543,9 +750,9 @@ function App() {
               id: `opener-${selectedCharId}`,
               sender: selectedCharId,
               text: opener,
-              emotion: language === 'zh' ? '开场压迫' : 'opening pressure',
+              emotion: t.openingEmotion,
               gifQuery: null,
-              gifUrl: openerGif,
+              gifUrl: null,
             }],
           }
         }
@@ -564,7 +771,7 @@ function App() {
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
   const [prevSceneUrl, setPrevSceneUrl] = useState<string | null>(null)
   const [sceneReady, setSceneReady] = useState(false)
-  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatStreamRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const next = pickSceneUrl(messages.slice(-8).map(m => m.text))
@@ -584,47 +791,35 @@ function App() {
   }, [currentSceneUrl])
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const stream = chatStreamRef.current
+    if (!stream) return
+    stream.scrollTo({ top: stream.scrollHeight, behavior: 'smooth' })
   }, [messages.length])
 
   const userTurnCount = messages.filter(m => m.sender === 'user').length
   const showSavePrompt = !auth.user && userTurnCount >= 3
 
   /* ---- Story start ---- */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const handleStartStory = useCallback(async () => {
     if (!storyTask.trim()) return
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     setError(null)
     try {
-      await story.startStory(storyTask, selectedCharId)
+      await story.startStory(storyTask, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [storyTask, story, selectedCharId])
+  }, [storyTask, story, selectedCharId, relation, language])
 
-  /* ---- Auto-play mode (triggered by landing screen) ---- */
+  /* ---- Enter world from landing screen ---- */
   const handleEnterWorld = useCallback(() => {
     setHasEnteredWorld(true)
-    setAutoPlayMode(true)
-  }, [])
-
-  useEffect(() => {
-    if (!autoPlayMode) return
-    setAutoPlayMode(false)
+    setView('chat')
     setStoryTask(DEFAULT_STORY_PROMPT)
-    setView('story')
-    const timer = setTimeout(async () => {
-      setError(null)
-      try {
-        await story.startStory(DEFAULT_STORY_PROMPT, selectedCharId)
-        setStoryTask('')
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      }
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [autoPlayMode, story, selectedCharId])
+    story.reset()
+  }, [setHasEnteredWorld, setView, story])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -773,10 +968,70 @@ function App() {
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {
     setSelectedCharId(id)
-    setRelationByChar(prev => ({ ...prev, [id]: characters.find(c => c.id === id)!.relationOptions[0] }))
+    setRelationByChar(prev => {
+      const savedRelation = prev[id]
+      if (savedRelation !== undefined) {
+        const charName = characters.find(c => c.id === id)?.name ?? id
+        setRelationNotice(
+          `${charName}: ${getRelationLabel(savedRelation, language)}`,
+        )
+      }
+      return { ...prev, [id]: savedRelation ?? characters.find(c => c.id === id)!.relationOptions[0] }
+    })
     setMessage('')
     setError(null)
-  }, [setSelectedCharId, setRelationByChar])
+  }, [setSelectedCharId, setRelationByChar, language])
+
+  const handleReturnToLanding = useCallback(() => {
+    story.reset()
+    setHasEnteredWorld(false)
+  }, [story, setHasEnteredWorld])
+
+  const storyContextSummary = useMemo(() => {
+    const spoken = story.events
+      .filter(evt => evt.type === 'agent_speak')
+      .slice(-4)
+      .map(evt => `${evt.data.character_id ?? 'Character'}: ${evt.data.content ?? ''}`)
+      .join('\n')
+    return [story.outline, spoken].filter(Boolean).join('\n\n')
+  }, [story.events, story.outline])
+
+  const currentStoryEvent = useMemo(() => {
+    return findLastStoryEvent(story.events, evt => STORY_CARD_EVENT_TYPES.has(evt.type))
+  }, [story.events])
+  const currentStoryText = currentStoryEvent ? getStoryEventSummary(currentStoryEvent, language) : t.sceneFallback
+  const currentStoryTitle = currentStoryEvent ? getEventTitle(currentStoryEvent, language) : t.currentBeat
+  const currentStoryHeading = getStoryCardHeading(currentStoryEvent, currentStoryTitle)
+  const currentStorySpeakerId = currentStoryEvent?.type === 'agent_speak'
+    ? DISPLAY_NAME_TO_ID[currentStoryEvent.data.character_id as string]
+    : null
+  const currentStorySpeakerText = currentStoryEvent?.type === 'agent_speak'
+    ? ((currentStoryEvent.data.content as string) ?? '')
+    : ''
+  const storyLocation = useMemo(() => {
+    const latest = findLastStoryEvent(story.events, evt => evt.type === 'scene_change')
+    if (!latest) return t.storyLocationFallback
+    const destination = typeof latest.data.to_scene === 'string' ? latest.data.to_scene : ''
+    return (destination || getStoryEventSummary(latest, language)).slice(0, 64)
+  }, [language, story.events, t.storyLocationFallback])
+  const storyBeatLabel = language === 'zh'
+    ? `节点 ${Math.max(story.beatIndex, 1)}`
+    : `Beat ${Math.max(story.beatIndex, 1)}`
+
+  const handleContinueChapter = useCallback(async () => {
+    const prompt = `${DEFAULT_STORY_PROMPT}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+  }, [relation, selectedCharId, story, storyContextSummary, language])
+
+  const handleBranchStory = useCallback(async () => {
+    const prompt = `${DEFAULT_STORY_PROMPT}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.\n\nOriginal context:\n${storyContextSummary || 'No previous context was captured.'}`
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+  }, [relation, selectedCharId, story, storyContextSummary, language])
+
+  const handleReplayBeat = useCallback(async () => {
+    const prompt = `${DEFAULT_STORY_PROMPT}\n\nReplay the last beat from a more intimate angle. Keep the same premise, but reveal a hidden motive or unspoken fear that was not explicit before.\n\nPrevious context:\n${storyContextSummary || 'No previous context was captured.'}`
+    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+  }, [relation, selectedCharId, story, storyContextSummary, language])
 
   /* ---- Render ---- */
   if (!hasEnteredWorld) {
@@ -806,7 +1061,7 @@ function App() {
             </div>
           </div>
           <button className="landing-screen__enter" onClick={handleEnterWorld} type="button">
-            {language === 'zh' ? '进入世界' : 'ENTER THE WORLD'}
+            {t.enterWorld}
             <span className="landing-screen__enter-arrow">&rarr;</span>
           </button>
         </div>
@@ -815,16 +1070,60 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      {/* ===================== SIDEBAR ===================== */}
-      <aside className="sidebar">
-        {/* Brand */}
-        <div className="brand">
+    <>
+      {/* P0-3: auto-resume probe toast. Shown when the mount-time HEAD
+          probe finds the saved sessionId is dead (404). Dismissable +
+          auto-dismisses after 8s (handled in the hook). */}
+      {story.resumeToast && (
+        <div className="resume-notice" role="status" aria-live="polite">
+          <span>{story.resumeToast}</span>
+          <button
+            type="button"
+            className="resume-notice__close"
+            onClick={story.dismissResumeToast}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {/* P0-4: relation preservation notice when the user returns to a
+          character whose saved relation is being reused. */}
+      {relationNotice && (
+        <div className="relation-notice" role="status" aria-live="polite">
+          <span>↻ {relationNotice}</span>
+          <button
+            type="button"
+            className="resume-notice__close"
+            onClick={() => setRelationNotice(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      <main className="app-shell" lang={language === 'zh' ? 'zh-CN' : 'en'}>
+        <div className={`sidebar-wrapper ${sidebarCollapsed ? 'sidebar-wrapper--collapsed' : ''}`}>
+          <button
+            type="button"
+            className="sidebar__toggle"
+            onClick={() => setSidebarCollapsed(v => !v)}
+            aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            aria-expanded={!sidebarCollapsed}
+          >
+            {sidebarCollapsed ? '◂ Sidebar' : '▸'}
+          </button>
+          <aside className="sidebar">
+            {/* Brand */}
+            <div className="brand">
           <span className="brand-icon" />
           <div>
             <h1>{t.storyTitle}</h1>
             <p>{t.tagline}</p>
           </div>
+          <button type="button" className="brand-return" onClick={handleReturnToLanding}>
+            {t.returnToLanding}
+          </button>
         </div>
 
         {/* Auth section */}
@@ -856,8 +1155,8 @@ function App() {
         <section>
           <span className="field-label">{t.language}</span>
           <div className="seg-control">
-            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>EN</button>
-            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>中文</button>
+            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>{t.langEn}</button>
+            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>{t.langZh}</button>
           </div>
         </section>
 
@@ -895,30 +1194,50 @@ function App() {
           </section>
         )}
 
-        {/* Model backend */}
+        {/* LLM Provider selector */}
         <section>
-          <label htmlFor="llmProvider">{t.model}</label>
-          <select id="llmProvider" value={llmProvider} onChange={e => setLlmProvider(e.target.value)}>
-            <option value="cliproxy">CLIProxy gemini-pro-agent</option>
+          <span className="field-label">{t.model}</span>
+          <select
+            value={llmProvider}
+            onChange={e => setLlmProvider(e.target.value)}
+          >
             <option value="minimax">MiniMax M3</option>
+            <option value="stepfun">StepFun</option>
+            <option value="cliproxy">CLIProxy (本地)</option>
           </select>
         </section>
-      </aside>
+          </aside>
+        </div>
 
       {/* ===================== MAIN PANEL ===================== */}
       {view === 'story' ? (
         /* ---------- Story View ---------- */
         <section className="story-panel">
-          <header className="story-header">
-            <h2>{t.narrativeStream}</h2>
-            <span className="schema-pill">
-              {story.connectionState === 'idle' && t.setStage}
-              {story.connectionState === 'connecting' && t.connecting}
-              {story.connectionState === 'streaming' && (language === 'zh' ? '播放中' : 'Streaming')}
-              {story.connectionState === 'beat_paused' && t.paused}
-              {story.connectionState === 'complete' && (language === 'zh' ? '已完结' : 'Complete')}
-              {story.connectionState === 'error' && (language === 'zh' ? '错误' : 'Error')}
-            </span>
+          <header className="story-header story-hud">
+            <div className="story-hud__brand">
+              <span className="brand-icon" aria-hidden="true" />
+              <div>
+                <p>{t.schema}</p>
+                <h2>{t.narrativeStream}</h2>
+              </div>
+            </div>
+            <div className="story-hud__metric">
+              <span>{t.scene}</span>
+              <strong>{storyBeatLabel}</strong>
+            </div>
+            <div className="story-hud__metric story-hud__metric--wide">
+              <span>{t.location}</span>
+              <strong>{storyLocation}</strong>
+              <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+            </div>
+            <div className="story-hud__metric">
+              <span>{t.tension}</span>
+              <strong>
+                {currentStoryEvent?.data?.emotion_state
+                  ? currentStoryEvent.data.emotion_state as string
+                  : ''}
+              </strong>
+            </div>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
           </header>
 
@@ -950,7 +1269,7 @@ function App() {
                 <span className="dot" /><span className="dot" /><span className="dot" />
               </div>
               <p>{story.isResuming
-                ? (language === 'zh' ? '正在恢复上次剧情…' : 'Resuming previous story…')
+                ? (t.resumingStory)
                 : t.directing}</p>
             </div>
           )}
@@ -961,11 +1280,11 @@ function App() {
               <p>⚠ {story.getCharState(selectedCharId).error}</p>
               {story.sessionId && (
                 <button type="button" onClick={story.reconnect}>
-                  {language === 'zh' ? '重连' : 'Reconnect'}
+                  {t.reconnect}
                 </button>
               )}
               <button type="button" onClick={story.reset}>
-                {language === 'zh' ? '重新开始' : 'Restart'}
+                {t.restart}
               </button>
               {error && <div className="error-box">{error}</div>}
             </div>
@@ -975,70 +1294,99 @@ function App() {
           {(story.connectionState === 'streaming'
             || story.connectionState === 'beat_paused'
             || story.connectionState === 'complete') && (
-            <div className="story-stream">
-              {story.outline && (
-                <div className="story-outline">
-                  <strong>{t.storyOutline}</strong>
-                  <p>{story.outline}</p>
-                </div>
-              )}
-
-              <div className="story-progress">
-                <span>Beat {story.beatIndex}</span>
+            <div className={`story-stream story-stream--${story.connectionState}`}>
+              <div className="story-board__brief">
+                {story.outline && (
+                  <div className="story-outline">
+                    <strong>{t.storyOutline}</strong>
+                    <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
+                    <p className="story-outline__body">{story.outline}</p>
+                  </div>
+                )}
               </div>
 
-              <div className="story-events">
-                {story.events.map((evt, i) => (
-                  <div key={`${i}-${evt.type}-${evt.received_at ?? ''}`} className={`story-event story-event--${evt.type}`}>
-                    <strong>{getEventTitle(evt, language)}</strong>
-                    <div className="event-body">
-                      {evt.type === 'scene_change' && (
-                        <p>{(evt.data.description as string) ?? ''}</p>
-                      )}
-                      {evt.type === 'agent_speak' && (() => {
-                        const speakCharId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
-                        const speakText = (evt.data.content as string) ?? ''
-                        return (
-                          <div className="story-event__content">
-                            <p><em>{(evt.data.character_id as string) ?? ''}:</em> {speakText}</p>
-                            {speakCharId && speakText && (
-                              <VoicePlayer
-                                text={speakText}
-                                characterId={speakCharId}
-                                language={language}
-                              />
-                            )}
-                            <GifCard src={resolveStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
-                          </div>
-                        )
-                      })()}
-                      {evt.type === 'agent_think' && (
-                        <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
-                      )}
-                      {evt.type === 'agent_act' && (
-                        <p><em>{(evt.data.character_id as string) ?? ''}</em> {(evt.data.action as string) ?? ''}</p>
-                      )}
-                      {evt.type === 'world_state_delta' && (
-                        <ul className="world-delta">
-                          {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => (
-                            <li key={j}>
-                              {d.target ?? d.entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {evt.type === 'status' && (
-                        <p className="status-msg">{evt.data.message as string}</p>
-                      )}
-                      {evt.type === 'complete' && (
-                        <p>{(evt.data.message as string) ?? t.storyComplete}</p>
-                      )}
-                      {evt.type === 'error' && (
-                        <p className="status-msg">⚠ {(evt.data.message as string) ?? 'Error'}</p>
-                      )}
-                    </div>
+              <div className="story-board__grid">
+                <aside className="story-timeline" aria-label={t.sceneTimeline}>
+                  <h3>{t.sceneTimeline}</h3>
+                  <div className="story-events">
+                    {story.events.map((evt, i) => (
+                      <div
+                        key={`${i}-${evt.type}-${evt.received_at ?? ''}`}
+                        className={`story-event story-event--${evt.type}${evt === currentStoryEvent ? ' is-active' : ''}`}
+                      >
+                        <span className="story-event__dot" aria-hidden="true" />
+                        <strong>{getEventTitle(evt, language)}</strong>
+                        <div className="event-body">
+                          {evt.type === 'scene_change' && (
+                            <p>{(evt.data.description as string) ?? ''}</p>
+                          )}
+                          {evt.type === 'agent_speak' && (() => {
+                            const speakCharId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
+                            const speakText = (evt.data.content as string) ?? ''
+                            return (
+                              <div className="story-event__content">
+                                <p><em>{(evt.data.character_id as string) ?? ''}:</em> {speakText}</p>
+                                {speakCharId && speakText && (
+                                  <VoicePlayer
+                                    text={speakText}
+                                    characterId={speakCharId}
+                                    language={language}
+                                  />
+                                )}
+                                <GifCard src={getStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
+                              </div>
+                            )
+                          })()}
+                          {evt.type === 'agent_think' && (
+                            <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
+                          )}
+                          {evt.type === 'agent_act' && (
+                            <p><em>{(evt.data.character_id as string) ?? ''}</em> {(evt.data.action as string) ?? ''}</p>
+                          )}
+                          {evt.type === 'world_state_delta' && (
+                            <ul className="world-delta">
+                              {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => {
+                                const hasContent = d.target || d.entity || d.field || d.old_value || d.new_value
+                                if (!hasContent) return null
+                                const entity = d.target ?? d.entity ?? ''
+                                if (!entity && !d.field) return null
+                                return (
+                                  <li key={j}>
+                                    {entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          )}
+                          {evt.type === 'status' && (
+                            <p className="status-msg">{evt.data.message as string}</p>
+                          )}
+                          {evt.type === 'complete' && (
+                            <p>{(evt.data.message as string) ?? t.storyComplete}</p>
+                          )}
+                          {evt.type === 'error' && (
+                            <p className="status-msg">⚠ {(evt.data.message as string) ?? t.eventError}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </aside>
+
+                <section className={`story-scene-card story-scene-card--${currentStoryEvent?.type ?? 'empty'}`}>
+                  <div className="story-scene-card__paper">
+                    <div className="story-scene-card__meta">
+                      <span>{currentStoryTitle}</span>
+                      <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+                    </div>
+                    <h3>{currentStoryHeading}</h3>
+                    <p className="story-scene-card__quote">{currentStoryText}</p>
+                    {currentStorySpeakerId && currentStorySpeakerText && (
+                      <VoicePlayer text={currentStorySpeakerText} characterId={currentStorySpeakerId} language={language} />
+                    )}
+                    <GifCard src={currentStoryEvent ? getStoryEventGif(currentStoryEvent) : null} alt={t.gifTrigger} />
+                  </div>
+                </section>
               </div>
 
               {/* Streaming indicator */}
@@ -1046,7 +1394,7 @@ function App() {
                 <div className="streaming-indicator" aria-live="polite">
                   {story.autoContinued ? (
                     <span className="auto-continue-notice">
-                      {language === 'zh' ? '导演 5 分钟无操作，自动继续中…' : 'Director auto-continuing (5min idle)…'}
+                      {t.autoContinue}
                     </span>
                   ) : (
                     <div className="typing">
@@ -1062,7 +1410,6 @@ function App() {
                   <p>{t.directorDecision}</p>
                   <BeatControls
                     t={t}
-                    language={language}
                     characters={characters}
                     onContinue={() => story.sendAction('continue', undefined, selectedCharId)}
                     onStop={() => story.sendAction('stop', undefined, selectedCharId)}
@@ -1072,11 +1419,22 @@ function App() {
                 </div>
               )}
 
-              {/* complete: restart entry */}
+              {/* complete: restart and follow-up entries.
+                  Each new-session button seeds the next story with the
+                  recent context so the user feels like they are picking up
+                  where the last chapter left off. The buttons are labelled
+                  "Start Again" rather than "Continue" so users do not
+                  expect an in-band continuation of the closed session. */}
               {story.connectionState === 'complete' && (
                 <div className="story-complete">
                   <p>🎬 {t.storyComplete}</p>
-                  <button type="button" onClick={story.reset}>{t.startStory}</button>
+                  <div className="story-complete__actions">
+                    <button type="button" onClick={handleContinueChapter}>{t.continueChapter}</button>
+                    <button type="button" onClick={handleBranchStory}>{t.branchStory}</button>
+                    <button type="button" onClick={handleReplayBeat}>{t.replayBeat}</button>
+                    <button type="button" onClick={story.reset}>{t.startAgain}</button>
+                  </div>
+                  <p className="story-complete__hint">{t.storyCompleteHint}</p>
                 </div>
               )}
 
@@ -1092,30 +1450,30 @@ function App() {
           <header className="chat-header">
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
-              <h2>
-                {language === 'zh'
-                  ? `${selectedChar.name} 与${getRelationLabel(relation, language)}`
-                  : `${selectedChar.name} with their ${getRelationLabel(relation, language)}`}
-              </h2>
-              {showSavePrompt && (
-                <div className="save-prompt">
-                  {language === 'zh'
-                    ? '同步档案后，可在云端保存这段会谈。'
-                    : 'Sign in to save this conversation to the cloud.'}
+                  <h2>
+                    {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+                  </h2>
+                  {showSavePrompt && (
+                    <div className="save-prompt">
+                      {t.savePrompt}
                 </div>
               )}
             </div>
             <span className="schema-pill">{t.schema}</span>
           </header>
 
-          <div className="chat-stream">
+          <div className="chat-stream" ref={chatStreamRef}>
             {messages.map(msg => {
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
               const senderName = senderChar?.name ?? (isUser ? t.you : (msg.sender as string))
               const senderColor = senderChar?.color ?? selectedChar.color
               return (
-                <article key={msg.id} className={`msg ${isUser ? 'msg--user' : 'msg--char'}`}>
+                <article
+                  key={msg.id}
+                  className={`msg ${isUser ? 'msg--user' : 'msg--char'}`}
+                  style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}
+                >
                   <div className="msg-avatar" style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}>
                     {isUser ? <span className="avatar-letter">{t.you[0]}</span> : <Silhouette characterId={msg.sender as CharacterId} name={senderName} size={36} />}
                   </div>
@@ -1127,40 +1485,44 @@ function App() {
                     <p>{msg.text}</p>
                     {msg.toolExecuted && (
                       <div className="tool-pill">
-                        <span>Tool: <code>{msg.toolExecuted}</code></span>
+                        <span>{t.toolLabel}: <code>{msg.toolExecuted}</code></span>
                         {msg.toolLog && <p>{msg.toolLog}</p>}
                       </div>
                     )}
                     {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
                       <VoicePlayer text={msg.text} characterId={msg.sender as CharacterId} language={language} />
                     )}
-                    <GifCard src={msg.gifUrl} alt={msg.gifQuery ?? ''} caption={msg.gifQuery ? `${t.gifTrigger}: ${msg.gifQuery}` : undefined} />
+                    <GifCard src={msg.id.startsWith('opener-') ? null : msg.gifUrl} alt={msg.gifQuery ? t.gifTrigger : ''} />
                   </div>
                 </article>
               )
             })}
+            <div className="chat-end" aria-hidden="true" />
           </div>
 
-          {isSending && (
-            <div className="typing" aria-live="polite">
-              <span className="dot" /><span className="dot" /><span className="dot" />
-            </div>
-          )}
-          {error && <div className="error-box">{error}</div>}
+          <div className="chat-footer">
+            {isSending && (
+              <div className="typing" aria-live="polite">
+                <span className="dot" /><span className="dot" /><span className="dot" />
+              </div>
+            )}
+            {error && <div className="error-box">{error}</div>}
 
-          <form className="composer" onSubmit={handleSend}>
-            <input
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
-            />
-            <button type="submit" disabled={isSending || !message.trim()}>
-              {isSending ? t.sending : t.send}
-            </button>
-          </form>
+            <form className="composer" onSubmit={handleSend}>
+              <input
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+              />
+              <button type="submit" disabled={isSending || !message.trim()}>
+                {isSending ? t.sending : t.send}
+              </button>
+            </form>
+          </div>
         </section>
       )}
     </main>
+    </>
   )
 }
 

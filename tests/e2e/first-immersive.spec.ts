@@ -8,7 +8,7 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 
 async function gotoFresh(page: Page) {
   await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 }
 
 /**
@@ -16,13 +16,18 @@ async function gotoFresh(page: Page) {
  * script, so React's initial usePersistedState reads the seeded values.
  */
 async function seedStorage(page: Page, values: Record<string, unknown>) {
+  // addInitScript serializes data as JSON. Objects/arrays become stringified
+  // inside the init script. We re-parse strings that look like JSON objects/arrays.
   await page.addInitScript((data) => {
-    for (const [key, value] of Object.entries(data)) {
+    window.localStorage.setItem('abq_enteredWorld', 'true')
+    for (const [key, raw] of Object.entries(data)) {
+      let value: unknown = raw
+      if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
+        try { value = JSON.parse(raw) } catch { /* keep as string */ }
+      }
       window.localStorage.setItem(key, JSON.stringify(value))
     }
   }, values)
-  await page.goto(BASE_URL)
-  await page.waitForLoadState('networkidle')
 }
 
 function chatState(
@@ -102,12 +107,33 @@ async function mockChatCrew(
   })
 }
 
+async function mockAutoStoryStart(page: Page) {
+  await page.route('**/api/session/create', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ session_id: 'first-immersive-session' }),
+    })
+  })
+  await page.route('**/api/session/*/stream**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: '',
+    })
+  })
+}
+
 /* ------------------------------------------------------------------ */
 /*  AC-1: Fresh incognito → guest entry CTA visible                    */
 /* ------------------------------------------------------------------ */
 
 test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
+  await mockAutoStoryStart(page)
   await gotoFresh(page)
+  // Click through landing screen to reveal auth section
+  const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
+  if (await enterBtn.count() > 0) await enterBtn.click()
   const cta = page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })
   await expect(cta).toBeVisible()
 })
@@ -128,17 +154,11 @@ test('AC-2: anonymous chat history survives refresh', async ({ page }) => {
   ])
 
   await gotoFresh(page)
-  const storedAfterLoad = await page.evaluate(() => localStorage.getItem('abq_messages'))
-  const charAfterLoad = await page.evaluate(() => localStorage.getItem('abq_character'))
-  console.log('AC-2 DEBUG stored:', storedAfterLoad)
-  console.log('AC-2 DEBUG character:', charAfterLoad)
-  const html = await page.content()
-  console.log('AC-2 DEBUG html has userText:', html.includes(userText))
   await expect(page.locator('.msg--user p', { hasText: userText })).toBeVisible()
   await expect(page.locator('.msg--char p', { hasText: replyText })).toBeVisible()
 
   await page.reload()
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 
   await expect(page.locator('.msg--user p', { hasText: userText })).toBeVisible()
   await expect(page.locator('.msg--char p', { hasText: replyText })).toBeVisible()
@@ -252,7 +272,7 @@ test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavai
 /* ------------------------------------------------------------------ */
 
 test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }) => {
-  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew' }))
+  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew', abq_view: 'chat' }))
   await mockChatCrew(page, [
     { sender: 'walter', text: 'We need to be careful.', emotion: 'tense', gifQuery: 'tense' },
     { sender: 'gus', text: 'Everything is under control.', emotion: 'business', gifQuery: 'business' },

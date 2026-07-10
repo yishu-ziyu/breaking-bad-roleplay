@@ -12,6 +12,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+from agents.provider import ModelResult
+
 
 @pytest.fixture
 def mock_provider():
@@ -21,9 +23,20 @@ def mock_provider():
     "stepfun/step-3.7-flash" (MiniMax routing was disabled). Tests that
     need a different route can override this attribute on the returned
     mock object.
+
+    ``call_model_with_tools`` is provided as an awaitable AsyncMock returning
+    a default (no-tool-call) ModelResult, so character sub-agent rewrites that
+    route through ``BaseCharacter.respond_structured`` (native function
+    calling, DEC-0001) don't hit a plain ``MagicMock`` and raise
+    "object MagicMock can't be used in 'await' expression". Tests that need a
+    specific reply override ``call_model_with_tools`` (and/or ``call_model``
+    for the Director's planning call).
     """
     provider = MagicMock()
     provider.call_model = AsyncMock()
+    provider.call_model_with_tools = AsyncMock(
+        return_value=ModelResult(content="", tool_calls=[], stop_reason="end_turn")
+    )
     provider.resolve_model_route = MagicMock(
         return_value="stepfun/step-3.7-flash"
     )

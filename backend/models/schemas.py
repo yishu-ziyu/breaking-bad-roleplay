@@ -7,12 +7,16 @@ class SessionCreate(BaseModel):
     title: str
     task_prompt: str
     active_character_id: Optional[str] = None
+    language: str = "en"
 
 
 class SessionAction(BaseModel):
-    action: str  # continue | stop | redirect | switch_perspective
+    action: str  # continue | stop | redirect | switch_perspective | continue_chapter | branch | replay
     redirect_prompt: Optional[str] = None
     target_character: Optional[str] = None
+    from_beat_id: Optional[str] = None
+    branch_goal: Optional[str] = None
+    beat_id: Optional[str] = None
 
 
 class SessionActionResponse(BaseModel):

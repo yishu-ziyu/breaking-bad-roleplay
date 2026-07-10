@@ -7,6 +7,7 @@ export interface VoicePlayerProps {
   characterId: CharacterId
   language: 'en' | 'zh'
   label?: string
+  unavailableText?: string
 }
 
 function getSpeechSynthesis(): SpeechSynthLike | undefined {
@@ -15,7 +16,7 @@ function getSpeechSynthesis(): SpeechSynthLike | undefined {
   return g.speechSynthesis
 }
 
-export function VoicePlayer({ text, characterId, language, label }: VoicePlayerProps) {
+export function VoicePlayer({ text, characterId, language, label, unavailableText }: VoicePlayerProps) {
   const [state, setState] = useState<PlayState>('idle')
   const synth = getSpeechSynthesis()
 
@@ -28,6 +29,8 @@ export function VoicePlayer({ text, characterId, language, label }: VoicePlayerP
     }
   }, [synth])
 
+  const fallbackLabel = label || (language === 'zh' ? '播放语音' : 'Voice')
+
   if (!synth) {
     return createElement(
       'button',
@@ -36,7 +39,7 @@ export function VoicePlayer({ text, characterId, language, label }: VoicePlayerP
         className: 'voice-player voice-player--disabled',
         disabled: true,
       },
-      label || 'Voice sample unavailable'
+      unavailableText || (language === 'zh' ? '语音不可用' : 'Voice sample unavailable')
     )
   }
 
@@ -50,8 +53,8 @@ export function VoicePlayer({ text, characterId, language, label }: VoicePlayerP
       type: 'button',
       className: `voice-player ${state === 'speaking' ? 'voice-player--playing' : ''}`,
       onClick: handleClick,
-      'aria-label': label || 'Play voice sample',
+      'aria-label': fallbackLabel,
     },
-    `${state === 'speaking' ? '⏸' : '▶'} ${label || 'Voice'}`
+    `${state === 'speaking' ? '⏸' : '▶'} ${fallbackLabel}`
   )
 }
