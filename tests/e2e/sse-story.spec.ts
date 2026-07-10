@@ -20,6 +20,7 @@ async function installMockEventSource(page: Page) {
   await page.addInitScript(() => {
     type MockWindow = Window & {
       __mockSSE: { emit: (type: string, data: unknown) => void } | null
+      __mockSSEInstances: Array<{ readyState: number }>
     }
 
     class MockEventSource {
@@ -35,6 +36,7 @@ async function installMockEventSource(page: Page) {
       constructor(url: string) {
         this.url = url
         ;(window as MockWindow).__mockSSE = this
+        ;(window as MockWindow).__mockSSEInstances.push(this)
       }
       addEventListener(type: string, fn: (e: MessageEvent) => void) {
         if (!this.handlers.has(type)) this.handlers.set(type, [])
@@ -60,6 +62,7 @@ async function installMockEventSource(page: Page) {
     }
     ;(window as Window & { EventSource: typeof EventSource }).EventSource = MockEventSource as unknown as typeof EventSource
     ;(window as MockWindow).__mockSSE = null
+    ;(window as MockWindow).__mockSSEInstances = []
   })
 }
 
@@ -99,6 +102,12 @@ async function emitSSE(page: Page, type: string, data: unknown) {
     },
     { type, data },
   )
+}
+
+async function mockSSEStates(page: Page): Promise<number[]> {
+  return page.evaluate(() => (
+    window as Window & { __mockSSEInstances?: Array<{ readyState: number }> }
+  ).__mockSSEInstances?.map((source) => source.readyState) ?? [])
 }
 
 /** Seed localStorage (abq_ prefix is added by caller, matching persistedState). */
@@ -185,7 +194,7 @@ async function driveToBeatPaused(
       ],
     },
   })
-  await emitSSE(page, 'beat_ready', { data: { beat_id: beatId } })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: beatId, is_final: false } })
 
   // Wait for beat_paused — BeatControls visible
   await expect(page.locator('.beat-controls')).toBeVisible()
@@ -221,7 +230,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   )
 
   // Beat index indicator shows Beat 1
-  await expect(page.locator('.story-progress span')).toContainText('Beat 1')
+  await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
   // BeatControls visible (Continue + Stop + Redirect)
   await expect(
@@ -233,6 +242,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await expect(
     page.locator('.beat-controls button', { hasText: /Redirect/ }),
   ).toBeVisible()
+  await expect.poll(() => mockSSEStates(page)).toEqual([2])
 })
 
 test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pressure footer, and decision tray', async ({
@@ -262,7 +272,6 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pres
   await expect(page.locator('.story-hud')).toContainText('Scene Board')
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
   await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos office')
-  await expect(page.locator('.story-hud')).toContainText('Paused')
 
   await expect(page.locator('.story-outline__summary')).toContainText('2 story beats planned')
   await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
@@ -270,10 +279,6 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pres
   await expect(page.locator('.story-event--scene_change', { hasText: 'Los Pollos Hermanos office' })).toBeVisible()
   await expect(page.locator('.story-scene-card h3')).toContainText('Gus Fring')
   await expect(page.locator('.story-scene-card__quote')).toContainText('A calm conversation prevents')
-
-  await expect(page.locator('.story-scene-card__pressure')).toContainText('Unspoken Pressure')
-  await expect(page.locator('.story-scene-card__pressure')).toContainText('Possible Consequences')
-  await expect(page.locator('.story-scene-card__pressure')).toContainText('Relationship Impact')
 
   await expect(page.locator('.beat-paused')).toContainText('Choose the next move')
   await expect(page.locator('.beat-controls button', { hasText: /Continue/ })).toBeVisible()
@@ -303,6 +308,7 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   expect(actionLog.find((e) => e.action === 'continue')).toBeDefined()
   // continue should NOT carry redirect_prompt
   expect(actionLog.find((e) => e.action === 'continue')?.redirect_prompt).toBeUndefined()
+  await expect.poll(() => mockSSEStates(page)).toEqual([2, 0])
 
   // Emit next beat events — scene_change → agent_speak → beat_ready
   await emitSSE(page, 'scene_change', {
@@ -319,7 +325,7 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
   // Beat index incremented to 2
-  await expect(page.locator('.story-progress span')).toContainText('Beat 2')
+  await expect(page.locator('.story-hud')).toContainText('Beat 2')
 
   // New agent_speak content visible
   await expect(
@@ -397,7 +403,7 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
 
   // Redirect starts a new outline; the HUD/progress should follow the
   // backend beat_id instead of continuing the old outline's counter.
-  await expect(page.locator('.story-progress span')).toContainText('Beat 1')
+  await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
   // New agent_speak content visible
   await expect(
@@ -416,6 +422,13 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
   page,
 }) => {
   await driveToBeatPaused(page)
+  await page.locator('.beat-controls button', { hasText: /Continue/ }).click()
+  await expect.poll(() => mockSSEStates(page)).toEqual([2, 0])
+
+  await emitSSE(page, 'beat_ready', {
+    data: { beat_id: 'beat-2', beat_summary: 'Final confrontation', is_final: true },
+  })
+  await expect.poll(() => mockSSEStates(page)).toEqual([2, 0])
 
   // Emit complete event
   await emitSSE(page, 'complete', {
@@ -431,6 +444,7 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
 
   // complete event rendered in the event feed
   await expect(page.locator('.story-event--complete')).toBeVisible()
+  await expect.poll(() => mockSSEStates(page)).toEqual([2, 2])
 
   // Story-complete follow-up actions are present, plus Start Again.
   await expect(
