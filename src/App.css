@@ -60,39 +60,6 @@
   pointer-events: none;
 }
 
-/* Gap 1: Walter face occupies right 50-60%, eye-line near upper third */
-.landing-screen__portrait {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(58vw, 820px);
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 6vh 4vw 0 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 70% 80% at 70% 38%, rgba(247, 206, 70, 0.12), transparent 58%),
-    linear-gradient(90deg, rgba(6, 8, 4, 0.95) 0%, rgba(6, 8, 4, 0.35) 28%, transparent 55%);
-}
-
-.landing-screen__portrait-img {
-  width: min(52vw, 620px);
-  height: min(88vh, 920px);
-  object-fit: cover;
-  object-position: 50% 12%;
-  filter: saturate(0.9) contrast(1.08) brightness(1.05);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 78%, transparent 100%),
-    linear-gradient(180deg, transparent 0%, #000 8%, #000 88%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 78%, transparent 100%),
-    linear-gradient(180deg, transparent 0%, #000 8%, #000 88%, transparent 100%);
-  mask-composite: intersect;
-  -webkit-mask-composite: source-in;
-  animation: landingPortraitPulse 4s ease-in-out infinite alternate;
-}
-
 .landing-screen__content {
   position: relative;
   z-index: 3;
@@ -100,7 +67,7 @@
   gap: 20px;
   text-align: left;
   padding: 44px 0;
-  max-width: min(560px, 46vw);
+  max-width: min(560px, 52vw);
   animation: landingFadeIn 1.4s ease-out;
   text-shadow: 0 3px 22px rgba(0, 0, 0, 0.86);
 }
@@ -277,15 +244,9 @@ textarea:focus-visible {
   to   { opacity: 1; }
 }
 
-@keyframes landingPortraitPulse {
-  from { filter: saturate(0.9) contrast(1.08) brightness(1.02); }
-  to   { filter: saturate(0.95) contrast(1.1) brightness(1.08); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .landing-screen__bg,
-  .landing-screen__content::before,
-  .landing-screen__portrait-img {
+  .landing-screen__content::before {
     animation: none;
   }
 }
@@ -1897,18 +1858,6 @@ textarea {
   }
   .landing-screen__enter {
     justify-self: center;
-  }
-  .landing-screen__portrait {
-    width: 100%;
-    padding: 0;
-    justify-content: center;
-    background:
-      linear-gradient(180deg, rgba(6, 8, 4, 0.15) 0%, rgba(6, 8, 4, 0.88) 78%);
-  }
-  .landing-screen__portrait-img {
-    width: min(88vw, 420px);
-    height: min(70vh, 560px);
-    object-position: 50% 8%;
   }
   .landing-screen__preview {
     left: 50%;
