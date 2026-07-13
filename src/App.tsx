@@ -269,6 +269,8 @@ const uiText: Record<Language, Record<string, string>> = {
   en: {
     tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
     landingSubtitle: 'Step into Albuquerque. Everything you say stays with them.',
+    landingVoice: 'I have been waiting. Say something that matters.',
+    landingPreview: 'You are not who you say you are. That is fine. Start talking.',
     landingStep1: 'Choose',
     landingStep2: 'Anchor',
     landingStep3: 'Chat',
@@ -320,7 +322,7 @@ const uiText: Record<Language, Record<string, string>> = {
     eventComplete: 'Scene Wrapped',
     eventError: 'Error',
     openingEmotion: 'opening pressure',
-    enterWorld: 'ENTER THE WORLD',
+    enterWorld: 'Chat with Walter',
     langEn: 'EN',
     beatRedirect: '↩ Redirect',
     beatSwitchPerspective: '👤 Switch Perspective',
@@ -361,6 +363,8 @@ const uiText: Record<Language, Record<string, string>> = {
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
     landingSubtitle: '走进阿尔伯克基。你的每一句话，他们都会记住。',
+    landingVoice: '我在这里等你。说点有分量的话。',
+    landingPreview: '你不是你自称的那个人。没关系。先开口。',
     landingStep1: '选择',
     landingStep2: '锚定',
     landingStep3: '对话',
@@ -418,7 +422,7 @@ const uiText: Record<Language, Record<string, string>> = {
     resumingStory: '正在恢复上次剧情…',
     openingEmotion: '开场压迫',
     langZh: '中文',
-    enterWorld: '进入世界',
+    enterWorld: '和 Walter 聊聊',
     langEn: 'EN',
     beatRedirect: '↩ 重定向',
     beatSwitchPerspective: '👤 切换视角',
@@ -1037,6 +1041,17 @@ function App() {
   if (!hasEnteredWorld) {
     return (
       <div className="landing-screen">
+        {/* Loop 10: separate bg layer so Ken-Burns can drift without moving type */}
+        <div className="landing-screen__bg" aria-hidden="true" />
+        {/* Loop 10 Gap 1: tight 3/4 Walter portrait as the single focal point */}
+        <div className="landing-screen__portrait" aria-hidden="true">
+          <img
+            className="landing-screen__portrait-img"
+            src="/avatars/walter.png"
+            alt=""
+            draggable={false}
+          />
+        </div>
         <div className="landing-screen__content">
           <h1 className="landing-screen__title">
             BREAKING BAD
@@ -1044,26 +1059,19 @@ function App() {
           </h1>
           <p className="landing-screen__description">{t.landingSubtitle}</p>
           <div className="landing-screen__divider" />
-          <div className="landing-screen__steps">
-            <div className="landing-step">
-              <span className="landing-step__num">1</span>
-              <span className="landing-step__label">{t.landingStep1}</span>
-            </div>
-            <div className="landing-screen__step-arrow">&rsaquo;</div>
-            <div className="landing-step">
-              <span className="landing-step__num">2</span>
-              <span className="landing-step__label">{t.landingStep2}</span>
-            </div>
-            <div className="landing-screen__step-arrow">&rsaquo;</div>
-            <div className="landing-step">
-              <span className="landing-step__num">3</span>
-              <span className="landing-step__label">{t.landingStep3}</span>
-            </div>
-          </div>
+          {/* Loop 10 Gap 2: one in-character voice line (original, not a show quote) */}
+          <p className="landing-screen__voice">{t.landingVoice}</p>
           <button className="landing-screen__enter" onClick={handleEnterWorld} type="button">
             {t.enterWorld}
             <span className="landing-screen__enter-arrow">&rarr;</span>
           </button>
+        </div>
+        {/* Loop 10 Gap 3: muted chat-bubble preview of what the CTA opens into */}
+        <div className="landing-screen__preview" aria-hidden="true">
+          <div className="landing-preview-bubble">
+            <span className="landing-preview-bubble__name">Walter</span>
+            <span className="landing-preview-bubble__text">{t.landingPreview}</span>
+          </div>
         </div>
       </div>
     )

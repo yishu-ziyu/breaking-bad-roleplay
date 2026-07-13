@@ -17,7 +17,7 @@
 }
 
 /* ==========================================
-   Landing Screen
+   Landing Screen — Loop 10 (Gaps 1–3)
    ========================================== */
 .landing-screen {
   position: fixed;
@@ -26,44 +26,101 @@
   display: grid;
   place-items: center start;
   padding-left: clamp(32px, 8vw, 140px);
-  background:
-    linear-gradient(90deg, rgba(2, 4, 2, 0.60) 0%, rgba(3, 7, 3, 0.18) 42%, rgba(2, 4, 2, 0.45) 100%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, rgba(3, 6, 3, 0.10) 46%, rgba(0, 0, 0, 0.45) 100%),
-    url('/backgrounds/landing-road-night.png') center / cover no-repeat;
+  padding-bottom: 72px;
+  overflow: hidden;
+  background: #060804;
   color: #f5f4eb;
   cursor: default;
 }
 
+/* Gap 1 + 3: desaturated atmosphere plate; Ken-Burns drifts this layer only */
+.landing-screen__bg {
+  position: absolute;
+  inset: -4%;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(2, 4, 2, 0.78) 0%, rgba(3, 7, 3, 0.42) 38%, rgba(2, 4, 2, 0.55) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.42) 0%, rgba(3, 6, 3, 0.18) 48%, rgba(0, 0, 0, 0.55) 100%),
+    url('/backgrounds/landing-road-night.png') 58% 42% / cover no-repeat;
+  filter: saturate(0.55) brightness(0.72) contrast(1.05);
+  transform-origin: 60% 40%;
+  animation: landingKenBurns 30s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+/* Soft amber wash - no bright police-light competition */
 .landing-screen::before {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
-    radial-gradient(circle at 50% 18%, rgba(247, 206, 70, 0.22), transparent 22rem),
-    radial-gradient(circle at 50% 64%, rgba(2, 4, 2, 0.18), transparent 34rem),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.45) 0%, transparent 35%, transparent 65%, rgba(0, 0, 0, 0.38) 100%);
+    radial-gradient(ellipse 50% 60% at 78% 42%, rgba(247, 206, 70, 0.08), transparent 62%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.55) 0%, transparent 42%, transparent 58%, rgba(0, 0, 0, 0.35) 100%);
   pointer-events: none;
+}
+
+/* Gap 1: Walter face occupies right 50-60%, eye-line near upper third */
+.landing-screen__portrait {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(58vw, 820px);
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 6vh 4vw 0 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 80% at 70% 38%, rgba(247, 206, 70, 0.12), transparent 58%),
+    linear-gradient(90deg, rgba(6, 8, 4, 0.95) 0%, rgba(6, 8, 4, 0.35) 28%, transparent 55%);
+}
+
+.landing-screen__portrait-img {
+  width: min(52vw, 620px);
+  height: min(88vh, 920px);
+  object-fit: cover;
+  object-position: 50% 12%;
+  filter: saturate(0.9) contrast(1.08) brightness(1.05);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 78%, transparent 100%),
+    linear-gradient(180deg, transparent 0%, #000 8%, #000 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 78%, transparent 100%),
+    linear-gradient(180deg, transparent 0%, #000 8%, #000 88%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+  animation: landingPortraitPulse 4s ease-in-out infinite alternate;
 }
 
 .landing-screen__content {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   display: grid;
-  gap: 24px;
+  gap: 20px;
   text-align: left;
-  padding: 44px 34px;
+  padding: 44px 0;
   max-width: min(560px, 46vw);
-  border: 1px solid rgba(247, 206, 70, 0.22);
-  border-left: 4px solid var(--color-bb-yellow);
-  border-radius: 0 18px 18px 0;
-  background:
-    linear-gradient(135deg, rgba(10, 15, 9, 0.74), rgba(10, 15, 9, 0.36)),
-    radial-gradient(circle at 0% 0%, rgba(247, 206, 70, 0.16), transparent 18rem);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
-  backdrop-filter: blur(10px) saturate(0.9);
-  -webkit-backdrop-filter: blur(10px) saturate(0.9);
   animation: landingFadeIn 1.4s ease-out;
   text-shadow: 0 3px 22px rgba(0, 0, 0, 0.86);
+}
+
+/* Left scrim behind type only - no bordered card (Gap 1) */
+.landing-screen__content::before {
+  content: '';
+  position: absolute;
+  inset: -100px -80px -100px -120px;
+  z-index: -1;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(2, 4, 2, 0.78) 0%,
+      rgba(2, 4, 2, 0.58) 40%,
+      rgba(2, 4, 2, 0.16) 75%,
+      transparent 100%
+    );
+  pointer-events: none;
+  animation: landingVignettePulse 4s ease-in-out infinite alternate;
 }
 
 .landing-screen__title {
@@ -106,42 +163,18 @@
   font-style: italic;
 }
 
-.landing-screen__steps {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.landing-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: var(--radius-card);
-  background: rgba(245, 244, 235, 0.1);
-  border: 1px solid rgba(247, 206, 70, 0.24);
-}
-
-.landing-step__num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(247, 206, 70, 0.2);
-  color: #f7ce46;
-  font: 700 12px/1 var(--font-sans);
-}
-
-.landing-step__label {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(245, 244, 235, 0.86);
+/* Gap 2: single character voice line (italic serif contrast) */
+.landing-screen__voice {
+  margin: 4px 0 0;
+  max-width: 28ch;
+  font-family: var(--font-display), Georgia, 'Times New Roman', serif;
+  font-size: clamp(22px, 2.6vw, 30px);
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  color: rgba(247, 206, 70, 0.92);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.75);
 }
 
 button:focus-visible,
@@ -153,24 +186,20 @@ textarea:focus-visible {
   box-shadow: 0 0 0 4px rgba(247, 206, 70, 0.2);
 }
 
-.landing-screen__step-arrow {
-  color: rgba(247, 206, 70, 0.35);
-  font-size: 16px;
-}
-
 .landing-screen__enter {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-top: 12px;
-  padding: 16px 44px;
+  justify-self: start;
+  margin-top: 8px;
+  padding: 16px 36px;
   border: 2px solid #f7ce46;
   border-radius: var(--radius-card);
   background: rgba(247, 206, 70, 0.08);
   color: #f7ce46;
-  font: 900 15px/1 var(--font-sans);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font: 900 14px/1 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: none;
   cursor: pointer;
   transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s;
 }
@@ -196,9 +225,69 @@ textarea:focus-visible {
   transform: translateX(3px);
 }
 
+/* Gap 3: muted chat-bubble preview strip below hero type */
+.landing-screen__preview {
+  position: absolute;
+  left: clamp(32px, 8vw, 140px);
+  bottom: 28px;
+  z-index: 3;
+  max-width: min(420px, 42vw);
+  animation: landingFadeIn 1.8s ease-out 0.25s both;
+}
+
+.landing-preview-bubble {
+  display: grid;
+  gap: 6px;
+  padding: 14px 18px;
+  border-radius: 4px 14px 14px 14px;
+  border: 1px solid rgba(247, 206, 70, 0.18);
+  background: rgba(8, 12, 8, 0.72);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.landing-preview-bubble__name {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(247, 206, 70, 0.78);
+}
+
+.landing-preview-bubble__text {
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(245, 244, 235, 0.78);
+  font-style: italic;
+}
+
 @keyframes landingFadeIn {
   from { opacity: 0; transform: translateY(18px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes landingKenBurns {
+  from { transform: scale(1); }
+  to   { transform: scale(1.05); }
+}
+
+@keyframes landingVignettePulse {
+  from { opacity: 0.85; }
+  to   { opacity: 1; }
+}
+
+@keyframes landingPortraitPulse {
+  from { filter: saturate(0.9) contrast(1.08) brightness(1.02); }
+  to   { filter: saturate(0.95) contrast(1.1) brightness(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-screen__bg,
+  .landing-screen__content::before,
+  .landing-screen__portrait-img {
+    animation: none;
+  }
 }
 
 /* ----- Shell ----- */
@@ -1781,21 +1870,55 @@ textarea {
    ========================================== */
 @media (max-width: 860px) {
   .landing-screen {
-    place-items: center;
-    padding: 0 18px;
+    place-items: end center;
+    padding: 0 18px 96px;
   }
   .landing-screen__content {
-    max-width: 560px;
+    max-width: min(560px, calc(100vw - 36px));
     text-align: center;
-    border-radius: 18px;
-    border-left-width: 1px;
+    justify-items: center;
+  }
+  .landing-screen__content::before {
+    inset: -48px -32px -64px;
+    background:
+      linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(2, 4, 2, 0.55) 28%,
+        rgba(2, 4, 2, 0.82) 100%
+      );
   }
   .landing-screen__divider {
     margin: 0 auto;
     background: linear-gradient(90deg, transparent, #8ea93f, transparent);
   }
-  .landing-screen__steps {
+  .landing-screen__voice {
+    max-width: 22ch;
+  }
+  .landing-screen__enter {
+    justify-self: center;
+  }
+  .landing-screen__portrait {
+    width: 100%;
+    padding: 0;
     justify-content: center;
+    background:
+      linear-gradient(180deg, rgba(6, 8, 4, 0.15) 0%, rgba(6, 8, 4, 0.88) 78%);
+  }
+  .landing-screen__portrait-img {
+    width: min(88vw, 420px);
+    height: min(70vh, 560px);
+    object-position: 50% 8%;
+  }
+  .landing-screen__preview {
+    left: 50%;
+    right: auto;
+    bottom: 20px;
+    max-width: min(420px, calc(100vw - 36px));
+    transform: translateX(-50%);
+  }
+  .landing-preview-bubble {
+    text-align: left;
   }
   .app-shell {
     grid-template-columns: 1fr;
@@ -1848,13 +1971,17 @@ textarea {
 @media (max-width: 560px) {
   .landing-screen__content {
     max-width: calc(100vw - 28px);
-    padding: 30px 22px;
+    padding: 24px 0;
+    gap: 16px;
   }
   .landing-screen__title {
     font-size: clamp(36px, 12vw, 52px);
   }
-  .landing-screen__step-arrow {
-    display: none;
+  .landing-screen__voice {
+    font-size: clamp(18px, 5.5vw, 24px);
+  }
+  .landing-screen__preview {
+    bottom: 14px;
   }
   .sidebar {
     max-height: 38vh;
