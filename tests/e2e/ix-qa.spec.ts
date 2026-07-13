@@ -155,11 +155,13 @@ test.describe('IX-1: Landing and entry', () => {
     const enterBtn = page.locator('.landing-screen__enter')
     await expect(enterBtn).toBeVisible()
     await expect(enterBtn).toBeEnabled()
-    await expect(enterBtn).toContainText(/ENTER THE WORLD|进入世界/)
+    await expect(enterBtn).toContainText(/Chat with Walter|和 Walter 聊聊/)
 
     const title = page.locator('.landing-screen__title')
     await expect(title).toBeVisible()
-    await expect(page.locator('.landing-step__num')).toHaveCount(3)
+    // Loop 10 Gap 2: step pills removed; character voice line is the hook
+    await expect(page.locator('.landing-screen__voice')).toBeVisible()
+    await expect(page.locator('.landing-step__num')).toHaveCount(0)
 
     await page.waitForTimeout(500)
     expect(consoleErrors).toEqual([])
