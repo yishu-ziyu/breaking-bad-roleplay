@@ -157,7 +157,29 @@ docker inspect bb-roleplay --format '{{json .HostConfig.PortBindings}}'
 | Free-tier / security | VM + verify live `/api` behavior |
 | "Deploy everything" user request | push + Vercel + VM |
 
-DNS: `bb.yishuziyu.cn` historically points at the VM. Vercel alias may also attach to the same host depending on current DNS. After deploy, always open the **user-facing domain**, not only the Vercel preview URL.
+DNS: `bb.yishuziyu.cn` **A record points at the VM** (`121.89.90.68`). That is what users actually load.
+
+Critical: `vercel --prod` printing `Aliased: https://bb.yishuziyu.cn` does **not** mean the live site is Vercel. For this project the user-facing domain is Nginx on the VM. **Frontend-only fixes still require a Docker rebuild** if you want them on `bb.yishuziyu.cn`.
+
+Local machines often lack `rsync`; use tar + scp:
+
+```bash
+tar czf /tmp/bb-deploy.tgz \
+  --exclude=node_modules --exclude=backend/.venv --exclude=.git \
+  --exclude=dist --exclude=playwright-report --exclude=test-results \
+  --exclude='materials/breaking-bad/voice-archetypes/samples' .
+scp /tmp/bb-deploy.tgz root@121.89.90.68:/tmp/bb-deploy.tgz
+ssh root@121.89.90.68 'cd /opt/breaking-bad-roleplay && tar xzf /tmp/bb-deploy.tgz && docker build -t bb-roleplay:latest . && docker stop bb-roleplay && docker rm bb-roleplay && docker run -d --name bb-roleplay --restart unless-stopped -p 8080:8080 --env-file /opt/breaking-bad-roleplay/.env.runtime bb-roleplay:latest'
+```
+
+Keep `/opt/breaking-bad-roleplay/.env.runtime` on the server (keys only, mode 600). Never print its contents into chat logs.
+
+After any deploy, verify the **served** CSS hash includes the change:
+
+```bash
+curl -sS http://127.0.0.1:8080/ | grep -oE 'assets/index-[^"]+\.css'
+# then curl that file and confirm the new rule token exists
+```
 
 ---
 
