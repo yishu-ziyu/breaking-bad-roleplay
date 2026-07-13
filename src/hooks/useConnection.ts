@@ -16,14 +16,18 @@ import {
   type VaultActive,
 } from '../lib/connectionVault'
 import {
+  baseUrlSlotFor,
+  brandsForMode,
   formatProviderChip,
   getProviderBrand,
+  isProviderId,
   llmSlotFor,
   ttsSlotFor,
   type ConnectionMode,
   type ConnectionStatus,
   type MiniMaxRegion,
   type ProviderId,
+  PLATFORM_PROVIDER_IDS,
   PROVIDER_BRANDS,
 } from '../lib/providerBrands'
 
@@ -32,20 +36,20 @@ export type ConnectionView = {
   providerId: ProviderId
   modelId: string
   region: MiniMaxRegion
+  baseUrl: string
   status: ConnectionStatus
   chipLabel: string
   hint: string
   connectionSessionId: string | null
-  platform: Record<ProviderId, boolean>
+  platform: Record<'minimax' | 'stepfun', boolean>
   canStart: boolean
 }
 
 export function useConnection() {
   const [vault, setVault] = useState<VaultBlob | null>(null)
-  const [platform, setPlatform] = useState<Record<ProviderId, boolean>>({
+  const [platform, setPlatform] = useState<Record<'minimax' | 'stepfun', boolean>>({
     minimax: true,
-    stepfun: false,
-    cliproxy: true,
+    stepfun: true,
   })
   const [sheetOpen, setSheetOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -58,11 +62,30 @@ export function useConnection() {
       const [v, catalog] = await Promise.all([loadVault(), fetchCatalog()])
       if (cancelled) return
       if (catalog?.platform) {
-        setPlatform(catalog.platform as Record<ProviderId, boolean>)
+        setPlatform({
+          minimax: Boolean(catalog.platform.minimax),
+          stepfun: Boolean(catalog.platform.stepfun),
+        })
       }
-      if (catalog?.defaults && v.active.mode === 'platform') {
-        v.active.providerId = catalog.defaults.providerId
-        v.active.modelId = catalog.defaults.modelId
+      // Migrate removed CLIProxy / unknown ids; keep valid BYOK presets.
+      const rawPid = String(v.active.providerId || '')
+      if (rawPid === 'cliproxy' || !isProviderId(rawPid)) {
+        v.active.providerId = (catalog?.defaults?.providerId as ProviderId) || 'stepfun'
+        v.active.modelId = catalog?.defaults?.modelId || 'step-3.7-flash'
+      } else if (v.active.providerId === 'stepfun' && (
+        !v.active.modelId || v.active.modelId === 'step-2-16k'
+      )) {
+        v.active.modelId = 'step-3.7-flash'
+      }
+      // Platform mode can only stay on the two demo providers.
+      if (v.active.mode === 'platform') {
+        if (!PLATFORM_PROVIDER_IDS.includes(v.active.providerId)) {
+          v.active.providerId = (catalog?.defaults?.providerId as ProviderId) || 'stepfun'
+          v.active.modelId = catalog?.defaults?.modelId || 'step-3.7-flash'
+        } else if (catalog?.defaults) {
+          v.active.providerId = catalog.defaults.providerId as ProviderId
+          v.active.modelId = catalog.defaults.modelId
+        }
       }
       setVault(v)
     })()
@@ -76,8 +99,8 @@ export function useConnection() {
 
   const active: VaultActive = vault?.active ?? {
     mode: 'platform',
-    providerId: 'minimax',
-    modelId: 'MiniMax-M3',
+    providerId: 'stepfun',
+    modelId: 'step-3.7-flash',
     region: 'cn',
   }
 
@@ -86,14 +109,19 @@ export function useConnection() {
   const meta = vault?.meta[llmSlot]
   const status: ConnectionStatus = useMemo(() => {
     if (active.mode === 'platform') {
-      return platform[active.providerId] ? 'valid' : 'empty'
+      const pid = active.providerId
+      if (pid === 'minimax' || pid === 'stepfun') {
+        return platform[pid] ? 'valid' : 'empty'
+      }
+      return 'empty'
     }
     return meta?.lastStatus || (vault?.slots[llmSlot] ? 'saved' : 'empty')
   }, [active.mode, active.providerId, platform, meta, vault, llmSlot])
 
   const canStart =
     active.mode === 'platform'
-      ? Boolean(platform[active.providerId])
+      ? (active.providerId === 'minimax' || active.providerId === 'stepfun')
+        && Boolean(platform[active.providerId])
       : status === 'valid' || status === 'saved'
 
   const view: ConnectionView = {
@@ -101,6 +129,7 @@ export function useConnection() {
     providerId: active.providerId,
     modelId: active.modelId,
     region: active.region || 'cn',
+    baseUrl: active.baseUrl || brand.defaultBaseUrl || '',
     status,
     chipLabel: formatProviderChip(brand, active.modelId),
     hint: meta?.hint || '',
@@ -160,8 +189,8 @@ export function useConnection() {
       if (opts.purpose === 'tts' && opts.apiKey && ttsSlotFor(opts.providerId)) {
         await saveSlot(ttsSlotFor(opts.providerId)!, opts.apiKey, result.status)
       }
-      if (opts.baseUrl) {
-        await saveSlot('cliproxy.baseUrl', opts.baseUrl, result.status)
+      if (opts.baseUrl && baseUrlSlotFor(opts.providerId)) {
+        await saveSlot(baseUrlSlotFor(opts.providerId)!, opts.baseUrl, result.status)
       }
       return result
     } finally {
@@ -172,7 +201,6 @@ export function useConnection() {
   const ensureBound = useCallback(async (): Promise<string | null> => {
     if (!vault) return connectionSessionId
     if (vault.active.mode === 'platform') {
-      // Platform uses server env; clear any stale bind
       if (connectionSessionId) {
         await unbindConnection(connectionSessionId)
         setSessionId(null)
@@ -180,19 +208,25 @@ export function useConnection() {
       return null
     }
     const pid = vault.active.providerId
+    const brandNow = getProviderBrand(pid)
     const llmKey = vault.slots[llmSlotFor(pid)]
     const ttsKey = ttsSlotFor(pid) ? vault.slots[ttsSlotFor(pid)!] : undefined
-    const baseUrl = vault.slots['cliproxy.baseUrl']
-    if (pid !== 'cliproxy' && !llmKey) {
+    const baseFromSlot = baseUrlSlotFor(pid) ? vault.slots[baseUrlSlotFor(pid)!] : undefined
+    const baseUrl = vault.active.baseUrl || baseFromSlot || brandNow.defaultBaseUrl
+    if (!llmKey) {
       setMessage('Missing API key')
+      return null
+    }
+    if (brandNow.needsBaseUrl && !baseUrl) {
+      setMessage('Missing base URL')
       return null
     }
     const bound = await bindConnection({
       providerId: pid,
       modelId: vault.active.modelId,
-      llmKey: llmKey || undefined,
+      llmKey,
       ttsKey,
-      baseUrl: baseUrl || (pid === 'cliproxy' ? brand.defaultBaseUrl : undefined),
+      baseUrl,
       region: vault.active.region,
     })
     if (!bound) {
@@ -202,7 +236,7 @@ export function useConnection() {
     setSessionId(bound.connectionSessionId)
     setBindSessionId(bound.connectionSessionId)
     return bound.connectionSessionId
-  }, [vault, connectionSessionId, brand.defaultBaseUrl])
+  }, [vault, connectionSessionId])
 
   const clearProviderKeys = useCallback(async (providerId: ProviderId) => {
     if (!vault) return
@@ -212,7 +246,7 @@ export function useConnection() {
     }
     const slots = { ...vault.slots }
     const metaMap = { ...vault.meta }
-    const toClear = [llmSlotFor(providerId), ttsSlotFor(providerId), providerId === 'cliproxy' ? 'cliproxy.baseUrl' as const : null]
+    const toClear = [llmSlotFor(providerId), ttsSlotFor(providerId), baseUrlSlotFor(providerId)]
     for (const s of toClear) {
       if (!s) continue
       delete slots[s]
@@ -222,10 +256,16 @@ export function useConnection() {
     setMessage(null)
   }, [vault, connectionSessionId, persist])
 
+  const brands = useMemo(
+    () => brandsForMode(active.mode === 'platform' ? 'platform' : 'byok'),
+    [active.mode],
+  )
+
   return {
     vault,
     view,
-    brands: PROVIDER_BRANDS,
+    brands,
+    allBrands: PROVIDER_BRANDS,
     sheetOpen,
     setSheetOpen,
     busy,

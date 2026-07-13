@@ -116,7 +116,7 @@ class TestDirectorRuntimeProfile:
 
         settings = _make_settings()
 
-        assert settings.director_model_route == "stepfun/step-2-16k"
+        assert settings.director_model_route == "stepfun/step-3.7-flash"
         assert settings.enable_dossier_updates is True
 
     def test_vercel_profile_can_select_minimax_and_defer_dossiers(self, monkeypatch):

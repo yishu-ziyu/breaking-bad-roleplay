@@ -1,9 +1,7 @@
-"""Smoke tests for the Walter White system prompt template.
+"""Smoke tests for Walter White system prompt (Agents v2).
 
-Verifies that WALTER_SYSTEM_PROMPT carries the structural sections expected
-by the director pipeline (CORE TRAITS / VOICE / SCENE CONTEXT /
-RELATIONSHIP RULES / SIGNATURE PHRASES / RULES) and embeds the
-character's signature lines so the LLM has anchor phrases to draw from.
+v2 drops monologue packing and uses IDENTITY / VOICE / RELATION /
+SESSION MEMORY / KNOWLEDGE RIGHTS / CONTINUITY / SAFETY.
 """
 
 from __future__ import annotations
@@ -11,46 +9,48 @@ from __future__ import annotations
 from agents.characters.walter import WALTER_SYSTEM_PROMPT
 
 
-def test_walter_prompt_contains_signature_phrases():
-    # The exact line "I am the danger" must appear verbatim.
-    assert "I am the danger" in WALTER_SYSTEM_PROMPT
-    # The catchphrase "Say my name." must appear (case-insensitive).
-    assert "say my name" in WALTER_SYSTEM_PROMPT.lower()
-
-
-def test_walter_prompt_has_structural_sections():
+def test_walter_prompt_has_v2_structural_sections():
     for section in (
-        "CORE TRAITS",
-        "VOICE",
-        "SCENE CONTEXT",
-        "RELATIONSHIP RULES",
-        "SIGNATURE PHRASES",
-        "RULES",
+        "IDENTITY:",
+        "VOICE:",
+        "RELATION TO PLAYER",
+        "SESSION MEMORY",
+        "KNOWLEDGE RIGHTS",
+        "CONTINUITY:",
+        "SAFETY",
     ):
         assert section in WALTER_SYSTEM_PROMPT, f"missing section: {section}"
 
 
-def test_walter_prompt_covers_all_relationship_types():
-    # The prompt must speak to the 5 relationship buckets the director
-    # routes on: former student / client / family member / rival / stranger.
+def test_walter_prompt_covers_player_relation_buckets():
     text = WALTER_SYSTEM_PROMPT.lower()
     for bucket in (
         "former student",
-        "client",
         "family member",
-        "rival",
+        "lab partner",
+        "dea liability",
+        "old colleague",
         "stranger",
     ):
         assert bucket in text, f"missing relationship bucket: {bucket}"
 
 
 def test_walter_prompt_length_above_floor():
-    # The brief was ~3000 bytes; we assert a hard floor so the prompt
-    # cannot quietly regress below 2500.
-    assert len(WALTER_SYSTEM_PROMPT.encode("utf-8")) > 2500
+    assert len(WALTER_SYSTEM_PROMPT.encode("utf-8")) > 1800
 
 
-def test_walter_prompt_preserves_core_traits():
-    # The existing CORE TRAITS anchors must still appear after expansion.
-    assert "Brilliant chemist" in WALTER_SYSTEM_PROMPT
-    assert "methamphetamine" in WALTER_SYSTEM_PROMPT
+def test_walter_prompt_identity_engine():
+    assert "pride" in WALTER_SYSTEM_PROMPT.lower()
+    assert "responsibility" in WALTER_SYSTEM_PROMPT.lower()
+
+
+def test_walter_prompt_forbids_famous_monologue_paste():
+    assert "Original lines only" in WALTER_SYSTEM_PROMPT or "original lines" in WALTER_SYSTEM_PROMPT.lower()
+    # v2 must not pack signature monologues as free candy
+    assert "I am the danger." not in WALTER_SYSTEM_PROMPT
+
+
+def test_walter_prompt_has_jesse_cast_relation():
+    assert "CAST RELATION (Jesse)" in WALTER_SYSTEM_PROMPT
+    text = WALTER_SYSTEM_PROMPT.lower()
+    assert "control ritual" in text or "approval" in text or "teacher" in text

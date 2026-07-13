@@ -650,8 +650,11 @@ textarea {
 .story-panel {
   position: relative;
   min-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   /* ~15% lower shell contrast: lighter scrim so desert shows through more */
   background:
     linear-gradient(180deg, rgba(10, 14, 16, 0.48) 0%, rgba(12, 16, 18, 0.58) 100%),
@@ -1141,6 +1144,8 @@ textarea {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  gap: 14px;
   padding: clamp(22px, 3.5vw, 40px);
   overflow: auto;
   /* Speak paper: ~15% softer than pure cream-on-ink */
@@ -1179,7 +1184,8 @@ textarea {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 .story-scene-card__meta span,
@@ -1252,7 +1258,7 @@ textarea {
 .story-scene-card__quote {
   max-width: 64ch;
   margin: 0;
-  flex: 1;
+  flex: 0 1 auto;
   color: rgba(36, 42, 28, 0.86);
   font: 700 clamp(18px, 2.3vw, 28px)/1.55 var(--font-display);
   white-space: pre-wrap;
@@ -1287,13 +1293,13 @@ textarea {
 }
 
 .story-scene-card__paper .voice-player {
-  margin-top: 18px;
+  margin-top: 0;
   flex-shrink: 0;
 }
 
-/* GIF: smaller secondary ornament on stage. */
+/* GIF: smaller secondary ornament on stage, directly under the line. */
 .story-scene-card__paper .gif-card {
-  margin-top: 14px;
+  margin-top: 0;
   max-width: 220px;
   flex-shrink: 0;
 }
@@ -2278,6 +2284,9 @@ button.story-event {
   }
   .chat-panel, .story-panel {
     min-height: 60vh;
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
   .story-header {
     padding: 20px 20px 0;
@@ -2673,6 +2682,23 @@ button.story-event {
   background: rgba(247, 206, 70, 0.28);
 }
 
+.connection-sheet__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.connection-sheet__group-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
 .connection-sheet__brands {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2806,4 +2832,119 @@ button.story-event {
   background: transparent;
   font: 700 12px/1 var(--font-sans);
   cursor: pointer;
+}
+
+
+/* ----- Personal plot graph (session story net) ----- */
+.plot-graph {
+  margin-top: 14px;
+  border: 1px solid rgba(23, 32, 14, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 252, 242, 0.92);
+  text-align: left;
+}
+.plot-graph__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.plot-graph__header strong {
+  font: 800 13px/1.2 var(--font-sans);
+  color: var(--color-bb-ink);
+}
+.plot-graph__toggle {
+  border: 1px solid rgba(23, 32, 14, 0.18);
+  background: transparent;
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 0 12px;
+  font: 700 11px/1 var(--font-sans);
+  cursor: pointer;
+}
+.plot-graph__body {
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(23, 32, 14, 0.08);
+}
+.plot-graph__hint,
+.plot-graph__status {
+  margin: 10px 0 8px;
+  font: 500 12px/1.45 var(--font-sans);
+  color: rgba(23, 32, 14, 0.72);
+}
+.plot-graph__status.is-error {
+  color: #8b2e1a;
+}
+.plot-graph__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.plot-graph__meta span {
+  border-radius: 999px;
+  background: rgba(23, 32, 14, 0.06);
+  padding: 4px 8px;
+  font: 700 10px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+}
+.plot-graph__section {
+  margin-top: 10px;
+}
+.plot-graph__section h4 {
+  margin: 0 0 6px;
+  font: 800 11px/1.2 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(23, 32, 14, 0.55);
+}
+.plot-graph__spine {
+  margin: 0;
+  padding-left: 18px;
+  font: 600 12px/1.5 var(--font-sans);
+}
+.plot-graph__spine li + li {
+  margin-top: 4px;
+}
+.plot-graph__chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plot-graph__chips li {
+  border-radius: 999px;
+  border: 1px solid rgba(23, 32, 14, 0.14);
+  padding: 4px 10px;
+  font: 700 11px/1.2 var(--font-sans);
+  background: #fff;
+}
+.plot-graph__list {
+  margin: 0;
+  padding-left: 16px;
+  font: 500 12px/1.45 var(--font-sans);
+  color: rgba(23, 32, 14, 0.82);
+}
+.plot-graph__list li + li {
+  margin-top: 4px;
+}
+.plot-graph__mermaid {
+  margin-top: 12px;
+}
+.plot-graph__mermaid summary {
+  cursor: pointer;
+  font: 700 11px/1 var(--font-sans);
+  color: rgba(23, 32, 14, 0.6);
+}
+.plot-graph__mermaid pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(23, 32, 14, 0.05);
+  overflow: auto;
+  font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
 }

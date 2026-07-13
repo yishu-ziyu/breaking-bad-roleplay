@@ -16,6 +16,7 @@ import {
 import { loadStoredPrivacyKey, PRIVACY_KEY_UPDATED_EVENT } from './lib/privacyVault'
 import { AuthSection } from './components/AuthSection'
 import { GifCard } from './components/GifCard'
+import { PlotGraphPanel } from './components/PlotGraphPanel'
 import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
 import { useConnection } from './hooks/useConnection'
@@ -23,6 +24,10 @@ import { useQuota, parseQuotaError } from './hooks/useQuota'
 import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { resolveGifUrl } from './lib/gifResolver'
+import {
+  STAGE_DWELL_MS,
+  listStageCardIndices,
+} from './lib/storyStagePacing'
 import './App.css'
 
 /* ------------------------------------------------------------------ */
@@ -69,7 +74,7 @@ function getStoryEventGif(evt: StoryEvent): string | null {
   return resolved
 }
 
-/** Type chip only (说 / 内心 / 行动 / …) — no character name. */
+/** Type chip only (说 / 内心 / 行动 / …) - no character name. */
 function getEventTypeChip(evt: StoryEvent, lang: Language): string {
   const t = uiText[lang]
   switch (evt.type) {
@@ -156,9 +161,9 @@ const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
     en: 'Director outlined {n} beat(s). Beginning roleplay…',
     zh: '导演已规划 {n} 个剧情节拍。开始角色扮演…',
   },
-  'No action received — continuing automatically.': {
-    en: 'No action received — continuing automatically.',
-    zh: '未收到玩家操作 — 自动继续…',
+  'No action received - continuing automatically.': {
+    en: 'No action received - continuing automatically.',
+    zh: '未收到玩家操作 - 自动继续…',
   },
   'All beats rendered. Roleplay outline complete.': {
     en: 'All beats rendered. Roleplay outline complete.',
@@ -328,7 +333,7 @@ const uiText: Record<Language, Record<string, string>> = {
   en: {
     tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
     landingSubtitle: 'Step into Albuquerque. Everything you say stays with them.',
-    landingVoice: 'I have been waiting. Say something that matters.',
+    landingVoice: 'The door is open. Don\'t start with manners.',
     landingPreview: 'You are not who you say you are. That is fine. Start talking.',
     landingStep1: 'Choose',
     landingStep2: 'Anchor',
@@ -403,6 +408,18 @@ const uiText: Record<Language, Record<string, string>> = {
     replayBeat: 'Replay Last Beat',
     startAgain: 'Start Again',
     storyCompleteHint: 'Each new beat will pick up the last chapter\'s context.',
+    plotNet: 'Your plot net',
+    plotNetShow: 'Show plot net',
+    plotNetHide: 'Hide net',
+    plotNetLoad: 'Loading plot net…',
+    plotNetError: 'Could not load plot net.',
+    plotNetEmpty: 'Play a few beats first - the net grows from what you lived.',
+    plotNetSpine: 'Time spine',
+    plotNetTensions: 'Live tensions',
+    plotNetCast: 'Who spoke',
+    plotNetFacts: 'Room facts',
+    plotNetCosts: 'Costs paid',
+    plotNetHint: 'Built only from this session - your spine, co-presence, and what each mouth knew.',
     pressureDossier: 'Relationship pressure',
     pressureTrust: 'Trust',
     pressureStyle: 'Pressure',
@@ -430,7 +447,7 @@ const uiText: Record<Language, Record<string, string>> = {
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
     landingSubtitle: '走进阿尔伯克基。你的每一句话，他们都会记住。',
-    landingVoice: '我在这里等你。说点有分量的话。',
+    landingVoice: 'The door is open. Don\'t start with manners.',
     landingPreview: '你不是你自称的那个人。没关系。先开口。',
     landingStep1: '选择',
     landingStep2: '锚定',
@@ -505,6 +522,18 @@ const uiText: Record<Language, Record<string, string>> = {
     replayBeat: '重演最后节点',
     startAgain: '重新开始',
     storyCompleteHint: '下一节会用上一章的剧情作为起点。',
+    plotNet: '你的剧情网',
+    plotNetShow: '展开剧情网',
+    plotNetHide: '收起',
+    plotNetLoad: '正在生成剧情网…',
+    plotNetError: '剧情网加载失败。',
+    plotNetEmpty: '先多玩几拍，网会从你经历的内容长出来。',
+    plotNetSpine: '时间脊骨',
+    plotNetTensions: '未解张力',
+    plotNetCast: '谁开过口',
+    plotNetFacts: '房间事实',
+    plotNetCosts: '已付代价',
+    plotNetHint: '只来自本局：大纲脊骨、同场共现、以及每个人嘴上该知道的事。',
     pressureDossier: '关系压力',
     pressureTrust: '信任',
     pressureStyle: '施压方式',
@@ -542,7 +571,7 @@ function formatRelation(char: Character, relation: string, lang: Language): stri
   return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
 }
 
-/*  BeatControls — decision UI at beat_ready                          */
+/*  BeatControls - decision UI at beat_ready                          */
 /* ------------------------------------------------------------------ */
 
 type BeatAction = 'continue' | 'stop' | 'redirect' | 'switch_perspective'
@@ -699,6 +728,9 @@ function App() {
   const [outlineExpanded, setOutlineExpanded] = useState(false)
   /** null = auto-follow latest card event; number = user pinned a timeline row. */
   const [pinnedStoryEventIndex, setPinnedStoryEventIndex] = useState<number | null>(null)
+  /** Position within stage-card indices (not raw event index). */
+  const [stageCardPos, setStageCardPos] = useState(0)
+  const stageShownAtRef = useRef<number | null>(null)
   /** Narrow beat rail open by default; user can fold to give stage full width. */
   const [timelineRailOpen, setTimelineRailOpen] = useState(true)
   /** GIF on stage can be muted so paper text stays primary. */
@@ -1012,6 +1044,7 @@ function App() {
           history: nextHistory.slice(-10).map(m => ({ sender: m.sender, text: m.text })),
           language,
           llmProvider: connection.view.providerId,
+          modelId: connection.view.modelId,
           voiceExample: getVoiceExample(selectedCharId, relation) ?? null,
           memorySummary: updatedAfterUser.summary || undefined,
           keyFacts: updatedAfterUser.keyFacts.length > 0 ? updatedAfterUser.keyFacts : undefined,
@@ -1151,7 +1184,7 @@ function App() {
     return [story.outline, spoken].filter(Boolean).join('\n\n')
   }, [story.events, story.outline])
 
-  // Live streaming should follow the latest beat; clear manual pin.
+  // Streaming clears manual pin so paced autoplay can own the stage.
   useEffect(() => {
     if (story.connectionState !== 'streaming') return
     queueMicrotask(() => setPinnedStoryEventIndex(null))
@@ -1163,8 +1196,51 @@ function App() {
       setOutlineExpanded(false)
       setTimelineRailOpen(true)
       setStoryGifHidden(false)
+      setStageCardPos(0)
+      stageShownAtRef.current = null
     })
   }, [story.sessionId])
+
+  // Card events only (scene / think / speak / act). Status & deltas stay off-stage.
+  const stageCardIndices = useMemo(
+    () => listStageCardIndices(story.events, STORY_CARD_EVENT_TYPES),
+    [story.events],
+  )
+
+  // Dwell ~7s per card so think/speak/scene don't flash past the reader.
+  useEffect(() => {
+    if (stageCardIndices.length === 0) {
+      stageShownAtRef.current = null
+      return
+    }
+    // First card of a session: show immediately.
+    if (stageShownAtRef.current == null) {
+      stageShownAtRef.current = Date.now()
+      setStageCardPos(0)
+      return
+    }
+    // Clamp if history was trimmed (MAX_EVENTS) or session replaced mid-flight.
+    setStageCardPos((pos) => Math.min(pos, stageCardIndices.length - 1))
+  }, [stageCardIndices])
+
+  useEffect(() => {
+    // Manual pin freezes autoplay until cleared.
+    if (pinnedStoryEventIndex != null) return
+    if (stageCardIndices.length === 0) return
+    if (stageCardPos >= stageCardIndices.length - 1) return
+
+    const shownAt = stageShownAtRef.current ?? Date.now()
+    stageShownAtRef.current = shownAt
+    const remaining = Math.max(0, STAGE_DWELL_MS - (Date.now() - shownAt))
+    const id = window.setTimeout(() => {
+      setStageCardPos((pos) => {
+        if (pos >= stageCardIndices.length - 1) return pos
+        stageShownAtRef.current = Date.now()
+        return pos + 1
+      })
+    }, remaining)
+    return () => window.clearTimeout(id)
+  }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos])
 
   const currentStoryEvent = useMemo(() => {
     if (
@@ -1175,8 +1251,10 @@ function App() {
       const pinned = story.events[pinnedStoryEventIndex]
       if (STORY_CARD_EVENT_TYPES.has(pinned.type)) return pinned
     }
-    return findLastStoryEvent(story.events, evt => STORY_CARD_EVENT_TYPES.has(evt.type))
-  }, [pinnedStoryEventIndex, story.events])
+    if (stageCardIndices.length === 0) return null
+    const safePos = Math.min(Math.max(stageCardPos, 0), stageCardIndices.length - 1)
+    return story.events[stageCardIndices[safePos]] ?? null
+  }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos, story.events])
   const currentStoryText = currentStoryEvent ? getStoryEventSummary(currentStoryEvent, language) : t.sceneFallback
   const currentStoryTypeChip = currentStoryEvent
     ? getEventTypeChip(currentStoryEvent, language)
@@ -1394,7 +1472,7 @@ function App() {
           </section>
         )}
 
-        {/* Model line — BYOK branding entry + free credits */}
+        {/* Model line - BYOK branding entry + free credits */}
         <section className="connection-sidebar-block">
           <span className="field-label">{t.model}</span>
           <ConnectionChip conn={connection} language={language} />
@@ -1528,7 +1606,7 @@ function App() {
                 )}
               </div>
 
-              {/* Stage (~70%) first, narrow beat rail (~25%) second — blueprint. */}
+              {/* Stage (~70%) first, narrow beat rail (~25%) second - blueprint. */}
               <div className="story-board__grid">
                 <section className={`story-scene-card story-scene-card--${currentStoryEvent?.type ?? 'empty'}`}>
                   <div className="story-scene-card__paper">
@@ -1639,7 +1717,7 @@ function App() {
                     </div>
                   </aside>
                 ) : (
-                  /* Collapsed: one edge tab only — no empty full-height black rail. */
+                  /* Collapsed: one edge tab only - no empty full-height black rail. */
                   <button
                     type="button"
                     className="story-timeline-handle"
@@ -1701,6 +1779,24 @@ function App() {
                     <button type="button" onClick={story.reset}>{t.startAgain}</button>
                   </div>
                   <p className="story-complete__hint">{t.storyCompleteHint}</p>
+                  <PlotGraphPanel
+                    sessionId={story.sessionId}
+                    open
+                    labels={{
+                      plotNet: t.plotNet,
+                      plotNetShow: t.plotNetShow,
+                      plotNetHide: t.plotNetHide,
+                      plotNetLoad: t.plotNetLoad,
+                      plotNetError: t.plotNetError,
+                      plotNetEmpty: t.plotNetEmpty,
+                      plotNetSpine: t.plotNetSpine,
+                      plotNetTensions: t.plotNetTensions,
+                      plotNetCast: t.plotNetCast,
+                      plotNetFacts: t.plotNetFacts,
+                      plotNetCosts: t.plotNetCosts,
+                      plotNetHint: t.plotNetHint,
+                    }}
+                  />
                 </div>
               )}
 
