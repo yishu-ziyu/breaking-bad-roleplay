@@ -69,8 +69,13 @@ describe('VoicePlayer (speechSynthesis)', () => {
 
   it('renders disabled button when speechSynthesis unavailable and character has no clone', () => {
     ;(globalThis as { speechSynthesis?: unknown }).speechSynthesis = undefined
+    // All six cast members now have MiniMax clones; use an unknown id to hit the no-clone path.
     const html = renderToStaticMarkup(
-      createElement(VoicePlayer, { text: 'hello', characterId: 'jesse', language: 'en' })
+      createElement(VoicePlayer, {
+        text: 'hello',
+        characterId: 'unknown-npc' as 'walter',
+        language: 'en',
+      })
     )
     assert.ok(
       html.includes('voice-player--disabled'),
