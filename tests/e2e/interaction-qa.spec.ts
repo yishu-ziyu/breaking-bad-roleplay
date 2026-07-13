@@ -163,14 +163,15 @@ test('TC-IX-1: landing screen enter button visible and interactive', async ({ pa
   const enterBtn = page.locator('.landing-screen__enter')
   await expect(enterBtn).toBeVisible()
   await expect(enterBtn).toBeEnabled()
-  await expect(enterBtn).toContainText(/ENTER THE WORLD|进入世界/)
+  await expect(enterBtn).toContainText(/Chat with Walter|和 Walter 聊聊/)
 
   // Check the title is present
   const title = page.locator('.landing-screen__title')
   await expect(title).toBeVisible()
 
-  // Step indicators visible
-  await expect(page.locator('.landing-step__num')).toHaveCount(3)
+  // Loop 10 Gap 2: character voice line replaces step pills
+  await expect(page.locator('.landing-screen__voice')).toBeVisible()
+  await expect(page.locator('.landing-step__num')).toHaveCount(0)
 
   await page.waitForTimeout(500)
   expect(errors).toEqual([])
