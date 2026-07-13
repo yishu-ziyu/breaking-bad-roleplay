@@ -67,12 +67,19 @@ def ip_hash(ip: str) -> str:
     return hashlib.sha256(salt + ip.encode()).hexdigest()[:24]
 
 
-def identity_key(*, guest_id: str | None, ip: str) -> str:
+def identity_key(
+    *,
+    guest_id: str | None,
+    ip: str,
+    user_id: str | None = None,
+) -> str:
     """Stable free-tier identity.
 
-    Prefer guest UUID (survives refresh). Always scope by IP hash so
-    rotating guest ids from one IP cannot multiply free pools forever.
+    - Logged-in: one pool per Supabase user id (early-access 80-credit tier).
+    - Guest: guest UUID scoped by IP hash so rotation cannot multiply free pools.
     """
+    if user_id and isinstance(user_id, str) and user_id.strip():
+        return f"u:{user_id.strip()}"
     g = normalize_guest_id(guest_id)
     ih = ip_hash(ip)
     if g:
@@ -101,6 +108,8 @@ class QuotaSnapshot:
     global_limit: int
     global_remaining: int
     byok: bool = False
+    # "guest" | "user" | "byok"
+    tier: str = "guest"
 
 
 @dataclass
@@ -213,6 +222,17 @@ def guest_daily_limit() -> int:
     return max(0, int(getattr(settings, "free_credits_guest", 8) or 8))
 
 
+def user_daily_limit() -> int:
+    """Logged-in early-access free pool (default 80)."""
+    return max(0, int(getattr(settings, "free_credits_user", 80) or 80))
+
+
+def daily_limit_for(*, user_id: str | None) -> int:
+    if user_id:
+        return user_daily_limit()
+    return guest_daily_limit()
+
+
 def global_daily_limit() -> int:
     return max(0, int(getattr(settings, "platform_daily_credit_budget", 5000) or 5000))
 
@@ -241,6 +261,7 @@ def byok_snapshot() -> QuotaSnapshot:
         global_limit=global_daily_limit(),
         global_remaining=global_daily_limit(),
         byok=True,
+        tier="byok",
     )
 
 
@@ -251,16 +272,33 @@ def enforce_platform_quota(
     mode: str | None = None,
     connection_session_id: str | None = None,
     guest_id: str | None = None,
+    user_id: str | None = None,
+    access_token: str | None = None,
 ) -> QuotaDecision:
     """Gate a platform-paid action. Raises nothing — caller maps to HTTPException."""
     if is_byok(connection_session_id):
         return QuotaDecision(allowed=True, reason=None, snapshot=byok_snapshot(), http_status=200)
 
+    resolved_user_id = user_id
+    if not resolved_user_id:
+        try:
+            from agents.auth_user import resolve_auth_user
+
+            auth = resolve_auth_user(request, query_access_token=access_token)
+            if auth:
+                resolved_user_id = auth.user_id
+        except Exception:
+            resolved_user_id = None
+
     ip = client_ip(request)
+    limit = daily_limit_for(user_id=resolved_user_id)
+    tier = "user" if resolved_user_id else "guest"
+
     if not _store.check_rate_limit(ip, rate_limit_max(), 3600):
         day = utc_day()
-        ident = identity_key(guest_id=guest_id, ip=ip)
-        snap = _store.snapshot(ident, day, guest_daily_limit(), global_daily_limit())
+        ident = identity_key(guest_id=guest_id, ip=ip, user_id=resolved_user_id)
+        snap = _store.snapshot(ident, day, limit, global_daily_limit())
+        snap.tier = tier
         return QuotaDecision(
             allowed=False,
             reason="rate_limited",
@@ -269,14 +307,16 @@ def enforce_platform_quota(
         )
 
     cost = action_cost(action, mode=mode)
-    ident = identity_key(guest_id=guest_id, ip=ip)
-    return _store.try_consume(
+    ident = identity_key(guest_id=guest_id, ip=ip, user_id=resolved_user_id)
+    decision = _store.try_consume(
         ident,
         utc_day(),
         cost,
-        guest_daily_limit(),
+        limit,
         global_daily_limit(),
     )
+    decision.snapshot.tier = tier
+    return decision
 
 
 def read_quota_snapshot(
@@ -284,12 +324,29 @@ def read_quota_snapshot(
     request: Any,
     guest_id: str | None = None,
     connection_session_id: str | None = None,
+    user_id: str | None = None,
+    access_token: str | None = None,
 ) -> QuotaSnapshot:
     if is_byok(connection_session_id):
         return byok_snapshot()
+
+    resolved_user_id = user_id
+    if not resolved_user_id:
+        try:
+            from agents.auth_user import resolve_auth_user
+
+            auth = resolve_auth_user(request, query_access_token=access_token)
+            if auth:
+                resolved_user_id = auth.user_id
+        except Exception:
+            resolved_user_id = None
+
     ip = client_ip(request)
-    ident = identity_key(guest_id=guest_id, ip=ip)
-    return _store.snapshot(ident, utc_day(), guest_daily_limit(), global_daily_limit())
+    limit = daily_limit_for(user_id=resolved_user_id)
+    ident = identity_key(guest_id=guest_id, ip=ip, user_id=resolved_user_id)
+    snap = _store.snapshot(ident, utc_day(), limit, global_daily_limit())
+    snap.tier = "user" if resolved_user_id else "guest"
+    return snap
 
 
 def new_guest_id() -> str:

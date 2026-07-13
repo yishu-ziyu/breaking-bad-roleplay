@@ -4,7 +4,7 @@
 import { createElement, useEffect, useRef, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 import { hasClonedVoice } from '../lib/voiceCasting'
-import { guestHeaders } from '../lib/guestId'
+import { authHeaders } from '../lib/authHeaders'
 import {
   createPlayHandler,
   handleVoiceToggle,
@@ -88,7 +88,7 @@ export function VoicePlayer({
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...guestHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           text,
           characterId,
