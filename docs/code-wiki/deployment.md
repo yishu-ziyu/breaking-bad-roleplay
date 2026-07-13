@@ -2,6 +2,9 @@
 
 本文记录 ABQ Roleplay Lab 的本地运行、数据库迁移、测试和部署方式。
 
+**改完代码后的上线习惯（双轨 Vercel + Docker VM、live smoke、项目专属坑）以 [docs/OPS_RUNBOOK.md](../OPS_RUNBOOK.md) 为准。**
+Render / Fly 等内容多为历史路径，不是当前主生产。
+
 ## 本地运行
 
 ### 前置条件
