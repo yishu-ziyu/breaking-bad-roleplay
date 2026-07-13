@@ -140,6 +140,43 @@ export function deriveBeatProgressFromMessages(messages: Array<{ beat_id: string
   return { beatId: null, beatIndex: 0 }
 }
 
+/**
+ * Build SSE query string for /api/session/{id}/stream.
+ * Always includes language so continue/reconnect never fall back to the
+ * backend default (en) after the first beat_paused close.
+ */
+export function buildStreamQuery(opts: {
+  voiceExample?: string | null
+  language?: string | null
+  connectionSessionId?: string | null
+}): string {
+  const parts: string[] = []
+  if (opts.voiceExample) {
+    parts.push(`voice_example=${encodeURIComponent(opts.voiceExample)}`)
+  }
+  const language = (opts.language && opts.language.trim()) || 'en'
+  parts.push(`language=${encodeURIComponent(language)}`)
+  if (opts.connectionSessionId) {
+    parts.push(`connection_session=${encodeURIComponent(opts.connectionSessionId)}`)
+  }
+  return `?${parts.join('&')}`
+}
+
+/** Read UI language from abq_language (usePersistedState key). */
+export function readPersistedStoryLanguage(): string {
+  try {
+    const storage = (globalThis as { localStorage?: Storage }).localStorage
+    if (!storage?.getItem) return 'en'
+    const raw = storage.getItem('abq_language')
+    if (raw == null) return 'en'
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed === 'zh' || parsed === 'en') return parsed
+    return 'en'
+  } catch {
+    return 'en'
+  }
+}
+
 export interface UseStoryStreamReturn {
   events: StoryEvent[]
   outline: string | null
@@ -152,7 +189,14 @@ export interface UseStoryStreamReturn {
   autoContinued: boolean
   isResuming: boolean
   resumeToast: string | null
-  startStory: (taskPrompt: string, characterId?: string, voiceExample?: string | null, language?: string) => Promise<void>
+  startStory: (
+    taskPrompt: string,
+    characterId?: string,
+    voiceExample?: string | null,
+    language?: string,
+    connectionSessionId?: string | null,
+  ) => Promise<void>
+  setConnectionSessionId: (id: string | null) => void
   sendAction: (action: StoryAction, params?: StoryActionParams, characterId?: string) => Promise<void>
   reconnect: () => void
   reset: () => void
@@ -185,6 +229,10 @@ export function useStoryStream(): UseStoryStreamReturn {
   const sessionRef = useRef<string | null>(null)
   const hasAttemptedResumeRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  // Persist across beat_paused → continue (stream is closed after each beat).
+  const languageRef = useRef<string>(readPersistedStoryLanguage())
+  const voiceExampleRef = useRef<string | null>(null)
+  const connectionSessionRef = useRef<string | null>(null)
 
   const closeEventSource = useCallback(() => {
     if (esRef.current) {
@@ -210,6 +258,12 @@ export function useStoryStream(): UseStoryStreamReturn {
     setAutoContinued(false)
     setConnectionState('idle')
     sessionRef.current = null
+    // Keep language/voice for the next continue within the same UI session;
+    // only drop voice on full reset (storage clear).
+    if (options?.clearStorage) {
+      voiceExampleRef.current = null
+      languageRef.current = readPersistedStoryLanguage()
+    }
     if (options?.clearCharacterFeedback) {
       setIsSendingByChar({})
       setErrorByChar({})
@@ -229,12 +283,26 @@ export function useStoryStream(): UseStoryStreamReturn {
     })
   }, [])
 
+  const setConnectionSessionId = useCallback((id: string | null) => {
+    connectionSessionRef.current = id
+  }, [])
+
   const connectStream = useCallback((sid: string, voiceExample?: string | null, language?: string) => {
     closeEventSource()
-    const parts: string[] = []
-    if (voiceExample) parts.push(`voice_example=${encodeURIComponent(voiceExample)}`)
-    if (language) parts.push(`language=${encodeURIComponent(language)}`)
-    const qs = parts.length ? `?${parts.join('&')}` : ''
+    if (voiceExample !== undefined) voiceExampleRef.current = voiceExample
+    // Prefer explicit arg, then current UI language in localStorage, then ref.
+    // Never silently fall back to en while the sidebar shows 中文.
+    const resolvedLanguage =
+      language
+      || readPersistedStoryLanguage()
+      || languageRef.current
+      || 'en'
+    languageRef.current = resolvedLanguage
+    const qs = buildStreamQuery({
+      voiceExample: voiceExampleRef.current,
+      language: resolvedLanguage,
+      connectionSessionId: connectionSessionRef.current,
+    })
     const es = new EventSource(`/api/session/${sid}/stream${qs}`)
     esRef.current = es
 
@@ -330,10 +398,22 @@ export function useStoryStream(): UseStoryStreamReturn {
     })
   }, [appendEvent, closeEventSource, setSessionError])
 
-  const startStory = useCallback(async (taskPrompt: string, characterId = 'walter', voiceExample?: string | null, language?: string): Promise<void> => {
+  const startStory = useCallback(async (
+    taskPrompt: string,
+    characterId = 'walter',
+    voiceExample?: string | null,
+    language?: string,
+    connectionSessionId?: string | null,
+  ): Promise<void> => {
     clearStorySessionState()
     setSessionError(null)
     setConnectionState('connecting')
+    const resolvedLanguage = language || readPersistedStoryLanguage() || 'en'
+    languageRef.current = resolvedLanguage
+    voiceExampleRef.current = voiceExample ?? null
+    if (connectionSessionId !== undefined) {
+      connectionSessionRef.current = connectionSessionId
+    }
 
     try {
       const res = await fetch('/api/session/create', {
@@ -343,7 +423,7 @@ export function useStoryStream(): UseStoryStreamReturn {
           title: taskPrompt.slice(0, 80),
           task_prompt: taskPrompt,
           active_character_id: characterId,
-          language: language || 'en',
+          language: resolvedLanguage,
         }),
       })
       if (!res.ok) {
@@ -355,7 +435,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       setSessionId(sid)
       sessionRef.current = sid
       writeSavedSessionId(sid)
-      connectStream(sid, voiceExample, language)
+      connectStream(sid, voiceExampleRef.current, resolvedLanguage)
     } catch (e) {
       setSessionError(e instanceof Error ? e.message : 'Unknown error')
       setConnectionState('error')
@@ -499,8 +579,10 @@ export function useStoryStream(): UseStoryStreamReturn {
       // A restored session has message history but no live EventSource.
       // After the action succeeds, open a fresh stream so Continue,
       // Redirect, and Switch Perspective can actually receive new events.
+      // MUST pass persisted language/voice — beat_paused closes the previous
+      // EventSource, so this is a brand-new connection (not a keep-alive).
       if (!esRef.current) {
-        connectStream(sid)
+        connectStream(sid, voiceExampleRef.current, languageRef.current || readPersistedStoryLanguage())
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
@@ -527,7 +609,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     if (!sid) return
     setSessionError(null)
     setConnectionState('connecting')
-    connectStream(sid)
+    connectStream(sid, voiceExampleRef.current, languageRef.current || readPersistedStoryLanguage())
   }, [connectStream, setSessionError])
 
   const reset = useCallback(() => {
@@ -620,6 +702,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     isSendingByChar,
     errorByChar,
     autoContinued,
+    setConnectionSessionId,
     isResuming,
     resumeToast,
     startStory,

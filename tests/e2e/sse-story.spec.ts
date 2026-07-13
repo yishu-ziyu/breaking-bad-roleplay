@@ -137,7 +137,7 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
  */
 async function driveToBeatPaused(
   page: Page,
-  opts: { outline?: string; agentSpeak?: string; beatId?: string } = {},
+  opts: { outline?: string; agentSpeak?: string; beatId?: string; language?: 'en' | 'zh' } = {},
 ): Promise<Array<Record<string, unknown>>> {
   const outline =
     opts.outline ??
@@ -145,6 +145,7 @@ async function driveToBeatPaused(
   const agentSpeak =
     opts.agentSpeak ?? 'We need to cook, and we need to do it now.'
   const beatId = opts.beatId ?? 'beat-1'
+  const language = opts.language ?? 'en'
   const actionLog: Array<Record<string, unknown>> = []
 
   await installMockEventSource(page)
@@ -152,7 +153,7 @@ async function driveToBeatPaused(
   await mockActionEndpoint(page, actionLog)
   await seedStorage(page, {
     abq_character: 'walter',
-    abq_language: 'en',
+    abq_language: language,
     abq_view: 'story',
   })
 
@@ -211,21 +212,26 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
 }) => {
   await driveToBeatPaused(page)
 
-  // Outline text rendered
-  await expect(page.locator('.story-outline p')).toContainText('methylamine')
+  // Outline summary always visible; full body requires expand
+  await expect(page.locator('.story-outline__summary')).toBeVisible()
+  await page.locator('.story-outline__toggle').click()
+  await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
-  // agent_speak content rendered (text is "Walter White: We need to cook...")
-  await expect(page.locator('.story-event--agent_speak p')).toContainText(
+  // Full dialogue lives on the paper stage; timeline keeps a short summary
+  await expect(page.locator('.story-scene-card__quote')).toContainText(
+    'We need to cook',
+  )
+  await expect(page.locator('.story-event--agent_speak .story-event__summary')).toContainText(
     'We need to cook',
   )
 
-  // scene_change rendered
-  await expect(page.locator('.story-event--scene_change p')).toContainText(
+  // scene_change summary on timeline
+  await expect(page.locator('.story-event--scene_change .story-event__summary')).toContainText(
     'Los Pollos',
   )
 
-  // world_state_delta rendered
-  await expect(page.locator('.story-event--world_state_delta li')).toContainText(
+  // world_state_delta rendered as summary (no dense list in the rail)
+  await expect(page.locator('.story-event--world_state_delta .story-event__summary')).toContainText(
     'stress',
   )
 
@@ -274,6 +280,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pres
   await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos office')
 
   await expect(page.locator('.story-outline__summary')).toContainText('2 story beats planned')
+  await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
 
   await expect(page.locator('.story-event--scene_change', { hasText: 'Los Pollos Hermanos office' })).toBeVisible()
@@ -310,6 +317,17 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   expect(actionLog.find((e) => e.action === 'continue')?.redirect_prompt).toBeUndefined()
   await expect.poll(() => mockSSEStates(page)).toEqual([2, 0])
 
+  // Re-opened stream after beat_paused must include language (never bare /stream)
+  await expect
+    .poll(async () => {
+      const urls = await page.evaluate(() => {
+        const w = window as Window & { __mockSSEInstances?: Array<{ url: string }> }
+        return (w.__mockSSEInstances ?? []).map((i) => i.url)
+      })
+      return urls.filter((u) => u.includes('/stream')).every((u) => u.includes('language='))
+    })
+    .toBe(true)
+
   // Emit next beat events — scene_change → agent_speak → beat_ready
   await emitSSE(page, 'scene_change', {
     data: { description: 'Superlab, underground.' },
@@ -327,13 +345,39 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   // Beat index incremented to 2
   await expect(page.locator('.story-hud')).toContainText('Beat 2')
 
-  // New agent_speak content visible
+  // New agent_speak content visible on stage + timeline summary
+  await expect(page.locator('.story-scene-card__quote')).toContainText('The batch is ready.')
   await expect(
-    page.locator('.story-event--agent_speak p', { hasText: 'The batch is ready.' }),
+    page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'The batch is ready.' }),
   ).toBeVisible()
 
   // BeatControls visible again (back to beat_paused)
   await expect(page.locator('.beat-controls')).toBeVisible()
+})
+
+test('TC-SSE-2b: continue reopens stream with language=zh when UI language is zh', async ({
+  page,
+}) => {
+  const actionLog = await driveToBeatPaused(page, {
+    language: 'zh',
+    outline: '1. 办公室 — 对峙\n2. 停车场 — 等候',
+    agentSpeak: '我们需要谈谈。',
+  })
+
+  await page.locator('.beat-controls button', { hasText: /继续|Continue/ }).click()
+  await expect.poll(() => actionLog.some((e) => e.action === 'continue')).toBe(true)
+
+  await expect
+    .poll(async () => {
+      const urls = await page.evaluate(() => {
+        const w = window as Window & { __mockSSEInstances?: Array<{ url: string }> }
+        return (w.__mockSSEInstances ?? []).map((i) => i.url)
+      })
+      // First stream (start) and second stream (continue) both request zh
+      const streamUrls = urls.filter((u) => u.includes('/stream'))
+      return streamUrls.length >= 2 && streamUrls.every((u) => u.includes('language=zh'))
+    })
+    .toBe(true)
 })
 
 /* ------------------------------------------------------------------ */
@@ -347,8 +391,9 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
     outline: 'Walter must secure methylamine from Gus without Skyler finding out.',
   })
 
-  // Verify old outline is visible
-  await expect(page.locator('.story-outline p')).toContainText('methylamine')
+  // Verify old outline is visible after expand
+  await page.locator('.story-outline__toggle').click()
+  await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
   // Open redirect form
   await page
@@ -396,18 +441,23 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1' } })
 
-  // New outline text is visible (different from old)
-  await expect(page.locator('.story-outline p')).toContainText('eliminate Gus')
+  // New outline text is visible (different from old); expand if collapsed after new session pin reset
+  const outlineBody = page.locator('.story-outline__body')
+  if (!(await outlineBody.isVisible())) {
+    await page.locator('.story-outline__toggle').click()
+  }
+  await expect(outlineBody).toContainText('eliminate Gus')
   // Old outline text is gone
-  await expect(page.locator('.story-outline p')).not.toContainText('methylamine')
+  await expect(outlineBody).not.toContainText('methylamine')
 
   // Redirect starts a new outline; the HUD/progress should follow the
   // backend beat_id instead of continuing the old outline's counter.
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
-  // New agent_speak content visible
+  // New agent_speak content visible on stage
+  await expect(page.locator('.story-scene-card__quote')).toContainText('take him out')
   await expect(
-    page.locator('.story-event--agent_speak p', { hasText: 'take him out' }),
+    page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'take him out' }),
   ).toBeVisible()
 
   // BeatControls visible again — no deadlock
@@ -565,8 +615,8 @@ test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) 
     outline: '1. RV — cook\n2. White house — Skyler waits',
   })
 
-  // driveToBeatPaused emits beat 1 with agent_speak events containing content
-  const voicePlayer = page.locator('.story-event--agent_speak .voice-player').first()
+  // Voice lives on the paper stage for the focused speak beat
+  const voicePlayer = page.locator('.story-scene-card .voice-player').first()
   await expect(voicePlayer).toBeVisible()
   await expect(voicePlayer).toBeEnabled()
   await expect(voicePlayer).toContainText(/Voice|▶/)

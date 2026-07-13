@@ -22,30 +22,94 @@ logger = logging.getLogger(__name__)
 DEFAULT_DIRECTOR_MODEL_ROUTE = "stepfun/step-2-16k"
 MAX_AGENT_SPEAK_PER_BEAT = 2
 LANG_DIRECTIVE = {
-    "en": "RESPONSE LANGUAGE: Write all dialogue and scene descriptions in English only.",
-    "zh": "RESPONSE LANGUAGE: 用简体中文书写所有对话和场景描述。",
+    "en": (
+        "RESPONSE LANGUAGE: English only.\n"
+        "ALL player-visible narrative fields must be English: "
+        "outline lines, scene_change.description, agent_act.action, "
+        "agent_think.thought_content, agent_speak.content, and "
+        "world_state_delta field/old_value/new_value.\n"
+        "emotion_state must be one English tag from: "
+        "calm, tense, angry, fearful, manipulative, guilty, resigned, desperate.\n"
+        "character_id stays the canonical English names.\n"
+        "gif_search_query stays English for image search."
+    ),
+    "zh": (
+        "RESPONSE LANGUAGE: 简体中文 only.\n"
+        "所有面向玩家的叙事字段必须使用简体中文："
+        "大纲正文、scene_change.description、agent_act.action、"
+        "agent_think.thought_content、agent_speak.content、"
+        "以及 world_state_delta 的 field/old_value/new_value。\n"
+        "禁止英文舞台指示或英文内心独白"
+        "（例如 leans back / fingers steepled / He is terrified）。\n"
+        "emotion_state 仍用英文标签之一："
+        "calm, tense, angry, fearful, manipulative, guilty, resigned, desperate"
+        "（界面会本地化展示；不要写中文 emotion）。\n"
+        "character_id 仍用规范英文名（Walter White 等）。\n"
+        "gif_search_query 保持英文（图片检索用）。"
+    ),
 }
 STATUS_I18N = {
     "en": {
         "analysing": "Director is analysing the task…",
         "outlined": "Director outlined {n} beat(s). Beginning roleplay…",
         "no_action": "No action received — continuing automatically.",
+        "complete": "All beats rendered. Roleplay outline complete.",
+        "outline_failed": "Outline generation failed — could not reach the model.",
+        "no_beats": "The generated outline contained no playable beats.",
+        "beat_llm_failed": "Beat {n} — LLM call failed. Please check LLM service (current: {route}).",
+        "beat_parse_failed": "Story generation failed. The model returned unparseable content. Retry or switch models (current: {route}).",
     },
     "zh": {
         "analysing": "导演正在分析任务…",
         "outlined": "导演已规划 {n} 个剧情节拍。开始角色扮演…",
         "no_action": "未收到玩家操作 — 自动继续…",
+        "complete": "全部剧情节点已完成。任务收束。",
+        "outline_failed": "大纲生成失败 — 无法连接模型。",
+        "no_beats": "生成的大纲没有可玩的剧情节点。",
+        "beat_llm_failed": "第 {n} 拍生成失败。请检查模型服务（当前: {route}）。",
+        "beat_parse_failed": "剧情生成异常。AI 返回了无法解析的内容，请重试或切换模型（当前: {route}）。",
     },
 }
 
 
+def _norm_lang(lang: str | None) -> str:
+    """Normalize UI language codes to en|zh."""
+    if not lang:
+        return "en"
+    return "zh" if str(lang).lower().startswith("zh") else "en"
+
+
 def _language_directive(lang: str) -> str:
-    return LANG_DIRECTIVE.get(lang, LANG_DIRECTIVE["en"])
+    return LANG_DIRECTIVE[_norm_lang(lang)]
 
 
 def _status_message(key: str, lang: str = "en", **kwargs) -> str:
-    template = STATUS_I18N.get(lang, STATUS_I18N["en"]).get(key, STATUS_I18N["en"].get(key, ""))
+    lang = _norm_lang(lang)
+    template = STATUS_I18N.get(lang, STATUS_I18N["en"]).get(
+        key, STATUS_I18N["en"].get(key, "")
+    )
     return template.format(**kwargs)
+
+
+def _latin_letter_ratio(text: str) -> float:
+    """Share of alphabetic chars that are ASCII Latin (heuristic for English leakage)."""
+    if not text or not str(text).strip():
+        return 0.0
+    letters = [c for c in str(text) if c.isalpha()]
+    if not letters:
+        return 0.0
+    latin = sum(1 for c in letters if ord(c) < 128)
+    return latin / len(letters)
+
+
+def _needs_zh_rewrite(text: str) -> bool:
+    """True when a player-visible field looks English under zh mode."""
+    if not text or not str(text).strip():
+        return False
+    # Short pure numbers / punctuation ok
+    if len(str(text).strip()) < 4:
+        return False
+    return _latin_letter_ratio(text) >= 0.55
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
 # ---------------------------------------------------------------------------
@@ -217,7 +281,7 @@ class DirectorAgent:
         if outline_text is None:
             yield AgentEvent(
                 type="error",
-                data={"message": "Outline generation failed — could not reach the model."},
+                data={"message": _status_message("outline_failed", language)},
             )
             return
         yield AgentEvent(type="outline", data={"content": outline_text})
@@ -436,7 +500,7 @@ class DirectorAgent:
             previous_scene = current_scene
         yield AgentEvent(
             type="complete",
-            data={"message": "All beats rendered. Roleplay outline complete."},
+            data={"message": _status_message("complete", language)},
         )
 
     async def process_next_beat(
@@ -479,9 +543,7 @@ class DirectorAgent:
             if outline_text is None:
                 yield AgentEvent(
                     type="error",
-                    data={
-                        "message": "Outline generation failed — could not reach the model."
-                    },
+                    data={"message": _status_message("outline_failed", language)},
                 )
                 return
 
@@ -511,7 +573,7 @@ class DirectorAgent:
         if not scenes:
             yield AgentEvent(
                 type="error",
-                data={"message": "The generated outline contained no playable beats."},
+                data={"message": _status_message("no_beats", language)},
             )
             return
 
@@ -526,7 +588,7 @@ class DirectorAgent:
                     await session.commit()
             yield AgentEvent(
                 type="complete",
-                data={"message": "All beats rendered. Roleplay outline complete."},
+                data={"message": _status_message("complete", language)},
             )
             return
 
@@ -585,7 +647,7 @@ class DirectorAgent:
         if is_final:
             yield AgentEvent(
                 type="complete",
-                data={"message": "All beats rendered. Roleplay outline complete."},
+                data={"message": _status_message("complete", language)},
             )
 
     # ------------------------------------------------------------------
@@ -594,6 +656,20 @@ class DirectorAgent:
     async def _generate_outline(self, task: str, language: str = "en") -> str | None:
         """Call the LLM to produce a numbered Breaking Bad scene outline."""
         lang_directive = _language_directive(language)
+        if language.startswith("zh"):
+            outline_example = (
+                "示例：\n"
+                "1. 沙漠房车 — 沃尔特与杰西熬制产品\n"
+                "2. 怀特家厨房 — 斯凯勒质问沃尔特\n"
+                "3. DEA 办公室 — 汉克发现新线索"
+            )
+        else:
+            outline_example = (
+                "Example:\n"
+                "1. RV in the desert — Walt and Jesse cook meth\n"
+                "2. White family kitchen — Skyler confronts Walt\n"
+                "3. DEA office — Hank finds a new lead"
+            )
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
@@ -604,10 +680,7 @@ class DirectorAgent:
                     "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
                     "Do NOT output JSON, code fences, or any structured format. "
                     "Each line should start with a number like '1. Scene title — description'. "
-                    "Example:\n"
-                    "1. RV in the desert — Walt and Jesse cook meth\n"
-                    "2. White family kitchen — Skyler confronts Walt\n"
-                    "3. DEA office — Hank finds a new lead"
+                    f"{outline_example}"
                 ),
             },
         ]
@@ -825,16 +898,25 @@ class DirectorAgent:
         characters_in_scene: list[str] = list(CHARACTER_AGENTS.keys())
         # Emit scene transition if location changed
         if current_scene and current_scene != previous_scene:
+            scene_desc_text = (
+                f"切换至：{scene_desc}"
+                if language.startswith("zh")
+                else f"Transitioning to: {scene_desc}"
+            )
             yield AgentEvent(
                 type="scene_change",
                 data={
                     "from_scene": previous_scene or "unknown",
                     "to_scene": current_scene,
-                    "description": f"Transitioning to: {scene_desc}",
+                    "description": scene_desc_text,
                 },
             )
-        # Ask Director LLM to plan this beat's events
+        # Ask Director LLM to plan this beat's events.
+        # Language directive MUST be on this prompt: agent_think / agent_act
+        # are written here, not by character sub-agents.
+        lang_directive = _language_directive(language)
         beat_prompt = (
+            f"{lang_directive}\n\n"
             f"Task: {task}\n\n"
             f"Outline:\n{outline}\n\n"
             f"Current scene (beat {beat_index + 1}): {scene_desc}\n\n"
@@ -853,10 +935,23 @@ class DirectorAgent:
             "Include only one scene_change if needed. Include brief agent_act and agent_think events. "
             "End with one world_state_delta containing only concrete changed facts. "
             "Every event object must include a 'recommended_model' field set to "
-            f"'{self.model_route}'."
+            f"'{self.model_route}'. "
+            "Obey RESPONSE LANGUAGE for every narrative string field "
+            "(action, thought_content, content, description, deltas)."
         )
+        system_content = self._system_prompt_with_voice_example(voice_example)
+        if _norm_lang(language) == "zh":
+            # System prompt examples are English; force Chinese output override.
+            system_content = (
+                f"{lang_directive}\n\n"
+                f"{system_content}\n\n"
+                "CRITICAL OVERRIDE: Even though the schema examples above are English, "
+                "every player-visible narrative string you emit in this beat "
+                "(action, thought_content, content, description, delta values) "
+                "MUST be Simplified Chinese. English stage directions are forbidden."
+            )
         messages = [
-            {"role": "system", "content": self._system_prompt_with_voice_example(voice_example)},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": beat_prompt},
         ]
         try:
@@ -865,7 +960,14 @@ class DirectorAgent:
             logger.exception("Beat %d LLM call failed", beat_index + 1)
             yield AgentEvent(
                 type="error",
-                data={"message": f"Beat {beat_index + 1} — LLM call failed. Please check LLM service (current: {self.model_route})."},
+                data={
+                    "message": _status_message(
+                        "beat_llm_failed",
+                        language,
+                        n=beat_index + 1,
+                        route=self.model_route,
+                    )
+                },
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
             return
@@ -874,7 +976,11 @@ class DirectorAgent:
         if not events:
             yield AgentEvent(
                 type="error",
-                data={"message": f"剧情生成异常。AI 返回了无法解析的内容，请重试或切换模型 (当前: {self.model_route})。"},
+                data={
+                    "message": _status_message(
+                        "beat_parse_failed", language, route=self.model_route
+                    )
+                },
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback).")
             return
@@ -898,6 +1004,11 @@ class DirectorAgent:
                 target_evt = events.pop(idx_target_speak)
                 events.insert(idx_first_speak, target_evt)
         events = self._prepare_beat_events(events)
+        # If language is zh but the planner still emitted English narrative,
+        # rewrite those fields before character polish / yield.
+        events = await self._rewrite_english_fields_to_zh(
+            events, language=language, model_route=self.model_route
+        )
         # Resolve per-beat model route: prefer LLM-suggested, fall back to rule-based
         llm_suggested: str | None = None
         for evt in events:
@@ -952,10 +1063,16 @@ class DirectorAgent:
                         except Exception:
                             logger.debug("Dossier load failed for %s", character_id)
                     try:
+                        speak_lang_note = (
+                            "台词 content 必须用简体中文。不要用英文对白。"
+                            if _norm_lang(language) == "zh"
+                            else "Dialogue content must be English."
+                        )
                         sub_result = await character_agent.respond_structured(
                             context=[],
                             user_message=(
                                 f"{_language_directive(language)}\n\n"
+                                f"{speak_lang_note}\n"
                                 f"Scene: {scene_desc}\nContext: {task}\n"
                                 "Respond in character."
                             ),
@@ -963,9 +1080,15 @@ class DirectorAgent:
                             voice_example=voice_example,
                             dossier_context=dossier_context or None,
                         )
+                        reply = sub_result["reply_text"]
+                        # Sub-agent can still leak English under English scene/task.
+                        if _norm_lang(language) == "zh" and _needs_zh_rewrite(reply):
+                            reply = await self._translate_one_field_to_zh(
+                                reply, model_route=beat_model_route
+                            )
                         evt_data = {
                             **evt_data,
-                            "content": sub_result["reply_text"],
+                            "content": reply,
                             "emotion_state": sub_result["emotion_state"]
                             or evt_data.get("emotion_state"),
                             "gif_search_query": sub_result["gif_search_query"]
@@ -1040,6 +1163,134 @@ class DirectorAgent:
                 )
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
+
+    async def _translate_one_field_to_zh(
+        self, text: str, *, model_route: str
+    ) -> str:
+        """Best-effort rewrite of one English narrative string to Simplified Chinese."""
+        if not text or not _needs_zh_rewrite(text):
+            return text
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You translate Breaking Bad roleplay lines into natural Simplified Chinese. "
+                    "Keep character voice and pressure. Output ONLY the Chinese translation, "
+                    "no quotes, no English."
+                ),
+            },
+            {"role": "user", "content": text},
+        ]
+        try:
+            out = await self.provider.call_model(messages, model_route)
+            cleaned = (out or "").strip().strip('"').strip("'")
+            if cleaned and not _needs_zh_rewrite(cleaned):
+                return cleaned
+            if cleaned:
+                return cleaned
+        except Exception:
+            logger.exception("zh rewrite failed for single field")
+        return text
+
+    async def _rewrite_english_fields_to_zh(
+        self,
+        events: list[dict[str, Any]],
+        *,
+        language: str,
+        model_route: str,
+    ) -> list[dict[str, Any]]:
+        """If planner leaked English under zh UI, batch-translate narrative fields."""
+        if _norm_lang(language) != "zh" or not events:
+            return events
+
+        # Collect (evt_idx, field_path) needing rewrite
+        jobs: list[tuple[int, str, str]] = []  # (event_index, field, text)
+        for i, evt in enumerate(events):
+            data = evt.get("data")
+            if not isinstance(data, dict):
+                continue
+            et = evt.get("type")
+            if et == "agent_think" and _needs_zh_rewrite(str(data.get("thought_content") or "")):
+                jobs.append((i, "thought_content", str(data["thought_content"])))
+            elif et == "agent_act" and _needs_zh_rewrite(str(data.get("action") or "")):
+                jobs.append((i, "action", str(data["action"])))
+            elif et == "agent_speak" and _needs_zh_rewrite(str(data.get("content") or "")):
+                jobs.append((i, "content", str(data["content"])))
+            elif et == "scene_change" and _needs_zh_rewrite(str(data.get("description") or "")):
+                jobs.append((i, "description", str(data["description"])))
+            elif et == "world_state_delta":
+                deltas = data.get("deltas")
+                if isinstance(deltas, list):
+                    for j, d in enumerate(deltas):
+                        if not isinstance(d, dict):
+                            continue
+                        for key in ("field", "old_value", "new_value"):
+                            val = d.get(key)
+                            if val is not None and _needs_zh_rewrite(str(val)):
+                                jobs.append((i, f"deltas.{j}.{key}", str(val)))
+
+        if not jobs:
+            return events
+
+        # Batch translate as JSON array for one LLM round-trip
+        payload = [{"id": n, "text": t} for n, (_i, _f, t) in enumerate(jobs)]
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Translate each item's text into natural Simplified Chinese for a "
+                    "Breaking Bad interactive roleplay UI. Preserve meaning and tone. "
+                    "Return ONLY a JSON array: [{\"id\":0,\"text\":\"中文\"}, ...]. "
+                    "No markdown fences."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        try:
+            raw = await self.provider.call_model(messages, model_route)
+            if not raw:
+                return events
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+                cleaned = re.sub(r"\s*```$", "", cleaned)
+            translated = json.loads(cleaned)
+            if not isinstance(translated, list):
+                return events
+            by_id = {
+                int(item["id"]): str(item["text"])
+                for item in translated
+                if isinstance(item, dict) and "id" in item and "text" in item
+            }
+        except Exception:
+            logger.exception("batch zh rewrite failed; leaving original English fields")
+            return events
+
+        # Apply
+        out = [dict(e) for e in events]
+        for n, (evt_idx, field, _orig) in enumerate(jobs):
+            new_text = by_id.get(n)
+            if not new_text:
+                continue
+            data = dict(out[evt_idx].get("data") or {})
+            if field.startswith("deltas."):
+                parts = field.split(".")
+                # deltas.{j}.{key}
+                try:
+                    j = int(parts[1])
+                    key = parts[2]
+                    deltas = list(data.get("deltas") or [])
+                    if 0 <= j < len(deltas) and isinstance(deltas[j], dict):
+                        row = dict(deltas[j])
+                        row[key] = new_text
+                        deltas[j] = row
+                        data["deltas"] = deltas
+                except (ValueError, IndexError):
+                    continue
+            else:
+                data[field] = new_text
+            out[evt_idx] = {**out[evt_idx], "data": data}
+        return out
 
     @staticmethod
     def _prepare_beat_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
