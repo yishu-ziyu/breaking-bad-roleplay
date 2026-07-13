@@ -1,0 +1,47 @@
+{
+  "provider": "minimax",
+  "base_url": "https://api.minimaxi.com",
+  "model_t2a": "speech-2.8-hd",
+  "strategy": "voice_clone_from_labeled_segments",
+  "source_youtube": "https://www.youtube.com/watch?v=pPZF6zAwC5U",
+  "labels_verified_by_user": true,
+  "created": "2026-07-13T03:43:31Z",
+  "voices": {
+    "walter": {
+      "voice_id": "bbclone_walter_v1",
+      "file_id": 419260485943584,
+      "source_file": "materials/breaking-bad/voice-archetypes/samples/walter/walter_concat_candidate.wav",
+      "clone_base_resp": {
+        "status_code": 0,
+        "status_msg": "success"
+      },
+      "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/walter_clone_preview.mp3",
+      "preview_text": "Put the emotion down. We are going to be precise about what happens next.",
+      "ok": true
+    },
+    "gus": {
+      "voice_id": "bbclone_gus_v1",
+      "file_id": 419255636246964,
+      "source_file": "materials/breaking-bad/voice-archetypes/samples/gus/gus_concat_candidate.wav",
+      "clone_base_resp": {
+        "status_code": 0,
+        "status_msg": "success"
+      },
+      "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/gus_clone_preview.mp3",
+      "preview_text": "Please, be comfortable. It is easier to speak honestly when neither of us pretends to be surprised.",
+      "ok": true
+    },
+    "mike": {
+      "voice_id": "bbclone_mike_v1",
+      "file_id": 419267409465807,
+      "source_file": "materials/breaking-bad/voice-archetypes/samples/mike/mike_concat_candidate.wav",
+      "clone_base_resp": {
+        "status_code": 0,
+        "status_msg": "success"
+      },
+      "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/mike_clone_preview.mp3",
+      "preview_text": "You're not a problem yet. Keep talking and you will be.",
+      "ok": true
+    }
+  }
+}

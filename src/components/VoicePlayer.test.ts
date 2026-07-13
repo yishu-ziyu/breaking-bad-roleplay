@@ -56,14 +56,25 @@ describe('VoicePlayer (speechSynthesis)', () => {
     )
   })
 
-  it('renders disabled button when speechSynthesis unavailable', () => {
+  it('renders enabled button for cloned characters even without speechSynthesis', () => {
     ;(globalThis as { speechSynthesis?: unknown }).speechSynthesis = undefined
     const html = renderToStaticMarkup(
       createElement(VoicePlayer, { text: 'hello', characterId: 'walter', language: 'en' })
     )
     assert.ok(
+      !html.includes('voice-player--disabled'),
+      'walter has a MiniMax clone, so the button stays enabled without speechSynthesis'
+    )
+  })
+
+  it('renders disabled button when speechSynthesis unavailable and character has no clone', () => {
+    ;(globalThis as { speechSynthesis?: unknown }).speechSynthesis = undefined
+    const html = renderToStaticMarkup(
+      createElement(VoicePlayer, { text: 'hello', characterId: 'jesse', language: 'en' })
+    )
+    assert.ok(
       html.includes('voice-player--disabled'),
-      'button should be disabled when speechSynthesis is unavailable'
+      'button should be disabled when speechSynthesis is unavailable and no clone'
     )
   })
 

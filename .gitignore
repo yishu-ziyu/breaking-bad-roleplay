@@ -34,3 +34,6 @@ __pycache__/
 .ship/
 dist/
 .claude/commands/
+
+# Voice clone raw samples (local only)
+materials/breaking-bad/voice-archetypes/samples/
