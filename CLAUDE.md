@@ -11,6 +11,25 @@
 - 线上服务: https://bb.yishuziyu.cn
 - 下一轮: Loop 8 PM Intake，确定下一个最高杠杆的改进方向
 
+## 项目特有运维（必读）
+
+本仓库有一套**只对本项目成立**的小动作习惯（双轨部署、Vercel 体积、VM 容器名、GIF 目视验收等）。
+改完代码不等于上线。完整清单见：
+
+**[docs/OPS_RUNBOOK.md](docs/OPS_RUNBOOK.md)**
+
+最短记忆：
+
+1. `git push origin main` 之后还要部署。
+2. **主生产**：Docker VM `121.89.90.68` / 容器 `bb-roleplay` / 目录 `/opt/breaking-bad-roleplay`。
+3. **前端捷径**：根目录 `vercel --prod --yes`（注意 `.vercelignore`，上传约 100MB 上限）。
+4. 动 API / quota / TTS / 迁移 → 必须重建 VM；纯 UI 至少 Vercel，必要时两边都更。
+5. 上线后打开 **https://bb.yishuziyu.cn** 做 60 秒 smoke，不要只看 localhost。
+6. 改 `roleAssets.ts` GIF：下首帧目视确认角色，禁止 meme / 错片。
+7. 不要动同机 `gun.yishuziyu.cn` 的 Nginx。
+
+新踩到的项目专属坑：同一会话内补进 `docs/OPS_RUNBOOK.md`，不要只留在对话里。
+
 ## 构建与运行
 
 - 前端开发：`npm run dev`（Vite，端口 5173）
@@ -134,4 +153,13 @@ npm run lint                   # Lint
 
 # 部署相关
 npm run verify:rls             # Supabase RLS 验证
+vercel --prod --yes            # Vercel 生产（见 docs/OPS_RUNBOOK.md）
+# Docker VM: rsync -> rebuild bb-roleplay on 121.89.90.68（见 docs/OPS_RUNBOOK.md）
 ```
+
+## 相关文档
+
+- `docs/OPS_RUNBOOK.md` — 改完怎么 commit / push / 双轨部署 / live smoke
+- `docs/FREE_TIER_SECURITY.md` — 平台免费额度与安全边界
+- `DEVLOG.md` — 历史部署与坑位时间线
+
