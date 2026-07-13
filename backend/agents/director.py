@@ -41,6 +41,11 @@ LANG_DIRECTIVE = {
         "以及 world_state_delta 的 field/old_value/new_value。\n"
         "禁止英文舞台指示或英文内心独白"
         "（例如 leans back / fingers steepled / He is terrified）。\n"
+        "角色中文名必须用下列固定译名（禁止音译乱写）：\n"
+        "Mike/Mike Ehrmantraut → 麦克（禁止「米克」）；\n"
+        "Walter/Walter White → 沃尔特；Jesse/Jesse Pinkman → 杰西；\n"
+        "Skyler/Skyler White → 斯凯勒；Saul/Saul Goodman → 索尔；\n"
+        "Gus/Gus Fring → 古斯；Hank → 汉克；Marie → 玛丽。\n"
         "emotion_state 仍用英文标签之一："
         "calm, tense, angry, fearful, manipulative, guilty, resigned, desperate"
         "（界面会本地化展示；不要写中文 emotion）。\n"
@@ -110,6 +115,93 @@ def _needs_zh_rewrite(text: str) -> bool:
     if len(str(text).strip()) < 4:
         return False
     return _latin_letter_ratio(text) >= 0.55
+
+
+# Canonical Simplified Chinese names for dialogue (not character_id).
+# Longer phrases first so multi-token names win over short forms.
+_ZH_NAME_FIXES: tuple[tuple[str, str], ...] = (
+    ("Mike Ehrmantraut", "麦克"),
+    ("Walter White", "沃尔特"),
+    ("Jesse Pinkman", "杰西"),
+    ("Skyler White", "斯凯勒"),
+    ("Saul Goodman", "索尔"),
+    ("Gus Fring", "古斯"),
+    # Bad / nonstandard transliterations → standard
+    ("米克·厄曼特劳特", "麦克"),
+    ("米克·埃尔曼特劳特", "麦克"),
+    ("米克", "麦克"),
+    ("麦克尔", "麦克"),
+    ("沃尔特怀特", "沃尔特"),
+    ("杰西平克曼", "杰西"),
+    # English first names that leak into Chinese dialogue
+    ("Mike", "麦克"),
+    ("Walter", "沃尔特"),
+    ("Jesse", "杰西"),
+    ("Skyler", "斯凯勒"),
+    ("Saul", "索尔"),
+    ("Gus", "古斯"),
+    ("Hank", "汉克"),
+    ("Marie", "玛丽"),
+)
+
+
+def normalize_zh_character_names(text: str | None) -> str:
+    """Force standard Chinese character names inside player-visible prose."""
+    if not text:
+        return ""
+    out = str(text)
+    for src, dst in _ZH_NAME_FIXES:
+        if src in out:
+            out = out.replace(src, dst)
+    return out
+
+
+_ZH_NARRATIVE_FIELDS = (
+    "content",
+    "action",
+    "thought_content",
+    "description",
+    "old_value",
+    "new_value",
+    "field",
+    "target",
+    "to_scene",
+    "from_scene",
+)
+
+
+def normalize_zh_names_in_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Apply Chinese name glossary to all player-visible event fields."""
+    if not events:
+        return events
+    out: list[dict[str, Any]] = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            out.append(evt)
+            continue
+        data = evt.get("data")
+        if not isinstance(data, dict):
+            out.append(evt)
+            continue
+        new_data = dict(data)
+        for key in _ZH_NARRATIVE_FIELDS:
+            if key in new_data and isinstance(new_data[key], str):
+                new_data[key] = normalize_zh_character_names(new_data[key])
+        deltas = new_data.get("deltas")
+        if isinstance(deltas, list):
+            fixed_deltas = []
+            for d in deltas:
+                if isinstance(d, dict):
+                    nd = dict(d)
+                    for key in _ZH_NARRATIVE_FIELDS:
+                        if key in nd and isinstance(nd[key], str):
+                            nd[key] = normalize_zh_character_names(nd[key])
+                    fixed_deltas.append(nd)
+                else:
+                    fixed_deltas.append(d)
+            new_data["deltas"] = fixed_deltas
+        out.append({**evt, "data": new_data})
+    return out
 # ---------------------------------------------------------------------------
 # Frontend ↔ backend character-id mapping
 # ---------------------------------------------------------------------------
@@ -1051,6 +1143,8 @@ class DirectorAgent:
         events = await self._rewrite_english_fields_to_zh(
             events, language=language, model_route=self.model_route
         )
+        if _norm_lang(language) == "zh":
+            events = normalize_zh_names_in_events(events)
         # Resolve per-beat model route: prefer LLM-suggested, fall back to rule-based
         llm_suggested: str | None = None
         for evt in events:
@@ -1163,6 +1257,8 @@ class DirectorAgent:
                     try:
                         speak_lang_note = (
                             "台词 content 必须用简体中文。不要用英文对白。"
+                            "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
+                            "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯。"
                             if _norm_lang(language) == "zh"
                             else "Dialogue content must be English."
                         )
@@ -1191,6 +1287,8 @@ class DirectorAgent:
                             reply = await self._translate_one_field_to_zh(
                                 reply, model_route=beat_model_route
                             )
+                        if _norm_lang(language) == "zh":
+                            reply = normalize_zh_character_names(reply)
                         evt_data = {
                             **evt_data,
                             "content": reply,
@@ -1327,7 +1425,9 @@ class DirectorAgent:
                 "content": (
                     "You translate Breaking Bad roleplay lines into natural Simplified Chinese. "
                     "Keep character voice and pressure. Output ONLY the Chinese translation, "
-                    "no quotes, no English."
+                    "no quotes, no English. "
+                    "Name glossary (mandatory): Mike→麦克 (never 米克), Walter→沃尔特, "
+                    "Jesse→杰西, Skyler→斯凯勒, Saul→索尔, Gus→古斯, Hank→汉克, Marie→玛丽."
                 ),
             },
             {"role": "user", "content": text},
@@ -1335,6 +1435,8 @@ class DirectorAgent:
         try:
             out = await self.provider.call_model(messages, model_route)
             cleaned = (out or "").strip().strip('"').strip("'")
+            if cleaned:
+                cleaned = normalize_zh_character_names(cleaned)
             if cleaned and not _needs_zh_rewrite(cleaned):
                 return cleaned
             if cleaned:
@@ -1381,7 +1483,7 @@ class DirectorAgent:
                                 jobs.append((i, f"deltas.{j}.{key}", str(val)))
 
         if not jobs:
-            return events
+            return normalize_zh_names_in_events(events)
 
         # Batch translate as JSON array for one LLM round-trip
         payload = [{"id": n, "text": t} for n, (_i, _f, t) in enumerate(jobs)]
@@ -1400,14 +1502,14 @@ class DirectorAgent:
         try:
             raw = await self.provider.call_model(messages, model_route)
             if not raw:
-                return events
+                return normalize_zh_names_in_events(events)
             cleaned = raw.strip()
             if cleaned.startswith("```"):
                 cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
                 cleaned = re.sub(r"\s*```$", "", cleaned)
             translated = json.loads(cleaned)
             if not isinstance(translated, list):
-                return events
+                return normalize_zh_names_in_events(events)
             by_id = {
                 int(item["id"]): str(item["text"])
                 for item in translated
@@ -1415,7 +1517,7 @@ class DirectorAgent:
             }
         except Exception:
             logger.exception("batch zh rewrite failed; leaving original English fields")
-            return events
+            return normalize_zh_names_in_events(events)
 
         # Apply
         out = [dict(e) for e in events]
