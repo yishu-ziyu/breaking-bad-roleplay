@@ -1,7 +1,8 @@
 /* Platform free-tier remaining credits (server source of truth). */
 
 import { useCallback, useEffect, useState } from 'react'
-import { getOrCreateGuestId, guestHeaders } from '../lib/guestId'
+import { authHeaders, getCachedAccessToken, refreshCachedAccessToken } from '../lib/authHeaders'
+import { getOrCreateGuestId } from '../lib/guestId'
 
 export type QuotaView = {
   remaining: number
@@ -9,6 +10,8 @@ export type QuotaView = {
   used: number
   globalRemaining: number
   byok: boolean
+  /** guest | user | byok */
+  tier: string
   day: string
   costs: {
     chatDirect: number
@@ -27,13 +30,14 @@ const defaultCosts = {
   tts: 1,
 }
 
-export function useQuota(connectionSessionId: string | null) {
+export function useQuota(connectionSessionId: string | null, authUserId?: string | null) {
   const [view, setView] = useState<QuotaView>({
     remaining: 8,
     limit: 8,
     used: 0,
     globalRemaining: 5000,
     byok: false,
+    tier: 'guest',
     day: '',
     costs: defaultCosts,
     loading: true,
@@ -41,12 +45,13 @@ export function useQuota(connectionSessionId: string | null) {
   })
 
   const refresh = useCallback(async () => {
+    await refreshCachedAccessToken()
     const guest = getOrCreateGuestId()
     const qs = new URLSearchParams({ guest_id: guest })
     if (connectionSessionId) qs.set('connection_session', connectionSessionId)
     try {
       const res = await fetch(`/api/quota?${qs.toString()}`, {
-        headers: guestHeaders(),
+        headers: await authHeaders(),
       })
       if (!res.ok) throw new Error(`quota ${res.status}`)
       const data = await res.json()
@@ -56,6 +61,7 @@ export function useQuota(connectionSessionId: string | null) {
         used: Number(data.used ?? 0),
         globalRemaining: Number(data.globalRemaining ?? 0),
         byok: Boolean(data.byok),
+        tier: String(data.tier ?? (data.byok ? 'byok' : 'guest')),
         day: String(data.day ?? ''),
         costs: { ...defaultCosts, ...(data.costs || {}) },
         loading: false,
@@ -72,7 +78,17 @@ export function useQuota(connectionSessionId: string | null) {
 
   useEffect(() => {
     void refresh()
-  }, [refresh])
+  }, [refresh, authUserId])
+
+  // Touch token cache so SSE can pick it up without another round-trip.
+  useEffect(() => {
+    if (authUserId) void refreshCachedAccessToken()
+    else if (!getCachedAccessToken()) {
+      /* guest */
+    } else {
+      void refreshCachedAccessToken()
+    }
+  }, [authUserId])
 
   return { ...view, refresh }
 }

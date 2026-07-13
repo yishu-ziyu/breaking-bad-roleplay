@@ -68,6 +68,7 @@ def test_free_quota_exhausts_after_limit():
     # Default guest limit 8; burn with story beats (5 each) then chat
     d1 = enforce_platform_quota(request=req, action="story_beat", guest_id=guest)
     assert d1.allowed and d1.snapshot.remaining == 3
+    assert d1.snapshot.tier == "guest"
     d2 = enforce_platform_quota(request=req, action="chat", mode="direct", guest_id=guest)
     assert d2.allowed and d2.snapshot.remaining == 2
     d3 = enforce_platform_quota(request=req, action="chat", mode="crew", guest_id=guest)
@@ -76,6 +77,61 @@ def test_free_quota_exhausts_after_limit():
     assert not d4.allowed
     assert d4.reason == "free_quota_exhausted"
     assert d4.http_status == 402
+
+
+def test_logged_in_user_gets_higher_daily_limit(monkeypatch):
+    quota_mod.settings.free_credits_guest = 8  # type: ignore[attr-defined]
+    quota_mod.settings.free_credits_user = 80  # type: ignore[attr-defined]
+    quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
+
+    class _Auth:
+        user_id = "user-aaa-111"
+        email = "friend@example.com"
+
+    monkeypatch.setattr(
+        "agents.auth_user.resolve_auth_user",
+        lambda *_a, **_k: _Auth(),
+    )
+    req = _FakeRequest(ip="10.0.0.10", headers={"Authorization": "Bearer fake-jwt"})
+    guest = "550e8400-e29b-41d4-a716-446655440010"
+    # 80 credits: 16 story beats * 5 = 80
+    for i in range(16):
+        d = enforce_platform_quota(request=req, action="story_beat", guest_id=guest)
+        assert d.allowed, f"beat {i} should pass under user tier"
+        assert d.snapshot.tier == "user"
+        assert d.snapshot.limit == 80
+    blocked = enforce_platform_quota(request=req, action="story_beat", guest_id=guest)
+    assert not blocked.allowed
+    assert blocked.reason == "free_quota_exhausted"
+
+
+def test_user_identity_is_per_account_not_shared_ip(monkeypatch):
+    quota_mod.settings.free_credits_user = 80  # type: ignore[attr-defined]
+    quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
+
+    users = iter(["user-a", "user-b"])
+
+    class _Auth:
+        def __init__(self, uid: str):
+            self.user_id = uid
+            self.email = None
+
+    monkeypatch.setattr(
+        "agents.auth_user.resolve_auth_user",
+        lambda *_a, **_k: _Auth(next(users)),
+    )
+    # Same IP, two different logins -> independent pools
+    req = _FakeRequest(ip="10.0.0.11")
+    d1 = enforce_platform_quota(request=req, action="story_beat", guest_id=None)
+    assert d1.allowed and d1.snapshot.remaining == 75
+    # Reset iterator by rebinding for second call
+    monkeypatch.setattr(
+        "agents.auth_user.resolve_auth_user",
+        lambda *_a, **_k: _Auth("user-b"),
+    )
+    d2 = enforce_platform_quota(request=req, action="story_beat", guest_id=None)
+    assert d2.allowed and d2.snapshot.remaining == 75
+    assert d1.snapshot.identity != d2.snapshot.identity
 
 def test_byok_skips_quota(monkeypatch):
     class _Sess:

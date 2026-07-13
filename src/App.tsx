@@ -20,7 +20,7 @@ import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
 import { useConnection } from './hooks/useConnection'
 import { useQuota, parseQuotaError } from './hooks/useQuota'
-import { guestHeaders } from './lib/guestId'
+import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { resolveGifUrl } from './lib/gifResolver'
 import './App.css'
@@ -686,7 +686,8 @@ function App() {
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
   const connection = useConnection()
-  const quota = useQuota(connection.connectionSessionId)
+  const auth = useAuth()
+  const quota = useQuota(connection.connectionSessionId, auth.user?.id ?? null)
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -703,8 +704,7 @@ function App() {
   /** GIF on stage can be muted so paper text stays primary. */
   const [storyGifHidden, setStoryGifHidden] = useState(false)
 
-  // Auth state
-  const auth = useAuth()
+  // Auth state (useAuth called above for quota tier)
   const [cloudPrivacy, setCloudPrivacy] = useState<{
     status: 'guest' | 'loading' | 'ready' | 'locked'
     key: CryptoKey | null
@@ -1003,7 +1003,7 @@ function App() {
       story.setConnectionSessionId(bindId)
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...guestHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           characterId: selectedCharId,
           userInput: userText,
@@ -1402,8 +1402,8 @@ function App() {
             {quota.byok
               ? (language === 'zh' ? '自备密钥 · 不占平台额度' : 'Your key · not metered')
               : (language === 'zh'
-                ? `今日免费 ${quota.remaining}/${quota.limit} 分`
-                : `Free today ${quota.remaining}/${quota.limit}`)}
+                ? `${quota.tier === 'user' ? '登录福利' : '游客'} ${quota.remaining}/${quota.limit} 分`
+                : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}/${quota.limit}`)}
           </p>
         </section>
           </aside>
@@ -1442,7 +1442,9 @@ function App() {
               <small className={`quota-pill quota-pill--compact${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
                 {quota.byok
                   ? (language === 'zh' ? '自备密钥' : 'BYOK')
-                  : (language === 'zh' ? `免费 ${quota.remaining}` : `Free ${quota.remaining}`)}
+                  : (language === 'zh'
+                    ? `${quota.tier === 'user' ? '登录' : '游客'} ${quota.remaining}`
+                    : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}`)}
               </small>
             </div>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
