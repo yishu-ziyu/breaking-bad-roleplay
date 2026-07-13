@@ -12,10 +12,12 @@ from datetime import datetime, timezone
 
 from db.session import get_db, async_session_factory
 from db.models import Session as SessionModel, Message as MessageModel
-from agents.provider import ProviderFacade
+from agents.provider import ProviderFacade, MINIMAX_HOST_CN, MINIMAX_HOST_GLOBAL
 from agents.director import DirectorAgent
 from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
+from agents.credential_context import use_credentials, CredentialOverride
+from agents.connection_sessions import connection_store, session_public_view
 from config import settings
 from models.schemas import (
     SessionCreate,
@@ -24,6 +26,8 @@ from models.schemas import (
     SessionResponse,
     AgentEvent,
 )
+import time
+import httpx
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -51,6 +55,290 @@ async def api_health():
 
 
 # ---------------------------------------------------------------------------
+# BYOK connections (catalog / test / bind)
+# ---------------------------------------------------------------------------
+
+PROVIDER_CATALOG = [
+    {
+        "id": "minimax",
+        "displayName": "MiniMax",
+        "productLine": "M3",
+        "defaultModel": "MiniMax-M3",
+        "models": ["MiniMax-M3"],
+        "needsLlmKey": True,
+        "needsTtsKey": True,
+        "needsBaseUrl": False,
+        "regions": ["cn", "global"],
+        "defaultRegion": "cn",
+        "keyHintLlm": "sk- / sk-cp-",
+        "keyHintTts": "Speech API secret",
+        "docsUrl": "https://platform.minimaxi.com/",
+        "consoleUrl": "https://platform.minimaxi.com/",
+    },
+    {
+        "id": "stepfun",
+        "displayName": "StepFun",
+        "productLine": "step-2",
+        "defaultModel": "step-2-16k",
+        "models": ["step-2-16k"],
+        "needsLlmKey": True,
+        "needsTtsKey": False,
+        "needsBaseUrl": False,
+        "regions": [],
+        "defaultRegion": None,
+        "keyHintLlm": "Bearer key",
+        "keyHintTts": None,
+        "docsUrl": "https://platform.stepfun.com/",
+        "consoleUrl": "https://platform.stepfun.com/",
+    },
+    {
+        "id": "cliproxy",
+        "displayName": "CLIProxy",
+        "productLine": "local",
+        "defaultModel": settings.cli_proxy_default_model,
+        "models": [settings.cli_proxy_default_model],
+        "needsLlmKey": False,
+        "needsTtsKey": False,
+        "needsBaseUrl": True,
+        "regions": [],
+        "defaultRegion": None,
+        "keyHintLlm": "optional local key",
+        "keyHintTts": None,
+        "docsUrl": "https://github.com",
+        "consoleUrl": None,
+        "defaultBaseUrl": settings.cli_proxy_base_url,
+    },
+]
+
+
+def _platform_flags() -> dict[str, bool]:
+    return {
+        "minimax": bool(settings.minimax_api_key),
+        "stepfun": bool(settings.stepfun_api_key),
+        "cliproxy": bool(settings.cli_proxy_api_key) or True,  # base URL may suffice locally
+    }
+
+
+def _resolve_override_from_session(connection_session_id: str | None) -> CredentialOverride | None:
+    if not connection_session_id:
+        return None
+    session = connection_store.get(connection_session_id)
+    if session is None:
+        return None
+    return session.override
+
+
+@router.get("/connections/catalog")
+async def connections_catalog():
+    """Public provider brand catalog + which platform keys are available."""
+    platform = _platform_flags()
+    default_provider = "minimax" if platform["minimax"] else (
+        "stepfun" if platform["stepfun"] else "cliproxy"
+    )
+    default_model = next(
+        (p["defaultModel"] for p in PROVIDER_CATALOG if p["id"] == default_provider),
+        "MiniMax-M3",
+    )
+    return {
+        "providers": PROVIDER_CATALOG,
+        "platform": platform,
+        "defaults": {
+            "providerId": default_provider,
+            "modelId": default_model,
+        },
+    }
+
+
+class ConnectionTestRequest(BaseModel):
+    providerId: str
+    purpose: str = "llm"  # llm | tts
+    apiKey: str | None = None
+    baseUrl: str | None = None
+    region: str | None = "cn"
+    modelId: str | None = None
+
+
+@router.post("/connections/test")
+async def connections_test(payload: ConnectionTestRequest):
+    """Probe a provider with a user-supplied key. Does not persist the key."""
+    provider = payload.providerId.strip().lower()
+    purpose = (payload.purpose or "llm").strip().lower()
+    if provider not in ("minimax", "stepfun", "cliproxy"):
+        raise HTTPException(status_code=400, detail="Unknown providerId")
+    if purpose not in ("llm", "tts"):
+        raise HTTPException(status_code=400, detail="purpose must be llm or tts")
+
+    started = time.perf_counter()
+    try:
+        if provider == "minimax" and purpose == "tts":
+            if not payload.apiKey:
+                raise HTTPException(status_code=400, detail="apiKey required for MiniMax TTS")
+            host = MINIMAX_HOST_GLOBAL if payload.region == "global" else MINIMAX_HOST_CN
+            async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
+                # Lightweight auth probe: empty-ish request still returns structured error with auth
+                resp = await client.post(
+                    f"{host}/v1/t2a_v2",
+                    headers={
+                        "Authorization": f"Bearer {payload.apiKey.strip()}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "speech-2.8-hd",
+                        "text": "ok",
+                        "stream": False,
+                        "voice_setting": {"voice_id": "English_expressive_narrator", "speed": 1, "vol": 1, "pitch": 0},
+                        "audio_setting": {"format": "mp3", "sample_rate": 32000},
+                    },
+                )
+            latency = int((time.perf_counter() - started) * 1000)
+            if resp.status_code in (401, 403):
+                return {"ok": False, "status": "invalid", "latencyMs": latency, "message": "Invalid speech key"}
+            if resp.status_code == 402:
+                return {"ok": False, "status": "quota", "latencyMs": latency, "message": "Quota exceeded"}
+            # 200 or business error with auth accepted
+            return {"ok": True, "status": "valid", "latencyMs": latency, "message": "Speech key accepted"}
+
+        if provider == "minimax":
+            if not payload.apiKey:
+                raise HTTPException(status_code=400, detail="apiKey required")
+            host = MINIMAX_HOST_GLOBAL if payload.region == "global" else MINIMAX_HOST_CN
+            model = payload.modelId or "MiniMax-M3"
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+                resp = await client.post(
+                    f"{host}/anthropic/v1/messages",
+                    headers={
+                        "Content-Type": "application/json",
+                        "anthropic-version": "2023-06-01",
+                        "x-api-key": payload.apiKey.strip(),
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": 8,
+                        "messages": [{"role": "user", "content": "ping"}],
+                    },
+                )
+            latency = int((time.perf_counter() - started) * 1000)
+            if resp.status_code in (401, 403):
+                return {"ok": False, "status": "invalid", "latencyMs": latency, "message": "Invalid MiniMax key"}
+            if resp.status_code == 402:
+                return {"ok": False, "status": "quota", "latencyMs": latency, "message": "Quota exceeded"}
+            if resp.status_code >= 400:
+                return {
+                    "ok": False,
+                    "status": "unreachable",
+                    "latencyMs": latency,
+                    "message": f"MiniMax HTTP {resp.status_code}",
+                }
+            return {"ok": True, "status": "valid", "latencyMs": latency, "message": "Connected"}
+
+        if provider == "stepfun":
+            if not payload.apiKey:
+                raise HTTPException(status_code=400, detail="apiKey required")
+            model = payload.modelId or "step-2-16k"
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+                resp = await client.post(
+                    "https://api.stepfun.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {payload.apiKey.strip()}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 8,
+                    },
+                )
+            latency = int((time.perf_counter() - started) * 1000)
+            if resp.status_code in (401, 403):
+                return {"ok": False, "status": "invalid", "latencyMs": latency, "message": "Invalid StepFun key"}
+            if resp.status_code == 402:
+                return {"ok": False, "status": "quota", "latencyMs": latency, "message": "Quota exceeded"}
+            if resp.status_code >= 400:
+                return {
+                    "ok": False,
+                    "status": "unreachable",
+                    "latencyMs": latency,
+                    "message": f"StepFun HTTP {resp.status_code}",
+                }
+            return {"ok": True, "status": "valid", "latencyMs": latency, "message": "Connected"}
+
+        # cliproxy: probe base URL health-ish
+        base = (payload.baseUrl or settings.cli_proxy_base_url).rstrip("/")
+        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
+            try:
+                resp = await client.get(f"{base}/v1/models")
+            except httpx.HTTPError:
+                # Try messages with dummy if models not exposed
+                latency = int((time.perf_counter() - started) * 1000)
+                return {
+                    "ok": False,
+                    "status": "unreachable",
+                    "latencyMs": latency,
+                    "message": f"Cannot reach {base}",
+                }
+        latency = int((time.perf_counter() - started) * 1000)
+        if resp.status_code >= 500:
+            return {"ok": False, "status": "unreachable", "latencyMs": latency, "message": "CLIProxy error"}
+        return {"ok": True, "status": "valid", "latencyMs": latency, "message": f"Reachable {base}"}
+
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        latency = int((time.perf_counter() - started) * 1000)
+        return {
+            "ok": False,
+            "status": "unreachable",
+            "latencyMs": latency,
+            "message": "Network error",
+        }
+    except Exception:
+        logger.exception("connections_test failed")
+        latency = int((time.perf_counter() - started) * 1000)
+        return {
+            "ok": False,
+            "status": "unreachable",
+            "latencyMs": latency,
+            "message": "Test failed",
+        }
+
+
+class ConnectionBindRequest(BaseModel):
+    providerId: str
+    modelId: str | None = None
+    llmKey: str | None = None
+    ttsKey: str | None = None
+    baseUrl: str | None = None
+    region: str | None = "cn"
+
+
+@router.post("/connections/bind")
+async def connections_bind(payload: ConnectionBindRequest):
+    """Create a short-lived RAM bind session for SSE/chat/tts."""
+    provider = payload.providerId.strip().lower()
+    if provider not in ("minimax", "stepfun", "cliproxy"):
+        raise HTTPException(status_code=400, detail="Unknown providerId")
+    if provider in ("minimax", "stepfun") and not (payload.llmKey and payload.llmKey.strip()):
+        raise HTTPException(status_code=400, detail="llmKey required for this provider")
+    session = connection_store.bind(
+        provider_id=provider,
+        model_id=payload.modelId,
+        llm_key=payload.llmKey,
+        tts_key=payload.ttsKey,
+        base_url=payload.baseUrl,
+        region=payload.region,
+    )
+    return session_public_view(session)
+
+
+@router.delete("/connections/bind/{session_id}")
+async def connections_unbind(session_id: str):
+    ok = connection_store.revoke(session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Connection session not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # TTS (cloned character voices via MiniMax T2A)
 # ---------------------------------------------------------------------------
 
@@ -58,6 +346,7 @@ class TtsRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
     characterId: str
     language: str = "en"
+    connectionSessionId: str | None = None
 
 
 @router.get("/tts/voices")
@@ -71,15 +360,29 @@ async def list_tts_voices():
 
 
 @router.post("/tts")
-async def synthesize_tts(payload: TtsRequest):
+async def synthesize_tts(
+    payload: TtsRequest,
+    provider: ProviderFacade = Depends(get_provider),
+):
     """Synthesize speech for a cloned character voice. Returns audio/mpeg."""
+    override = _resolve_override_from_session(payload.connectionSessionId)
+    api_key = settings.minimax_api_key
+    if override is not None:
+        # Prefer TTS slot, then LLM slot from bind, then platform.
+        api_key = override.tts_key or override.llm_key or api_key
+    elif hasattr(provider, "effective_minimax_tts_key"):
+        # Still allow ambient context if set
+        with use_credentials(override):
+            api_key = provider.effective_minimax_tts_key() or api_key
+
     try:
-        audio, mime = await synthesize_character_speech(
-            text=payload.text,
-            character_id=payload.characterId,
-            language=payload.language,
-            api_key=settings.minimax_api_key,
-        )
+        with use_credentials(override):
+            audio, mime = await synthesize_character_speech(
+                text=payload.text,
+                character_id=payload.characterId,
+                language=payload.language,
+                api_key=api_key,
+            )
     except TTSError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
@@ -262,6 +565,7 @@ async def stream_session(
     session_id: str,
     voice_example: str | None = Query(default=None),
     language: str = Query(default="en"),
+    connection_session: str | None = Query(default=None),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -301,47 +605,65 @@ async def stream_session(
 
         resolved_session_id = session.id
 
+    bind_override = _resolve_override_from_session(connection_session)
+
+    def _bind_model_route() -> str | None:
+        if bind_override is None or not bind_override.provider_id:
+            return None
+        defaults = {
+            "minimax": "MiniMax-M3",
+            "stepfun": "step-2-16k",
+            "cliproxy": getattr(director.provider, "cli_proxy_default_model", "gemini-pro-agent"),
+        }
+        model = bind_override.model_id or defaults.get(bind_override.provider_id, "MiniMax-M3")
+        return f"{bind_override.provider_id}/{model}"
+
     async def event_generator() -> AsyncGenerator[bytes, None]:
+        prev_route = director.model_route
+        bound_route = _bind_model_route()
+        if bound_route:
+            director.model_route = bound_route
         try:
-            async for event in director.process_next_beat(
-                session_factory=async_session_factory,
-                session_id=resolved_session_id,
-                voice_example=voice_example,
-                language=language,
-            ):
-                # Stop-signal check: POST /session/{id}/action with
-                # action=stop flips session.status to "paused" in a
-                # separate request. Re-read it here (column select, so
-                # it bypasses the identity map and sees the committed
-                # value) so the stream actually terminates instead of
-                # continuing to burn LLM tokens after the user hit stop.
-                # ``continue`` flips status back to "active", so this
-                # check does not break the resume flow.
-                #
-                # Cycle 45 (H1): open a fresh short-lived session for
-                # each check — never hold a connection across yields.
-                async with async_session_factory() as chk_db:
-                    status_result = await chk_db.execute(
-                        select(SessionModel.status).where(
-                            SessionModel.id == resolved_session_id
+            with use_credentials(bind_override):
+                async for event in director.process_next_beat(
+                    session_factory=async_session_factory,
+                    session_id=resolved_session_id,
+                    voice_example=voice_example,
+                    language=language,
+                ):
+                    # Stop-signal check: POST /session/{id}/action with
+                    # action=stop flips session.status to "paused" in a
+                    # separate request. Re-read it here (column select, so
+                    # it bypasses the identity map and sees the committed
+                    # value) so the stream actually terminates instead of
+                    # continuing to burn LLM tokens after the user hit stop.
+                    # ``continue`` flips status back to "active", so this
+                    # check does not break the resume flow.
+                    #
+                    # Cycle 45 (H1): open a fresh short-lived session for
+                    # each check — never hold a connection across yields.
+                    async with async_session_factory() as chk_db:
+                        status_result = await chk_db.execute(
+                            select(SessionModel.status).where(
+                                SessionModel.id == resolved_session_id
+                            )
                         )
+                        current_status = status_result.scalar_one_or_none()
+                    if current_status in ("paused", "stopped"):
+                        stop_evt = AgentEvent(
+                            type="status",
+                            data={"message": "Stream stopped.", "stopped": True},
+                        )
+                        yield (
+                            f"event: status\n"
+                            f"data: {stop_evt.model_dump_json()}\n\n"
+                        ).encode("utf-8")
+                        break
+                    payload = (
+                        f"event: {event.type}\n"
+                        f"data: {event.model_dump_json()}\n\n"
                     )
-                    current_status = status_result.scalar_one_or_none()
-                if current_status in ("paused", "stopped"):
-                    stop_evt = AgentEvent(
-                        type="status",
-                        data={"message": "Stream stopped.", "stopped": True},
-                    )
-                    yield (
-                        f"event: status\n"
-                        f"data: {stop_evt.model_dump_json()}\n\n"
-                    ).encode("utf-8")
-                    break
-                payload = (
-                    f"event: {event.type}\n"
-                    f"data: {event.model_dump_json()}\n\n"
-                )
-                yield payload.encode("utf-8")
+                    yield payload.encode("utf-8")
         except asyncio.CancelledError:
             # Client disconnected — exit cleanly, no error event.
             return
@@ -358,6 +680,8 @@ async def stream_session(
                 f"event: error\n"
                 f"data: {err.model_dump_json()}\n\n"
             ).encode("utf-8")
+        finally:
+            director.model_route = prev_route
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -446,8 +770,9 @@ class ChatRequest(BaseModel):
     mode: str = "direct"          # "direct" | "crew"
     history: list[dict] = []
     language: str = "en"
-    llmProvider: str = "stepfun"  # "minimax" | "stepfun" — routed through ProviderFacade
+    llmProvider: str = "stepfun"  # "minimax" | "stepfun" | "cliproxy"
     voiceExample: str | None = None
+    connectionSessionId: str | None = None
 
 
 class ChatResponseDirect(BaseModel):
@@ -495,20 +820,27 @@ async def chat(
             detail=f"Invalid mode '{payload.mode}'. Expected 'direct' or 'crew'.",
         )
 
+    bind_override = _resolve_override_from_session(payload.connectionSessionId)
+    # Prefer provider from bind when present
+    llm_provider = payload.llmProvider
+    if bind_override is not None and bind_override.provider_id:
+        llm_provider = bind_override.provider_id
+
     try:
-        result = await director.handle_chat_message(
-            character_id=payload.characterId,
-            user_message=payload.userInput,
-            context={
-                "relation": payload.relation,
-                "mode": payload.mode,
-                "history": payload.history,
-                "language": payload.language,
-                "llmProvider": payload.llmProvider,
-                "voiceExample": payload.voiceExample,
-            },
-            session_factory=async_session_factory,
-        )
+        with use_credentials(bind_override):
+            result = await director.handle_chat_message(
+                character_id=payload.characterId,
+                user_message=payload.userInput,
+                context={
+                    "relation": payload.relation,
+                    "mode": payload.mode,
+                    "history": payload.history,
+                    "language": payload.language,
+                    "llmProvider": llm_provider,
+                    "voiceExample": payload.voiceExample,
+                },
+                session_factory=async_session_factory,
+            )
         return result
     except HTTPException:
         raise
