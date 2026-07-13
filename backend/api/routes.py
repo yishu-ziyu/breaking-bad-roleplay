@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import AsyncGenerator
@@ -14,6 +14,9 @@ from db.session import get_db, async_session_factory
 from db.models import Session as SessionModel, Message as MessageModel
 from agents.provider import ProviderFacade
 from agents.director import DirectorAgent
+from agents.tts import TTSError, synthesize_character_speech
+from agents.voice_casting import CLONE_VOICE_IDS
+from config import settings
 from models.schemas import (
     SessionCreate,
     SessionAction,
@@ -45,6 +48,52 @@ def get_director(request: Request) -> DirectorAgent:
 @router.get("/health")
 async def api_health():
     return {"status": "ok", "service": "breaking-bad-roleplay"}
+
+
+# ---------------------------------------------------------------------------
+# TTS (cloned character voices via MiniMax T2A)
+# ---------------------------------------------------------------------------
+
+class TtsRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    characterId: str
+    language: str = "en"
+
+
+@router.get("/tts/voices")
+async def list_tts_voices():
+    """Return which characters currently have cloned MiniMax voices."""
+    return {
+        "provider": "minimax",
+        "characters": sorted(CLONE_VOICE_IDS.keys()),
+        "voice_ids": CLONE_VOICE_IDS,
+    }
+
+
+@router.post("/tts")
+async def synthesize_tts(payload: TtsRequest):
+    """Synthesize speech for a cloned character voice. Returns audio/mpeg."""
+    try:
+        audio, mime = await synthesize_character_speech(
+            text=payload.text,
+            character_id=payload.characterId,
+            language=payload.language,
+            api_key=settings.minimax_api_key,
+        )
+    except TTSError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("TTS endpoint failed for character %s", payload.characterId)
+        raise HTTPException(status_code=500, detail="TTS internal error.") from None
+
+    return Response(
+        content=audio,
+        media_type=mime,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Voice-Character": payload.characterId,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

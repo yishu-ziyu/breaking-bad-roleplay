@@ -1,6 +1,12 @@
-import { createElement, useEffect, useState } from 'react'
+import { createElement, useEffect, useRef, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
-import { createPlayHandler, handleVoiceToggle, type PlayState, type SpeechSynthLike } from '../lib/voicePlayerHelpers'
+import { hasClonedVoice } from '../lib/voiceCasting'
+import {
+  createPlayHandler,
+  handleVoiceToggle,
+  type PlayState,
+  type SpeechSynthLike,
+} from '../lib/voicePlayerHelpers'
 
 export interface VoicePlayerProps {
   text: string
@@ -18,20 +24,29 @@ function getSpeechSynthesis(): SpeechSynthLike | undefined {
 
 export function VoicePlayer({ text, characterId, language, label, unavailableText }: VoicePlayerProps) {
   const [state, setState] = useState<PlayState>('idle')
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const objectUrlRef = useRef<string | null>(null)
   const synth = getSpeechSynthesis()
+  const useClone = hasClonedVoice(characterId)
+  const canPlay = useClone || Boolean(synth)
 
-  // Cancel any in-progress speech when the component unmounts.
-  // Placed before the early return so the hook always runs (Rules of Hooks).
-  // Prevents setState-on-unmounted warnings and stops audio continuing.
   useEffect(() => {
     return () => {
       synth?.cancel?.()
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current)
+        objectUrlRef.current = null
+      }
     }
   }, [synth])
 
   const fallbackLabel = label || (language === 'zh' ? '播放语音' : 'Voice')
 
-  if (!synth) {
+  if (!canPlay) {
     return createElement(
       'button',
       {
@@ -43,9 +58,66 @@ export function VoicePlayer({ text, characterId, language, label, unavailableTex
     )
   }
 
-  const play = createPlayHandler(text, characterId, language, synth, setState)
+  const stopAll = () => {
+    synth?.cancel?.()
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = null
+    }
+    setState('idle')
+  }
 
-  const handleClick = () => handleVoiceToggle(state, synth, play, setState)
+  const playClone = async () => {
+    setState('speaking')
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          characterId,
+          language,
+        }),
+      })
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}))
+        throw new Error(detail.detail || `TTS failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+      const url = URL.createObjectURL(blob)
+      objectUrlRef.current = url
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.onended = () => setState('idle')
+      audio.onerror = () => setState('idle')
+      await audio.play()
+    } catch {
+      // Fall back to browser TTS if clone path fails and synth exists.
+      if (synth) {
+        createPlayHandler(text, characterId, language, synth, setState)()
+      } else {
+        setState('idle')
+      }
+    }
+  }
+
+  const handleClick = () => {
+    if (state === 'speaking') {
+      stopAll()
+      return
+    }
+    if (useClone) {
+      void playClone()
+      return
+    }
+    if (!synth) return
+    handleVoiceToggle('idle', synth, createPlayHandler(text, characterId, language, synth, setState), setState)
+  }
 
   return createElement(
     'button',
