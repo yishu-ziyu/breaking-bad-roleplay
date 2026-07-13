@@ -1065,9 +1065,12 @@ class TestCycle17_ExceptionSanitization:
             characterId="walter",
             userInput="hello",
         )
+        fake_request = MagicMock()
+        fake_request.client = MagicMock(host="127.0.0.1")
+        fake_request.headers = {}
 
         with pytest.raises(HTTPException) as exc_info:
-            await chat(payload=payload, director=mock_director)
+            await chat(request=fake_request, payload=payload, director=mock_director)
 
         assert exc_info.value.status_code == 500
         detail = exc_info.value.detail
@@ -1108,9 +1111,12 @@ class TestCycle17_ExceptionSanitization:
         # it sources short-lived sessions from ``api.routes.async_session_factory``.
         # Patch the factory so the existence check sees the mock session row.
         fake_factory = _make_fake_session_factory(db)
+        fake_request = MagicMock()
+        fake_request.client = MagicMock(host="127.0.0.1")
+        fake_request.headers = {}
         with patch("api.routes.async_session_factory", fake_factory):
             response = await stream_session(
-                session_id="s1", director=mock_director
+                request=fake_request, session_id="s1", director=mock_director
             )
 
         # Consume the StreamingResponse body

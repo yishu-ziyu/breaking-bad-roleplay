@@ -2535,6 +2535,31 @@ button.story-event {
   color: rgba(255, 247, 208, 0.92);
 }
 
+.quota-pill {
+  margin: 0.45rem 0 0;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 248, 220, 0.08);
+  border: 1px solid rgba(232, 197, 71, 0.28);
+  color: rgba(245, 236, 210, 0.88);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.quota-pill.is-low {
+  border-color: rgba(220, 90, 70, 0.55);
+  color: #f0b4a8;
+  background: rgba(120, 40, 30, 0.28);
+}
+
+.quota-pill--compact {
+  display: inline-block;
+  margin: 0.25rem 0 0;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.65rem;
+}
+
 .connection-chip--compact .connection-chip__status {
   color: rgba(255, 247, 208, 0.55);
 }

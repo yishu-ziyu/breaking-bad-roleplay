@@ -19,6 +19,8 @@ import { GifCard } from './components/GifCard'
 import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
 import { useConnection } from './hooks/useConnection'
+import { useQuota, parseQuotaError } from './hooks/useQuota'
+import { guestHeaders } from './lib/guestId'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { resolveGifUrl } from './lib/gifResolver'
 import './App.css'
@@ -684,6 +686,7 @@ function App() {
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
   const connection = useConnection()
+  const quota = useQuota(connection.connectionSessionId)
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -762,6 +765,17 @@ function App() {
   useEffect(() => {
     story.setConnectionSessionId(connection.connectionSessionId)
   }, [connection.connectionSessionId, story])
+
+  // Refresh free credits after each story beat pause/complete.
+  useEffect(() => {
+    if (
+      story.connectionState === 'beat_paused'
+      || story.connectionState === 'complete'
+      || story.connectionState === 'error'
+    ) {
+      void quota.refresh()
+    }
+  }, [story.connectionState, quota.refresh])
 
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
@@ -989,7 +1003,7 @@ function App() {
       story.setConnectionSessionId(bindId)
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...guestHeaders() },
         body: JSON.stringify({
           characterId: selectedCharId,
           userInput: userText,
@@ -1005,10 +1019,26 @@ function App() {
         }),
       })
       if (!res.ok) {
+        const quotaErr = await parseQuotaError(res.clone())
+        if (quotaErr) {
+          connection.setSheetOpen(true)
+          void quota.refresh()
+          throw new Error(
+            quotaErr.message
+              || (language === 'zh'
+                ? '今日免费额度已用完。请连接你自己的密钥继续。'
+                : 'Free demo credits used up. Connect your own key to continue.'),
+          )
+        }
         const detail = await res.json().catch(() => ({ error: 'Server error' }))
-        throw new Error(detail.error || detail.detail || 'Chat failed')
+        const msg =
+          typeof detail.detail === 'object' && detail.detail?.message
+            ? detail.detail.message
+            : detail.error || detail.detail || 'Chat failed'
+        throw new Error(msg)
       }
       const data = await res.json()
+      void quota.refresh()
 
       if (mode === 'crew') {
         const debateReplies: ChatMessage[] = []
@@ -1364,10 +1394,17 @@ function App() {
           </section>
         )}
 
-        {/* Model line — BYOK branding entry */}
+        {/* Model line — BYOK branding entry + free credits */}
         <section className="connection-sidebar-block">
           <span className="field-label">{t.model}</span>
           <ConnectionChip conn={connection} language={language} />
+          <p className={`quota-pill${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
+            {quota.byok
+              ? (language === 'zh' ? '自备密钥 · 不占平台额度' : 'Your key · not metered')
+              : (language === 'zh'
+                ? `今日免费 ${quota.remaining}/${quota.limit} 分`
+                : `Free today ${quota.remaining}/${quota.limit}`)}
+          </p>
         </section>
           </aside>
         </div>
@@ -1402,6 +1439,11 @@ function App() {
             <div className="story-hud__metric story-hud__connection">
               <span>{t.model}</span>
               <ConnectionChip conn={connection} language={language} compact />
+              <small className={`quota-pill quota-pill--compact${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
+                {quota.byok
+                  ? (language === 'zh' ? '自备密钥' : 'BYOK')
+                  : (language === 'zh' ? `免费 ${quota.remaining}` : `Free ${quota.remaining}`)}
+              </small>
             </div>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
           </header>

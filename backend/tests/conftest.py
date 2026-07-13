@@ -15,6 +15,27 @@ from unittest.mock import AsyncMock, MagicMock
 from agents.provider import ModelResult
 
 
+@pytest.fixture(autouse=True)
+def _reset_platform_quota():
+    """Keep free-tier counters from leaking across tests (shared process store)."""
+    from agents import quota as quota_mod
+
+    store = quota_mod._store
+    with store._lock:
+        store._used.clear()
+        store._global.clear()
+        store._hits.clear()
+    # Generous limits so integration tests are not blocked by free tier.
+    quota_mod.settings.free_credits_guest = 10_000  # type: ignore[attr-defined]
+    quota_mod.settings.platform_daily_credit_budget = 1_000_000  # type: ignore[attr-defined]
+    quota_mod.settings.platform_rate_limit_per_hour = 100_000  # type: ignore[attr-defined]
+    yield
+    with store._lock:
+        store._used.clear()
+        store._global.clear()
+        store._hits.clear()
+
+
 @pytest.fixture
 def mock_provider():
     """Mock ProviderFacade with the real default model route.
