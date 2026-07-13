@@ -1753,8 +1753,13 @@ function App() {
                         {msg.toolLog && <p>{msg.toolLog}</p>}
                       </div>
                     )}
-                    {msg.id.startsWith('opener-') && msg.sender !== 'user' && (
-                      <VoicePlayer text={msg.text} characterId={msg.sender as CharacterId} language={language} />
+                    {!isUser && (
+                      <VoicePlayer
+                        text={msg.text}
+                        characterId={msg.sender as CharacterId}
+                        language={language}
+                        connectionSessionId={connection.connectionSessionId}
+                      />
                     )}
                     <GifCard src={msg.id.startsWith('opener-') ? null : msg.gifUrl} alt={msg.gifQuery ? t.gifTrigger : ''} />
                   </div>
