@@ -1043,15 +1043,6 @@ function App() {
       <div className="landing-screen">
         {/* Loop 10: separate bg layer so Ken-Burns can drift without moving type */}
         <div className="landing-screen__bg" aria-hidden="true" />
-        {/* Loop 10 Gap 1: tight 3/4 Walter portrait as the single focal point */}
-        <div className="landing-screen__portrait" aria-hidden="true">
-          <img
-            className="landing-screen__portrait-img"
-            src="/avatars/walter.png"
-            alt=""
-            draggable={false}
-          />
-        </div>
         <div className="landing-screen__content">
           <h1 className="landing-screen__title">
             BREAKING BAD
