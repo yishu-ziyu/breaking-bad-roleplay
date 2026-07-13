@@ -42,6 +42,51 @@
       "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/mike_clone_preview.mp3",
       "preview_text": "You're not a problem yet. Keep talking and you will be.",
       "ok": true
+    },
+    "skyler": {
+      "voice_id": "bbclone_skyler_v1",
+      "file_id": 419278757024161,
+      "source_file": "materials/breaking-bad/voice-archetypes/samples/skyler/skyler_concat_candidate.wav",
+      "source_youtube": "https://www.youtube.com/watch?v=HTWPU0Ore_k",
+      "clone_base_resp": {
+        "status_code": 0,
+        "status_msg": "success"
+      },
+      "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/skyler_clone_preview.mp3",
+      "preview_text": "I never wanted any of this. There is no car wash in the world that could do this kind of business. The fifties are going to be a problem.",
+      "labels_verified_by_user": true,
+      "ok": true,
+      "created": "2026-07-13T04:54:23Z"
+    },
+    "saul": {
+      "voice_id": "bbclone_saul_v1",
+      "file_id": 419282842308905,
+      "source_file": "materials/breaking-bad/voice-archetypes/samples/saul/saul_concat_candidate.wav",
+      "source_youtube": "https://www.youtube.com/watch?v=BLS7Vyu17i8",
+      "clone_base_resp": {
+        "status_code": 0,
+        "status_msg": "success"
+      },
+      "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/saul_clone_preview.mp3",
+      "preview_text": "There are laws, Detective. Have your kindergarten teacher read them to you. I'm going to give you the best criminal defense that money can buy. Definitely not American Express, so don't even ask.",
+      "labels_verified_by_user": true,
+      "ok": true,
+      "created": "2026-07-13T05:01:30Z"
+    },
+    "jesse": {
+      "voice_id": "bbclone_jesse_v1",
+      "file_id": 419288890179854,
+      "source_file": "materials/breaking-bad/voice-archetypes/samples/jesse/jesse_concat_candidate.wav",
+      "source_youtube": "https://www.youtube.com/watch?v=Zgh2s1R6H50",
+      "clone_base_resp": {
+        "status_code": 0,
+        "status_msg": "success"
+      },
+      "preview_file": "materials/breaking-bad/voice-archetypes/clone_previews/jesse_clone_preview.mp3",
+      "preview_text": "Yo, cooking is art, and the shit I cook is the bomb. Coin flip is sacred. You don't want a criminal lawyer — you want a criminal lawyer. Yeah, science, bitch.",
+      "approx_ref_seconds": 67.4,
+      "ok": true,
+      "created": "2026-07-13T05:05:40Z"
     }
   }
 }
