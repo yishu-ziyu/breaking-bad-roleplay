@@ -3,6 +3,7 @@
    ================================================================= */
 
 import { useEffect, useMemo, useState } from 'react'
+import { setCachedAccessToken } from '../lib/authHeaders'
 import { createClient } from '../lib/supabaseClient'
 import { clearStoredPrivacyKey, deriveAndStorePrivacyKey } from '../lib/privacyVault'
 import type { Session, User } from '@supabase/supabase-js'
@@ -36,6 +37,7 @@ export function useAuth(): UseAuthReturn {
 
     // Initial session check
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null }; error: Error | null }) => {
+      setCachedAccessToken(data.session?.access_token ?? null)
       setState({ user: data.session?.user ?? null, session: data.session, loading: false, error: null })
     }).catch(() => {
       setState(s => ({ ...s, loading: false, error: 'Session check failed' }))
@@ -43,6 +45,7 @@ export function useAuth(): UseAuthReturn {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
+      setCachedAccessToken(session?.access_token ?? null)
       setState({ user: session?.user ?? null, session, loading: false, error: null })
     })
 
@@ -58,6 +61,7 @@ export function useAuth(): UseAuthReturn {
       await deriveAndStorePrivacyKey({ id: privacyUser.id, email: privacyUser.email ?? email }, password)
     }
     if (data.session) {
+      setCachedAccessToken(data.session.access_token)
       setState({ user: data.session.user, session: data.session, loading: false, error: null })
     }
   }
@@ -71,12 +75,14 @@ export function useAuth(): UseAuthReturn {
       await deriveAndStorePrivacyKey({ id: privacyUser.id, email: privacyUser.email ?? email }, password)
     }
     if (data.session) {
+      setCachedAccessToken(data.session.access_token)
       setState({ user: data.session.user, session: data.session, loading: false, error: null })
     }
   }
 
   const signOut = async () => {
     if (!supabase) return
+    setCachedAccessToken(null)
     if (state.user) {
       clearStoredPrivacyKey(state.user.id)
     }

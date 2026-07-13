@@ -19,7 +19,9 @@ Attackers must not:
 | Free credits | Server meter: chat 1 / crew 2 / story beat 5 / tts 1 |
 | Guest identity | UUID in `X-Guest-Id` or SSE `guest_id` query; scoped with IP hash |
 | Daily guest cap | Default **8** credits (`FREE_CREDITS_GUEST`) |
-| Site daily budget | Default **5000** credits (`PLATFORM_DAILY_CREDIT_BUDGET`) |
+| Daily logged-in cap | Default **80** credits (`FREE_CREDITS_USER`) - early-access welfare per Supabase user |
+| Auth proof | Supabase access token via `Authorization: Bearer` (or SSE `access_token` query); server calls `/auth/v1/user` |
+| Site daily budget | Default **5000** credits (`PLATFORM_DAILY_CREDIT_BUDGET`) shared across all free traffic |
 | IP rate limit | Default **40** billable ops / rolling hour (`PLATFORM_RATE_LIMIT_PER_HOUR`) |
 | BYOK escape | Valid bind session skips free meter (user pays provider) |
 
@@ -27,9 +29,12 @@ Attackers must not:
 
 ```text
 FREE_CREDITS_GUEST=8
+FREE_CREDITS_USER=80
 PLATFORM_DAILY_CREDIT_BUDGET=5000
 PLATFORM_RATE_LIMIT_PER_HOUR=40
 QUOTA_IP_SALT=abq-quota-v1
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_ANON_KEY=eyJ...   # same publishable/anon key as frontend
 ```
 
 ## Known limits

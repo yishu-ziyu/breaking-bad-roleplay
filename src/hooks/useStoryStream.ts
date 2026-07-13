@@ -5,6 +5,7 @@
    ================================================================= */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { authHeaders, getCachedAccessToken, refreshCachedAccessToken } from '../lib/authHeaders'
 import { getOrCreateGuestId } from '../lib/guestId'
 
 export interface StoryEvent {
@@ -151,6 +152,7 @@ export function buildStreamQuery(opts: {
   language?: string | null
   connectionSessionId?: string | null
   guestId?: string | null
+  accessToken?: string | null
 }): string {
   const parts: string[] = []
   if (opts.voiceExample) {
@@ -161,10 +163,13 @@ export function buildStreamQuery(opts: {
   if (opts.connectionSessionId) {
     parts.push(`connection_session=${encodeURIComponent(opts.connectionSessionId)}`)
   }
-  // EventSource cannot set headers; guest UUID goes in the query (not a secret).
+  // EventSource cannot set headers; guest UUID + optional access_token in query.
   const guest = (opts.guestId && opts.guestId.trim()) || getOrCreateGuestId()
   if (guest) {
     parts.push(`guest_id=${encodeURIComponent(guest)}`)
+  }
+  if (opts.accessToken && opts.accessToken.trim()) {
+    parts.push(`access_token=${encodeURIComponent(opts.accessToken.trim())}`)
   }
   return `?${parts.join('&')}`
 }
@@ -305,104 +310,117 @@ export function useStoryStream(): UseStoryStreamReturn {
       || languageRef.current
       || 'en'
     languageRef.current = resolvedLanguage
-    const qs = buildStreamQuery({
-      voiceExample: voiceExampleRef.current,
-      language: resolvedLanguage,
-      connectionSessionId: connectionSessionRef.current,
-    })
-    const es = new EventSource(`/api/session/${sid}/stream${qs}`)
-    esRef.current = es
 
-    es.addEventListener('outline', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data)
-        setOutline(payload.data?.content ?? '')
-        setConnectionState('streaming')
-      } catch { /* ignore parse error */ }
-    })
+    void (async () => {
+      await refreshCachedAccessToken()
+      const qs = buildStreamQuery({
+        voiceExample: voiceExampleRef.current,
+        language: resolvedLanguage,
+        connectionSessionId: connectionSessionRef.current,
+        accessToken: getCachedAccessToken(),
+      })
+      const streamUrl = `/api/session/${sid}/stream${qs}`
+      const es = new EventSource(streamUrl)
+      esRef.current = es
 
-    es.addEventListener('status', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data)
-        const msg = payload.data?.message ?? ''
-        if (msg.includes('continuing automatically')) {
-          setAutoContinued(true)
-          setConnectionState('streaming')
-        } else {
-          appendEvent({ type: 'status', data: payload.data })
-        }
-      } catch { /* ignore */ }
-    })
-
-    const appendTypes = ['scene_change', 'agent_act', 'agent_think', 'agent_speak', 'world_state_delta']
-    appendTypes.forEach((t) => {
-      es.addEventListener(t, (e: MessageEvent) => {
+      es.addEventListener('outline', (e: MessageEvent) => {
         try {
           const payload = JSON.parse(e.data)
-          appendEvent({ type: t, data: payload.data })
+          setOutline(payload.data?.content ?? '')
+          setConnectionState('streaming')
+        } catch { /* ignore parse error */ }
+      })
+
+      es.addEventListener('status', (e: MessageEvent) => {
+        try {
+          const payload = JSON.parse(e.data)
+          const msg = payload.data?.message ?? ''
+          if (msg.includes('continuing automatically')) {
+            setAutoContinued(true)
+            setConnectionState('streaming')
+          } else {
+            appendEvent({ type: 'status', data: payload.data })
+          }
         } catch { /* ignore */ }
       })
-    })
 
-    es.addEventListener('beat_ready', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data)
-        const beatId = typeof payload.data?.beat_id === 'string' ? payload.data.beat_id : null
-        const parsedBeatIndex = beatIndexFromBeatId(beatId)
-        const isFinal = payload.data?.is_final === true
-        setCurrentBeatId(beatId)
-        setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
-        setAutoContinued(false)
-        if (isFinal) {
-          // The server sends `complete` immediately after the final beat.
-          // Keep this source alive long enough to receive that terminal frame.
-          setConnectionState('streaming')
-        } else {
-          // Vercel renders one beat per invocation. Close the completed source
-          // and wait for a successful player action before opening the next.
-          setConnectionState('beat_paused')
-          closeEventSource()
-        }
-      } catch { /* ignore */ }
-    })
+      const appendTypes = ['scene_change', 'agent_act', 'agent_think', 'agent_speak', 'world_state_delta']
+      appendTypes.forEach((t) => {
+        es.addEventListener(t, (e: MessageEvent) => {
+          try {
+            const payload = JSON.parse(e.data)
+            appendEvent({ type: t, data: payload.data })
+          } catch { /* ignore */ }
+        })
+      })
 
-    es.addEventListener('complete', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data)
-        appendEvent({ type: 'complete', data: payload.data })
-      } catch { /* ignore */ }
-      setConnectionState('complete')
-      closeEventSource()
-    })
-
-    es.addEventListener('error', (e: MessageEvent) => {
-      // Distinguish SSE connection error vs backend error event.
-      // Backend error events have data; transport-layer errors don't.
-      if (e.data) {
-        // Server-sent `event: error` message — fatal backend error.
+      es.addEventListener('beat_ready', (e: MessageEvent) => {
         try {
           const payload = JSON.parse(e.data)
-          setSessionError(payload.data?.message ?? 'Unknown error')
-          appendEvent({ type: 'error', data: payload.data })
-        } catch {
-          setSessionError('Stream error')
+          const beatId = typeof payload.data?.beat_id === 'string' ? payload.data.beat_id : null
+          const parsedBeatIndex = beatIndexFromBeatId(beatId)
+          const isFinal = payload.data?.is_final === true
+          setCurrentBeatId(beatId)
+          setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
+          setAutoContinued(false)
+          if (isFinal) {
+            setConnectionState('streaming')
+          } else {
+            setConnectionState('beat_paused')
+            closeEventSource()
+          }
+        } catch { /* ignore */ }
+      })
+
+      es.addEventListener('complete', (e: MessageEvent) => {
+        try {
+          const payload = JSON.parse(e.data)
+          appendEvent({ type: 'complete', data: payload.data })
+        } catch { /* ignore */ }
+        setConnectionState('complete')
+        closeEventSource()
+      })
+
+      es.addEventListener('error', (e: MessageEvent) => {
+        if (e.data) {
+          try {
+            const payload = JSON.parse(e.data)
+            setSessionError(payload.data?.message ?? 'Unknown error')
+            appendEvent({ type: 'error', data: payload.data })
+          } catch {
+            setSessionError('Stream error')
+          }
+          setConnectionState('error')
+          closeEventSource()
+          return
         }
-        setConnectionState('error')
-        closeEventSource()
-        return
-      }
-      // Transport-layer error (no e.data) — may be transient.
-      // Do NOT unconditionally close: EventSource auto-reconnects when
-      // readyState is CONNECTING. Only treat as fatal if the connection
-      // was forcibly closed (readyState === CLOSED).
-      if (es.readyState === EventSource.CLOSED) {
-        setSessionError('SSE connection closed')
-        setConnectionState('error')
-        closeEventSource()
-      }
-      // readyState === CONNECTING → transient disconnect, let EventSource
-      // retry natively. No state change, no close.
-    })
+        if (es.readyState === EventSource.CLOSED) {
+          // Probe with fetch so 402 quota becomes a readable message.
+          void (async () => {
+            try {
+              const probe = await fetch(streamUrl, { method: 'GET', headers: await authHeaders() })
+              if (probe.status === 402 || probe.status === 429) {
+                const body = await probe.json().catch(() => null)
+                const detail = body?.detail
+                const msg =
+                  (detail && typeof detail === 'object' && detail.message)
+                  || (typeof detail === 'string' ? detail : null)
+                  || (probe.status === 402
+                    ? 'Free demo credits used up for today. Sign in for early-access credits or connect your own key.'
+                    : 'Too many requests. Slow down or use your own key.')
+                setSessionError(String(msg))
+              } else {
+                setSessionError('SSE connection closed')
+              }
+            } catch {
+              setSessionError('SSE connection closed')
+            }
+            setConnectionState('error')
+            closeEventSource()
+          })()
+        }
+      })
+    })()
   }, [appendEvent, closeEventSource, setSessionError])
 
   const startStory = useCallback(async (
@@ -425,7 +443,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     try {
       const res = await fetch('/api/session/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           title: taskPrompt.slice(0, 80),
           task_prompt: taskPrompt,

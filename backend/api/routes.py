@@ -69,6 +69,7 @@ def _require_platform_quota(
     mode: str | None = None,
     connection_session_id: str | None = None,
     guest_id: str | None = None,
+    access_token: str | None = None,
 ):
     decision = enforce_platform_quota(
         request=request,
@@ -76,6 +77,7 @@ def _require_platform_quota(
         mode=mode,
         connection_session_id=connection_session_id,
         guest_id=guest_id or _guest_id_from_request(request),
+        access_token=access_token,
     )
     if not decision.allowed:
         raise _quota_http_exception(decision)
@@ -396,13 +398,15 @@ async def get_quota(
     request: Request,
     guest_id: str | None = Query(default=None),
     connection_session: str | None = Query(default=None),
+    access_token: str | None = Query(default=None),
 ):
-    """Return remaining free credits for this guest/IP (or BYOK unlimited)."""
+    """Return remaining free credits (guest 8 / logged-in 80 / BYOK unlimited)."""
     gid = _guest_id_from_request(request, guest_id)
     snap = read_quota_snapshot(
         request=request,
         guest_id=gid,
         connection_session_id=connection_session,
+        access_token=access_token,
     )
     return {
         "day": snap.day,
@@ -413,6 +417,7 @@ async def get_quota(
         "globalLimit": snap.global_limit,
         "globalRemaining": snap.global_remaining,
         "byok": snap.byok,
+        "tier": snap.tier,
         "costs": {
             "chatDirect": 1,
             "chatCrew": 2,
@@ -662,6 +667,7 @@ async def stream_session(
     language: str = Query(default="en"),
     connection_session: str | None = Query(default=None),
     guest_id: str | None = Query(default=None),
+    access_token: str | None = Query(default=None),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -685,6 +691,8 @@ async def stream_session(
 
     Platform free-tier: one story beat costs 5 credits (charged after session
     validation, before LLM work). BYOK connection_session skips the meter.
+    EventSource cannot set Authorization headers; pass access_token query
+    for logged-in early-access tier (80 credits/day).
     """
     # Existence check + task_prompt fetch — short-lived session so the
     # connection returns to the pool before the SSE stream starts.
@@ -705,12 +713,13 @@ async def stream_session(
         resolved_session_id = session.id
 
     # Charge only after the session is known valid (do not bill 404s).
-    # SSE cannot set custom headers; guest_id query must be a UUID.
+    # SSE cannot set custom headers; guest_id / access_token go in the query.
     _require_platform_quota(
         request,
         action="story_beat",
         connection_session_id=connection_session,
         guest_id=_guest_id_from_request(request, guest_id),
+        access_token=access_token,
     )
 
     bind_override = _resolve_override_from_session(connection_session)

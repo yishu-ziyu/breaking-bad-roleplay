@@ -35,3 +35,8 @@ export function getOrCreateGuestId(): string {
 export function guestHeaders(): Record<string, string> {
   return { 'X-Guest-Id': getOrCreateGuestId() }
 }
+
+/** @deprecated Prefer authHeaders() from lib/authHeaders when login tier matters. */
+export function guestHeadersOnly(): Record<string, string> {
+  return guestHeaders()
+}
