@@ -1,0 +1,41 @@
+{
+  "era": "s5_end",
+  "label": "Ozymandias / Felina neighborhood",
+  "present_cast_default": ["walter", "jesse", "skyler", "saul", "mike"],
+  "shared_facts": [
+    {
+      "id": "s5_empire_collapse",
+      "text": "The empire is collapsed or collapsing; public family exposure is high.",
+      "known_by": ["walter", "jesse", "skyler", "saul"],
+      "hidden_from": [],
+      "irreversible": true
+    },
+    {
+      "id": "s5_many_bodies",
+      "text": "Multiple irreversible deaths and betrayals already sit on the ledger.",
+      "known_by": ["walter", "jesse", "skyler", "saul", "mike"],
+      "hidden_from": [],
+      "irreversible": true
+    },
+    {
+      "id": "s5_walt_motive",
+      "text": "Walt can no longer honestly claim pure provider motive; pride is visible.",
+      "known_by": ["walter", "skyler"],
+      "hidden_from": [],
+      "irreversible": false
+    }
+  ],
+  "open_tensions": [
+    {
+      "id": "s5_ten_aftermath",
+      "text": "Survivors negotiate what is left: money, safety, guilt, and who still gets a future.",
+      "parties": ["walter", "jesse", "skyler"]
+    }
+  ],
+  "irreversible_costs": [
+    {
+      "id": "s5_cost_exposure",
+      "text": "Family cover story is broken beyond simple repair."
+    }
+  ]
+}

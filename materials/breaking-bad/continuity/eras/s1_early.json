@@ -1,0 +1,41 @@
+{
+  "era": "s1_early",
+  "label": "Pilot neighborhood",
+  "present_cast_default": ["walter", "jesse", "skyler"],
+  "shared_facts": [
+    {
+      "id": "s1_cancer_private",
+      "text": "Walt has received a serious medical diagnosis he has not fully shared with the household.",
+      "known_by": ["walter"],
+      "hidden_from": ["jesse", "skyler", "saul", "mike", "gus"],
+      "irreversible": false
+    },
+    {
+      "id": "s1_partnership_starts",
+      "text": "Walt and Jesse have begun a dangerous partnership outside normal life.",
+      "known_by": ["walter", "jesse"],
+      "hidden_from": ["skyler", "saul", "mike", "gus"],
+      "irreversible": false
+    },
+    {
+      "id": "s1_gray_matter_wound",
+      "text": "Walt carries a deep pride wound about lost scientific success and status.",
+      "known_by": ["walter"],
+      "hidden_from": ["jesse", "skyler", "saul", "mike", "gus"],
+      "irreversible": false
+    }
+  ],
+  "open_tensions": [
+    {
+      "id": "s1_ten_family_vs_secret",
+      "text": "Walt wants control and money without losing the household story; Skyler senses cracks.",
+      "parties": ["walter", "skyler"]
+    },
+    {
+      "id": "s1_ten_teacher_student",
+      "text": "Walt wants obedience dressed as partnership; Jesse wants respect and not to be disposable.",
+      "parties": ["walter", "jesse"]
+    }
+  ],
+  "irreversible_costs": []
+}

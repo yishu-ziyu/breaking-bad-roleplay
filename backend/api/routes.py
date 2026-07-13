@@ -11,8 +11,13 @@ import uuid
 from datetime import datetime, timezone
 
 from db.session import get_db, async_session_factory
-from db.models import Session as SessionModel, Message as MessageModel
+from db.models import (
+    Session as SessionModel,
+    Message as MessageModel,
+    CharacterDossier,
+)
 from agents.provider import ProviderFacade, MINIMAX_HOST_CN, MINIMAX_HOST_GLOBAL
+from agents.byok_presets import PROVIDER_PRESETS, preset_by_id, known_provider_ids
 from agents.director import DirectorAgent
 from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
@@ -109,64 +114,14 @@ async def api_health():
 # BYOK connections (catalog / test / bind)
 # ---------------------------------------------------------------------------
 
-PROVIDER_CATALOG = [
-    {
-        "id": "minimax",
-        "displayName": "MiniMax",
-        "productLine": "M3",
-        "defaultModel": "MiniMax-M3",
-        "models": ["MiniMax-M3"],
-        "needsLlmKey": True,
-        "needsTtsKey": True,
-        "needsBaseUrl": False,
-        "regions": ["cn", "global"],
-        "defaultRegion": "cn",
-        "keyHintLlm": "sk- / sk-cp-",
-        "keyHintTts": "Speech API secret",
-        "docsUrl": "https://platform.minimaxi.com/",
-        "consoleUrl": "https://platform.minimaxi.com/",
-    },
-    {
-        "id": "stepfun",
-        "displayName": "StepFun",
-        "productLine": "step-2",
-        "defaultModel": "step-2-16k",
-        "models": ["step-2-16k"],
-        "needsLlmKey": True,
-        "needsTtsKey": False,
-        "needsBaseUrl": False,
-        "regions": [],
-        "defaultRegion": None,
-        "keyHintLlm": "Bearer key",
-        "keyHintTts": None,
-        "docsUrl": "https://platform.stepfun.com/",
-        "consoleUrl": "https://platform.stepfun.com/",
-    },
-    {
-        "id": "cliproxy",
-        "displayName": "CLIProxy",
-        "productLine": "local",
-        "defaultModel": settings.cli_proxy_default_model,
-        "models": [settings.cli_proxy_default_model],
-        "needsLlmKey": False,
-        "needsTtsKey": False,
-        "needsBaseUrl": True,
-        "regions": [],
-        "defaultRegion": None,
-        "keyHintLlm": "optional local key",
-        "keyHintTts": None,
-        "docsUrl": "https://github.com",
-        "consoleUrl": None,
-        "defaultBaseUrl": settings.cli_proxy_base_url,
-    },
-]
+PROVIDER_CATALOG = PROVIDER_PRESETS
 
 
 def _platform_flags() -> dict[str, bool]:
+    # Platform demo keys only (MiniMax / StepFun). BYOK presets are always choosable.
     return {
         "minimax": bool(settings.minimax_api_key),
         "stepfun": bool(settings.stepfun_api_key),
-        "cliproxy": bool(settings.cli_proxy_api_key) or True,  # base URL may suffice locally
     }
 
 
@@ -183,12 +138,14 @@ def _resolve_override_from_session(connection_session_id: str | None) -> Credent
 async def connections_catalog():
     """Public provider brand catalog + which platform keys are available."""
     platform = _platform_flags()
-    default_provider = "minimax" if platform["minimax"] else (
-        "stepfun" if platform["stepfun"] else "cliproxy"
+    default_provider = (
+        "stepfun" if platform.get("stepfun")
+        else "minimax" if platform.get("minimax")
+        else "stepfun"
     )
     default_model = next(
         (p["defaultModel"] for p in PROVIDER_CATALOG if p["id"] == default_provider),
-        "MiniMax-M3",
+        "step-3.7-flash",
     )
     return {
         "providers": PROVIDER_CATALOG,
@@ -214,7 +171,7 @@ async def connections_test(payload: ConnectionTestRequest):
     """Probe a provider with a user-supplied key. Does not persist the key."""
     provider = payload.providerId.strip().lower()
     purpose = (payload.purpose or "llm").strip().lower()
-    if provider not in ("minimax", "stepfun", "cliproxy"):
+    if provider not in known_provider_ids() and provider != "cliproxy":
         raise HTTPException(status_code=400, detail="Unknown providerId")
     if purpose not in ("llm", "tts"):
         raise HTTPException(status_code=400, detail="purpose must be llm or tts")
@@ -285,7 +242,7 @@ async def connections_test(payload: ConnectionTestRequest):
         if provider == "stepfun":
             if not payload.apiKey:
                 raise HTTPException(status_code=400, detail="apiKey required")
-            model = payload.modelId or "step-2-16k"
+            model = payload.modelId or "step-3.7-flash"
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
                 resp = await client.post(
                     "https://api.stepfun.com/v1/chat/completions",
@@ -313,24 +270,108 @@ async def connections_test(payload: ConnectionTestRequest):
                 }
             return {"ok": True, "status": "valid", "latencyMs": latency, "message": "Connected"}
 
-        # cliproxy: probe base URL health-ish
-        base = (payload.baseUrl or settings.cli_proxy_base_url).rstrip("/")
-        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
-            try:
-                resp = await client.get(f"{base}/v1/models")
-            except httpx.HTTPError:
-                # Try messages with dummy if models not exposed
-                latency = int((time.perf_counter() - started) * 1000)
+        # Generic BYOK presets (OpenAI / Anthropic compatible).
+        preset = preset_by_id(provider)
+        if preset is not None:
+            if purpose == "tts":
+                return {
+                    "ok": False,
+                    "status": "invalid",
+                    "latencyMs": 0,
+                    "message": "TTS only supported for MiniMax",
+                }
+            if not payload.apiKey:
+                raise HTTPException(status_code=400, detail="apiKey required")
+            model = payload.modelId or preset.get("defaultModel") or "gpt-4o-mini"
+            base = (payload.baseUrl or preset.get("defaultBaseUrl") or "").rstrip("/")
+            if not base:
+                raise HTTPException(status_code=400, detail="baseUrl required for this provider")
+            kind = preset.get("kind") or "openai"
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+                if kind == "anthropic":
+                    url = f"{base}/messages"
+                    resp = await client.post(
+                        url,
+                        headers={
+                            "Content-Type": "application/json",
+                            "anthropic-version": "2023-06-01",
+                            "x-api-key": payload.apiKey.strip(),
+                        },
+                        json={
+                            "model": model,
+                            "max_tokens": 8,
+                            "messages": [{"role": "user", "content": "ping"}],
+                        },
+                    )
+                else:
+                    url = f"{base}/chat/completions"
+                    resp = await client.post(
+                        url,
+                        headers={
+                            "Authorization": f"Bearer {payload.apiKey.strip()}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": model,
+                            "messages": [{"role": "user", "content": "ping"}],
+                            "max_tokens": 8,
+                        },
+                    )
+            latency = int((time.perf_counter() - started) * 1000)
+            label = preset.get("displayName") or provider
+            if resp.status_code in (401, 403):
+                return {
+                    "ok": False,
+                    "status": "invalid",
+                    "latencyMs": latency,
+                    "message": f"Invalid {label} key",
+                }
+            if resp.status_code == 402:
+                return {
+                    "ok": False,
+                    "status": "quota",
+                    "latencyMs": latency,
+                    "message": "Quota exceeded",
+                }
+            if resp.status_code >= 400:
                 return {
                     "ok": False,
                     "status": "unreachable",
                     "latencyMs": latency,
-                    "message": f"Cannot reach {base}",
+                    "message": f"{label} HTTP {resp.status_code}",
                 }
-        latency = int((time.perf_counter() - started) * 1000)
-        if resp.status_code >= 500:
-            return {"ok": False, "status": "unreachable", "latencyMs": latency, "message": "CLIProxy error"}
-        return {"ok": True, "status": "valid", "latencyMs": latency, "message": f"Reachable {base}"}
+            return {"ok": True, "status": "valid", "latencyMs": latency, "message": "Connected"}
+
+        # Local-only cliproxy probe (not in public catalog).
+        if provider == "cliproxy":
+            base = (payload.baseUrl or settings.cli_proxy_base_url).rstrip("/")
+            async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
+                try:
+                    resp = await client.get(f"{base}/v1/models")
+                except httpx.HTTPError:
+                    latency = int((time.perf_counter() - started) * 1000)
+                    return {
+                        "ok": False,
+                        "status": "unreachable",
+                        "latencyMs": latency,
+                        "message": f"Cannot reach {base}",
+                    }
+            latency = int((time.perf_counter() - started) * 1000)
+            if resp.status_code >= 500:
+                return {
+                    "ok": False,
+                    "status": "unreachable",
+                    "latencyMs": latency,
+                    "message": "CLIProxy error",
+                }
+            return {
+                "ok": True,
+                "status": "valid",
+                "latencyMs": latency,
+                "message": f"Reachable {base}",
+            }
+
+        raise HTTPException(status_code=400, detail="Unknown providerId")
 
     except HTTPException:
         raise
@@ -366,16 +407,25 @@ class ConnectionBindRequest(BaseModel):
 async def connections_bind(payload: ConnectionBindRequest):
     """Create a short-lived RAM bind session for SSE/chat/tts."""
     provider = payload.providerId.strip().lower()
-    if provider not in ("minimax", "stepfun", "cliproxy"):
+    if provider not in known_provider_ids() and provider != "cliproxy":
         raise HTTPException(status_code=400, detail="Unknown providerId")
-    if provider in ("minimax", "stepfun") and not (payload.llmKey and payload.llmKey.strip()):
+    preset = preset_by_id(provider)
+    needs_key = True if preset is None else bool(preset.get("needsLlmKey", True))
+    if needs_key and not (payload.llmKey and payload.llmKey.strip()):
         raise HTTPException(status_code=400, detail="llmKey required for this provider")
+    # Prefer explicit baseUrl; else preset default (custom still needs user base).
+    base_url = payload.baseUrl
+    if not base_url and preset and preset.get("defaultBaseUrl"):
+        base_url = preset["defaultBaseUrl"]
+    if preset and preset.get("needsBaseUrl") and not (base_url and str(base_url).strip()):
+        raise HTTPException(status_code=400, detail="baseUrl required for custom provider")
+    model_id = payload.modelId or (preset.get("defaultModel") if preset else None)
     session = connection_store.bind(
         provider_id=provider,
-        model_id=payload.modelId,
+        model_id=model_id,
         llm_key=payload.llmKey,
         tts_key=payload.ttsKey,
-        base_url=payload.baseUrl,
+        base_url=base_url,
         region=payload.region,
     )
     return session_public_view(session)
@@ -727,13 +777,18 @@ async def stream_session(
     def _bind_model_route() -> str | None:
         if bind_override is None or not bind_override.provider_id:
             return None
-        defaults = {
-            "minimax": "MiniMax-M3",
-            "stepfun": "step-2-16k",
-            "cliproxy": getattr(director.provider, "cli_proxy_default_model", "gemini-pro-agent"),
-        }
-        model = bind_override.model_id or defaults.get(bind_override.provider_id, "MiniMax-M3")
-        return f"{bind_override.provider_id}/{model}"
+        pid = bind_override.provider_id
+        preset = preset_by_id(pid)
+        fallback = (
+            (preset.get("defaultModel") if preset else None)
+            or {
+                "minimax": "MiniMax-M3",
+                "stepfun": "step-3.7-flash",
+                "cliproxy": getattr(director.provider, "cli_proxy_default_model", "gemini-pro-agent"),
+            }.get(pid, "step-3.7-flash")
+        )
+        model = bind_override.model_id or fallback
+        return f"{pid}/{model}"
 
     async def event_generator() -> AsyncGenerator[bytes, None]:
         prev_route = director.model_route
@@ -877,6 +932,76 @@ async def list_session_messages(
 
 
 # ---------------------------------------------------------------------------
+
+class PlotGraphResponse(BaseModel):
+    session_id: str
+    title: str
+    task_prompt: str = ""
+    era: str = ""
+    summary: dict = {}
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    mermaid: str = ""
+
+
+@router.get("/session/{session_id}/plot-graph", response_model=PlotGraphResponse)
+async def get_session_plot_graph(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return this session's personal plot graph (story net).
+
+    Built from outline spine + spoken co-presence + Continuity Board
+    facts/tensions/costs. Unique to what the player actually played.
+    """
+    from agents.plot_graph import build_plot_graph
+    from agents.continuity_board import (
+        BOARD_OWNER_ID,
+        BOARD_SUBJECT_ID,
+        board_from_json as parse_board,
+    )
+
+    sess_result = await db.execute(
+        select(SessionModel).where(SessionModel.id == session_id)
+    )
+    session = sess_result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    msg_result = await db.execute(
+        select(MessageModel)
+        .where(MessageModel.session_id == session_id)
+        .order_by(MessageModel.created_at.asc())
+        .limit(500)
+    )
+    messages = list(msg_result.scalars().all())
+
+    board = None
+    try:
+        dres = await db.execute(
+            select(CharacterDossier).where(
+                CharacterDossier.session_id == session_id,
+                CharacterDossier.owner_id == BOARD_OWNER_ID,
+                CharacterDossier.subject_id == BOARD_SUBJECT_ID,
+            )
+        )
+        drow = dres.scalar_one_or_none()
+        if drow is not None:
+            board = parse_board(drow.knowledge)
+    except Exception:
+        board = None
+
+    graph = build_plot_graph(
+        session_id=session_id,
+        title=session.title,
+        task_prompt=session.task_prompt,
+        outline=session.plot_outline,
+        messages=messages,
+        board=board,
+    )
+    return PlotGraphResponse(**graph)
+
+
 # Chat endpoint — Python backend replacement for the old Node.js /api/chat
 # ---------------------------------------------------------------------------
 
@@ -887,7 +1012,8 @@ class ChatRequest(BaseModel):
     mode: str = "direct"          # "direct" | "crew"
     history: list[dict] = []
     language: str = "en"
-    llmProvider: str = "stepfun"  # "minimax" | "stepfun" | "cliproxy"
+    llmProvider: str = "stepfun"  # catalog provider id (minimax/stepfun/deepseek/...)
+    modelId: str | None = None
     voiceExample: str | None = None
     connectionSessionId: str | None = None
 
@@ -962,6 +1088,10 @@ async def chat(
                     "history": payload.history,
                     "language": payload.language,
                     "llmProvider": llm_provider,
+                    "modelId": (
+                        (bind_override.model_id if bind_override and bind_override.model_id else None)
+                        or payload.modelId
+                    ),
                     "voiceExample": payload.voiceExample,
                 },
                 session_factory=async_session_factory,

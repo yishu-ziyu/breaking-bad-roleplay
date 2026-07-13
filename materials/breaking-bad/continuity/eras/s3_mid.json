@@ -1,0 +1,146 @@
+{
+  "era": "s3_mid",
+  "label": "Fly / Half Measures / Full Measures neighborhood",
+  "present_cast_default": [
+    "walter",
+    "jesse",
+    "mike",
+    "gus",
+    "saul",
+    "skyler"
+  ],
+  "shared_facts": [
+    {
+      "id": "s3_gus_roof",
+      "text": "The cook partnership operates under Gus Fring's organization and standards.",
+      "known_by": [
+        "walter",
+        "jesse",
+        "gus",
+        "mike",
+        "saul"
+      ],
+      "hidden_from": [
+        "skyler"
+      ],
+      "irreversible": false
+    },
+    {
+      "id": "s3_mike_discipline",
+      "text": "Mike enforces professional discipline for Gus; ego plans create future bodies.",
+      "known_by": [
+        "mike",
+        "gus",
+        "walter",
+        "jesse"
+      ],
+      "hidden_from": [
+        "skyler"
+      ],
+      "irreversible": false
+    },
+    {
+      "id": "s3_skyler_suspects",
+      "text": "Skyler knows the household story is incomplete and dangerous, without full operational map.",
+      "known_by": [
+        "skyler",
+        "walter"
+      ],
+      "hidden_from": [
+        "jesse",
+        "gus"
+      ],
+      "irreversible": false
+    },
+    {
+      "id": "s3_saul_transactional",
+      "text": "Saul is transactional counsel for legal heat and exits, not a partner in pride.",
+      "known_by": [
+        "saul",
+        "walter",
+        "jesse"
+      ],
+      "hidden_from": [
+        "gus"
+      ],
+      "irreversible": false
+    },
+    {
+      "id": "s3_walt_jesse_hierarchy",
+      "text": "Walt still talks to Jesse as teacher-over-student while using him as the hands that finish dirty work.",
+      "known_by": [
+        "walter",
+        "jesse",
+        "mike",
+        "gus"
+      ],
+      "hidden_from": [
+        "skyler"
+      ],
+      "irreversible": false
+    },
+    {
+      "id": "s3_jesse_trust_ledger",
+      "text": "Jesse's trust in Walt is already spent down: he still answers when called, but he flinches at being used again.",
+      "known_by": [
+        "jesse",
+        "walter",
+        "mike"
+      ],
+      "hidden_from": [
+        "skyler",
+        "gus"
+      ],
+      "irreversible": false
+    },
+    {
+      "id": "s3_pair_room_rule",
+      "text": "When Walt and Jesse share a room, the fight is usually control-ritual versus exhausted conscience, not logistics trivia.",
+      "known_by": [
+        "walter",
+        "jesse"
+      ],
+      "hidden_from": [
+        "skyler",
+        "saul"
+      ],
+      "irreversible": false
+    }
+  ],
+  "open_tensions": [
+    {
+      "id": "s3_ten_half_vs_full",
+      "text": "Mike's half-measures warning collides with Walt's need to finish threats on his terms.",
+      "parties": [
+        "mike",
+        "walter"
+      ]
+    },
+    {
+      "id": "s3_ten_jesse_used",
+      "text": "Jesse's loyalty is being spent as a resource; he wants out of the next violence cycle.",
+      "parties": [
+        "jesse",
+        "walter",
+        "gus"
+      ]
+    },
+    {
+      "id": "s3_ten_standards",
+      "text": "Gus demands invisible order; Walt's volatility makes standards feel personal.",
+      "parties": [
+        "gus",
+        "walter"
+      ]
+    },
+    {
+      "id": "s3_ten_approval_vs_use",
+      "text": "Jesse still wants Walt's approval; Walt still treats approval as a leash. That collision is the scene engine.",
+      "parties": [
+        "walter",
+        "jesse"
+      ]
+    }
+  ],
+  "irreversible_costs": []
+}
