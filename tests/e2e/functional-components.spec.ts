@@ -232,7 +232,8 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
     abq_language: JSON.stringify('en'),
   })
   await expect.poll(() => messagesRouteHits).toBeGreaterThanOrEqual(2)
-  await expect(page.locator('.story-event--agent_speak p', { hasText: 'Restored line.' })).toBeVisible()
+  await expect(page.locator('.story-scene-card__quote', { hasText: 'Restored line.' })).toBeVisible()
+  await expect(page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'Restored line.' })).toBeVisible()
   await expect(page.locator('.beat-controls')).toBeVisible()
 
   await page.locator('.beat-controls button', { hasText: /Continue/ }).click()
@@ -251,5 +252,6 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
-  await expect(page.locator('.story-event--agent_speak p', { hasText: 'back online' })).toBeVisible()
+  await expect(page.locator('.story-scene-card__quote', { hasText: 'back online' })).toBeVisible()
+  await expect(page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'back online' })).toBeVisible()
 })
