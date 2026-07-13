@@ -28,6 +28,7 @@ export type VaultActive = {
   providerId: ProviderId
   modelId: string
   region?: MiniMaxRegion
+  baseUrl?: string
 }
 
 export type VaultBlob = {
@@ -39,7 +40,10 @@ export type VaultBlob = {
 
 export type CatalogResponse = {
   providers: unknown[]
-  platform: Record<ProviderId, boolean>
+  platform: Partial<Record<ProviderId, boolean>> & {
+    minimax?: boolean
+    stepfun?: boolean
+  }
   defaults: { providerId: ProviderId; modelId: string }
 }
 

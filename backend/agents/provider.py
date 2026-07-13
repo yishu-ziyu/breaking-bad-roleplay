@@ -2,6 +2,7 @@ import httpx
 from dataclasses import dataclass
 from pathlib import Path
 from agents.credential_context import get_credential_override
+from agents.byok_presets import preset_by_id
 from agents.tools import (
     Tool,
     ToolCall,
@@ -90,6 +91,43 @@ class ProviderFacade:
             return MINIMAX_HOST_GLOBAL
         return MINIMAX_HOST_CN
 
+    def effective_byok_key(self, provider_id: str) -> str:
+        """Key for a BYOK preset (or matching override)."""
+        ov = get_credential_override()
+        if ov and ov.llm_key and (
+            ov.provider_id == provider_id
+            or (not ov.provider_id and provider_id in ("minimax", "stepfun"))
+        ):
+            return ov.llm_key
+        # Platform env fallback only for the two demo providers.
+        if provider_id == "minimax":
+            return self.minimax_key
+        if provider_id == "stepfun":
+            return self.stepfun_key
+        return ""
+
+    def effective_byok_base_url(self, provider_id: str) -> str:
+        """Resolve OpenAI/Anthropic base URL for a provider preset."""
+        ov = get_credential_override()
+        if ov and ov.provider_id == provider_id and ov.base_url:
+            return ov.base_url.rstrip("/")
+        preset = preset_by_id(provider_id)
+        if preset and preset.get("defaultBaseUrl"):
+            return str(preset["defaultBaseUrl"]).rstrip("/")
+        if provider_id == "stepfun":
+            return f"{STEPFUN_HOST}/v1"
+        if provider_id == "minimax":
+            return f"{self.effective_minimax_host()}/anthropic/v1"
+        return ""
+
+    def _byok_kind(self, provider_id: str) -> str:
+        preset = preset_by_id(provider_id)
+        if preset and preset.get("kind"):
+            return str(preset["kind"])
+        if provider_id == "minimax":
+            return "anthropic"
+        return "openai"
+
     def _load_cli_proxy_api_key(self) -> str:
         config_path = Path.home() / ".cli-proxy-api" / "config.yaml"
         if not config_path.exists():
@@ -145,7 +183,13 @@ class ProviderFacade:
                 return await self._call_minimax(messages, "MiniMax-M3", max_tokens)
         if provider == "cliproxy":
             return await self._call_cli_proxy(messages, model, max_tokens)
-        raise ValueError(f"Unknown provider '{provider}'. Use 'minimax', 'stepfun', or 'cliproxy'.")
+        # Generic BYOK presets (OpenAI-compatible or Anthropic-compatible).
+        if preset_by_id(provider):
+            return await self._call_byok(messages, provider, model, max_tokens)
+        raise ValueError(
+            f"Unknown provider '{provider}'. Use a catalog preset id "
+            "(minimax, stepfun, deepseek, openai, ...)."
+        )
 
     async def _call_minimax(
         self, messages: list[dict], model: str, max_tokens: int
@@ -265,16 +309,181 @@ class ProviderFacade:
     # ------------------------------------------------------------------
 
 
+
+    async def _call_byok(
+        self, messages: list[dict], provider_id: str, model: str, max_tokens: int
+    ) -> str:
+        kind = self._byok_kind(provider_id)
+        if kind == "anthropic":
+            return await self._call_openai_or_anthropic_byok(
+                messages, provider_id, model, max_tokens, kind="anthropic"
+            )
+        return await self._call_openai_or_anthropic_byok(
+            messages, provider_id, model, max_tokens, kind="openai"
+        )
+
+    async def _call_openai_or_anthropic_byok(
+        self,
+        messages: list[dict],
+        provider_id: str,
+        model: str,
+        max_tokens: int,
+        *,
+        kind: str,
+    ) -> str:
+        key = self.effective_byok_key(provider_id)
+        if not key:
+            raise RuntimeError(f"{provider_id} API key is not configured")
+        base = self.effective_byok_base_url(provider_id)
+        if not base:
+            raise RuntimeError(f"{provider_id} base URL is not configured")
+
+        if kind == "anthropic":
+            # base should already include /v1 (or vendor anthropic path)
+            url = f"{base}/messages" if not base.endswith("/messages") else base
+            # If base is .../v1, append /messages; if already ends with anthropic/v1, same.
+            if not url.endswith("/messages"):
+                url = f"{base.rstrip('/')}/messages"
+            resp = await self._client.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "anthropic-version": "2023-06-01",
+                    "x-api-key": key,
+                },
+                json={
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "messages": messages,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if "error" in data:
+                error = data["error"]
+                error_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+                raise RuntimeError(f"{provider_id} API error: {error_msg}")
+            content_blocks = data.get("content", [])
+            content = "".join(
+                block.get("text", "")
+                for block in content_blocks
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+            if not content:
+                raise RuntimeError(f"{provider_id} API returned empty content: {data}")
+            return content
+
+        # OpenAI-compatible
+        url = f"{base}/chat/completions" if not base.endswith("/chat/completions") else base
+        if not url.endswith("/chat/completions"):
+            url = f"{base.rstrip('/')}/chat/completions"
+        resp = await self._client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            error = data["error"]
+            error_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+            raise RuntimeError(f"{provider_id} API error: {error_msg}")
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"{provider_id} API returned no choices: {data}")
+        content = choices[0].get("message", {}).get("content", "") or ""
+        if not content:
+            raise RuntimeError(f"{provider_id} API returned empty content: {data}")
+        return content
+
+    async def _call_byok_with_tools(
+        self,
+        messages: list[dict],
+        provider_id: str,
+        model: str,
+        tools: list[Tool],
+        tool_choice: str,
+        max_tokens: int,
+    ) -> "ModelResult":
+        kind = self._byok_kind(provider_id)
+        key = self.effective_byok_key(provider_id)
+        if not key:
+            raise RuntimeError(f"{provider_id} API key is not configured")
+        base = self.effective_byok_base_url(provider_id)
+        if not base:
+            raise RuntimeError(f"{provider_id} base URL is not configured")
+
+        if kind == "anthropic":
+            url = f"{base.rstrip('/')}/messages"
+            resp = await self._client.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "anthropic-version": "2023-06-01",
+                    "x-api-key": key,
+                },
+                json={
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    **({"tools": translate_tools_to_anthropic(tools)} if tools else {}),
+                    "messages": messages,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if "error" in data:
+                error = data["error"]
+                error_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+                raise RuntimeError(f"{provider_id} API error: {error_msg}")
+            return _model_result_from_anthropic(data)
+
+        url = f"{base.rstrip('/')}/chat/completions"
+        resp = await self._client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                **(
+                    {
+                        "tools": translate_tools_to_openai(tools),
+                        "tool_choice": tool_choice,
+                    }
+                    if tools
+                    else {}
+                ),
+                "messages": messages,
+                "max_tokens": max_tokens,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            error = data["error"]
+            error_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+            raise RuntimeError(f"{provider_id} API error: {error_msg}")
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"{provider_id} API returned no choices: {data}")
+        message = choices[0].get("message", {}) or {}
+        return _model_result_from_openai(message)
+
     def resolve_model_route(
         self,
         scene_context: str,
         characters: list[str],
     ) -> str:
-        """
-        Chat defaults to CLIProxy for local development. The frontend can
-        still override the provider prefix for Direct/Crew chat.
-        """
-        return f"cliproxy/{self.cli_proxy_default_model}"
+        """Default public route: StepFun 3.7 Flash. Frontend may override."""
+        return "stepfun/step-3.7-flash"
 
     # ------------------------------------------------------------------
     # Native function-calling support (DEC-0001 / ARCH-DESIGN-function-calling)
@@ -312,7 +521,14 @@ class ProviderFacade:
                 return await self._call_minimax_with_tools(messages, "MiniMax-M3", tools, max_tokens)
         if provider == "cliproxy":
             return await self._call_cli_proxy_with_tools(messages, model, tools, max_tokens)
-        raise ValueError(f"Unknown provider '{provider}'. Use 'minimax', 'stepfun', or 'cliproxy'.")
+        if preset_by_id(provider):
+            return await self._call_byok_with_tools(
+                messages, provider, model, tools, tool_choice, max_tokens
+            )
+        raise ValueError(
+            f"Unknown provider '{provider}'. Use a catalog preset id "
+            "(minimax, stepfun, deepseek, openai, ...)."
+        )
 
     async def _call_minimax_with_tools(
         self, messages: list[dict], model: str, tools: list[Tool], max_tokens: int

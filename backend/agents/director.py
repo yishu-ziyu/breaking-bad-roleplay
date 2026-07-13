@@ -19,7 +19,7 @@ from agents.memory import update_dossiers
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
-DEFAULT_DIRECTOR_MODEL_ROUTE = "stepfun/step-2-16k"
+DEFAULT_DIRECTOR_MODEL_ROUTE = "stepfun/step-3.7-flash"
 MAX_AGENT_SPEAK_PER_BEAT = 2
 LANG_DIRECTIVE = {
     "en": (
@@ -162,7 +162,7 @@ BEAT PLANNING
 1. Decide which characters are present and what each one does.
 2. Decide if the location changes (emit a scene_change event).
 3. Decide what emotional beat this moment carries.
-4. Choose the model for this scene (always "stepfun/step-2-16k").
+4. Choose the model for this scene (always "stepfun/step-3.7-flash").
 THINKING
 - Have characters think before they act — emit agent_think events to reveal
   their inner conflict and motivation.  Breaking Bad tension lives in what
@@ -189,14 +189,14 @@ has a "type" field and a "data" field matching one of these shapes:
 NOTE: This JSON event format is for BEAT events only. When asked for an outline
 (overall plot structure), output a plain text numbered list instead.
 IMPORTANT: Every beat event object MUST include a "recommended_model" field
-set to "stepfun/step-2-16k".
+set to "stepfun/step-3.7-flash".
 Example output:
 [
-  { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "stepfun/step-2-16k" },
-  { "type": "agent_act", "data": { "character_id": "Walter White", "action": "sits down at the table", "target": null }, "recommended_model": "stepfun/step-2-16k" },
-  { "type": "agent_think", "data": { "character_id": "Walter White", "thought_content": "If Skyler finds out about the lab, I lose everything." }, "recommended_model": "stepfun/step-2-16k" },
-  { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "stepfun/step-2-16k" },
-  { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "stepfun/step-2-16k" }
+  { "type": "scene_change", "data": { "from_scene": "RV in the desert", "to_scene": "White family kitchen", "description": "Cut from the cook to Walt at home" }, "recommended_model": "stepfun/step-3.7-flash" },
+  { "type": "agent_act", "data": { "character_id": "Walter White", "action": "sits down at the table", "target": null }, "recommended_model": "stepfun/step-3.7-flash" },
+  { "type": "agent_think", "data": { "character_id": "Walter White", "thought_content": "If Skyler finds out about the lab, I lose everything." }, "recommended_model": "stepfun/step-3.7-flash" },
+  { "type": "agent_speak", "data": { "character_id": "Walter White", "content": "I need to tell you something.", "emotion_state": "tense", "gif_search_query": "walter white nervous serious" }, "recommended_model": "stepfun/step-3.7-flash" },
+  { "type": "world_state_delta", "data": { "deltas": [ { "target": "Walter White", "field": "emotional_state", "old_value": "composed", "new_value": "anxious" } ] }, "recommended_model": "stepfun/step-3.7-flash" }
 ]
 RULES:
 - Always emit at least one agent_think or agent_speak per character per beat.
@@ -206,7 +206,7 @@ RULES:
 - world_state_delta must always appear as the last event in a beat.
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
   "Saul Goodman", "Mike Ehrmantraut", or "Gus Fring" — no variations.
-- recommended_model must be "stepfun/step-2-16k" on every event.
+- recommended_model must be "stepfun/step-3.7-flash" on every event.
 """
 # ---------------------------------------------------------------------------
 # Director agent
@@ -694,6 +694,48 @@ class DirectorAgent:
             logger.exception("Outline generation LLM call failed")
             return None
     @staticmethod
+    def _route_for_provider(
+        self,
+        provider_id: str | None,
+        model_id: str | None = None,
+        *,
+        fallback: str | None = None,
+    ) -> str:
+        """Map UI/BYOK provider id to provider/model route."""
+        from agents.byok_presets import preset_by_id
+        from agents.credential_context import get_credential_override
+
+        pid = (provider_id or "").strip().lower()
+        ov = get_credential_override()
+        if ov and ov.provider_id:
+            pid = ov.provider_id.strip().lower() or pid
+            model_id = model_id or ov.model_id
+
+        if not pid:
+            return fallback or "stepfun/step-3.7-flash"
+
+        if pid == "cliproxy":
+            model = model_id or getattr(
+                self.provider, "cli_proxy_default_model", "gemini-pro-agent"
+            )
+            return f"cliproxy/{model}"
+
+        preset = preset_by_id(pid)
+        default_model = (
+            (preset.get("defaultModel") if preset else None)
+            or {
+                "minimax": "MiniMax-M3",
+                "stepfun": "step-3.7-flash",
+            }.get(pid)
+            or "step-3.7-flash"
+        )
+        model = (model_id or "").strip() or default_model
+        # If unknown provider and no preset, keep fallback when possible.
+        if preset is None and pid not in ("minimax", "stepfun", "cliproxy"):
+            return fallback or f"{pid}/{model}"
+        return f"{pid}/{model}"
+
+
     def _extract_text_from_json_outline(raw: str) -> str:
         """Extract readable scene descriptions from a JSON array the LLM
         returned despite the plain-text instruction (B1 fallback)."""
@@ -1023,11 +1065,37 @@ class DirectorAgent:
                 scene_context=scene_desc,
                 characters=characters_in_scene,
             )
-        # Process each event — substitute real character responses for agent_speak
+        # Process each event - substitute real character responses for agent_speak
         beat_events_for_dossier: list[dict[str, Any]] = []
         # agent_speak event payloads collected during the loop; persisted
         # after the loop in a single short-lived DB session (Cycle 45 / H1).
         speak_events_to_persist: list[dict[str, Any]] = []
+        # Continuity Board: shared room memory so later speakers continue
+        # from what already happened, and only receive facts they would know.
+        from agents.continuity_board import (
+            apply_delta_facts,
+            filter_board_for_character,
+            format_board_prompt,
+            load_or_init_session_board,
+            save_session_board,
+            set_location,
+        )
+        continuity_board: dict[str, Any] | None = None
+        try:
+            continuity_board = await load_or_init_session_board(
+                session_factory,
+                session_id or "",
+                location=current_scene or scene_desc or "",
+            )
+            if current_scene or scene_desc:
+                continuity_board = set_location(
+                    continuity_board, current_scene or scene_desc or ""
+                )
+        except Exception:
+            logger.debug("Continuity board load failed for beat %s", beat_index + 1)
+            continuity_board = None
+        # Prior spoken lines in this beat (later speakers hear earlier ones).
+        prior_spoken_lines: list[dict[str, str]] = []
         for evt in events:
             evt_type = evt.get("type", "")
             evt_data = evt.get("data", {})
@@ -1037,7 +1105,7 @@ class DirectorAgent:
                 # sub-agent returns emotion_state and gif_search_query
                 # alongside the rewritten content from the SAME LLM call
                 # (no extra token cost). This keeps the three fields in
-                # sync — the UI shows emotion and GIF that match the final
+                # sync - the UI shows emotion and GIF that match the final
                 # displayed text, not the Director's original draft. If
                 # the sub-agent response lacks structured metadata (plain
                 # text fallback), keep the Director-provided values.
@@ -1062,17 +1130,54 @@ class DirectorAgent:
                                 )
                         except Exception:
                             logger.debug("Dossier load failed for %s", character_id)
+                    # Inject filtered Continuity Board slice (room memory).
+                    if continuity_board is not None:
+                        try:
+                            board_view = filter_board_for_character(
+                                continuity_board, character_id
+                            )
+                            board_block = format_board_prompt(
+                                board_view, character_id=character_id
+                            )
+                            dossier_context = (
+                                f"{dossier_context}\n\n{board_block}".strip()
+                                if dossier_context
+                                else board_block
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Continuity board inject failed for %s", character_id
+                            )
+                    # Later speakers hear previous spoken lines this beat.
+                    peer_context: list[dict[str, str]] = []
+                    for prior in prior_spoken_lines:
+                        peer_context.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"[Already said in this scene by "
+                                    f"{prior['character_id']}]: {prior['content']}"
+                                ),
+                            }
+                        )
                     try:
                         speak_lang_note = (
                             "台词 content 必须用简体中文。不要用英文对白。"
                             if _norm_lang(language) == "zh"
                             else "Dialogue content must be English."
                         )
+                        prior_note = ""
+                        if prior_spoken_lines:
+                            prior_note = (
+                                "Earlier lines in this beat already happened; "
+                                "continue from them, do not restart the scene.\n"
+                            )
                         sub_result = await character_agent.respond_structured(
-                            context=[],
+                            context=peer_context,
                             user_message=(
                                 f"{_language_directive(language)}\n\n"
                                 f"{speak_lang_note}\n"
+                                f"{prior_note}"
                                 f"Scene: {scene_desc}\nContext: {task}\n"
                                 "Respond in character."
                             ),
@@ -1112,6 +1217,14 @@ class DirectorAgent:
             # dialogue and are intentionally not persisted here.
             if evt_type == "agent_speak":
                 speak_events_to_persist.append(evt_data)
+                content = str(evt_data.get("content") or "").strip()
+                if content:
+                    prior_spoken_lines.append(
+                        {
+                            "character_id": str(evt_data.get("character_id") or ""),
+                            "content": content,
+                        }
+                    )
             beat_events_for_dossier.append(evt)
         # Persist agent_speak Messages + update dossiers. All writes share
         # ONE session because:
@@ -1160,6 +1273,44 @@ class DirectorAgent:
                 yield AgentEvent(
                     type="world_state_delta",
                     data={"deltas": deltas, "model_route": beat_model_route},
+                )
+        # Append beat deltas onto Continuity Board and persist (memory, not judgment).
+        if continuity_board is not None:
+            try:
+                delta_payload: list[dict[str, Any]] = []
+                for raw_evt in events:
+                    if raw_evt.get("type") != "world_state_delta":
+                        continue
+                    raw_deltas = (raw_evt.get("data") or {}).get("deltas") or []
+                    if isinstance(raw_deltas, list):
+                        delta_payload.extend(
+                            d for d in raw_deltas if isinstance(d, dict)
+                        )
+                if deltas:
+                    delta_payload.extend(d for d in deltas if isinstance(d, dict))
+                speakers = [
+                    str(s.get("character_id") or "")
+                    for s in speak_events_to_persist
+                    if s.get("character_id")
+                ]
+                known_by = speakers or list(continuity_board.get("present_cast") or [])
+                if delta_payload:
+                    continuity_board = apply_delta_facts(
+                        continuity_board,
+                        deltas=delta_payload,
+                        known_by=known_by,
+                        beat_index=beat_index,
+                    )
+                if current_scene or scene_desc:
+                    continuity_board = set_location(
+                        continuity_board, current_scene or scene_desc or ""
+                    )
+                await save_session_board(
+                    session_factory, session_id or "", continuity_board
+                )
+            except Exception:
+                logger.debug(
+                    "Continuity board save failed for beat %s", beat_index + 1
                 )
         # Signal beat completion
         yield self._beat_ready_event(beat_index, scene_desc)
@@ -1505,13 +1656,12 @@ class DirectorAgent:
             scene_context=scene_context,
             characters=list(CHARACTER_AGENTS.keys()),
         )
-        # Override provider prefix from frontend selection
-        if llm_provider == "minimax":
-            model_route = "minimax/MiniMax-M3"
-        elif llm_provider == "stepfun":
-            model_route = "stepfun/step-3.7-flash"
-        else:
-            model_route = f"cliproxy/{self.provider.cli_proxy_default_model}"
+        # Override from frontend / BYOK selection (any catalog provider).
+        model_route = self._route_for_provider(
+            llm_provider,
+            context.get("modelId"),
+            fallback=model_route,
+        )
         # Build context messages from history
         history: list[dict] = context.get("history", [])
         ctx_messages: list[dict] = []
@@ -1580,9 +1730,7 @@ class DirectorAgent:
     ) -> dict[str, Any]:
         """Crew mode: generate a multi-character debate turn."""
         llm_provider: str = context.get("llmProvider", "stepfun")
-        provider_prefix = "minimax" if llm_provider == "minimax" else (
-            "stepfun" if llm_provider == "stepfun" else "cliproxy"
-        )
+        provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
         # Determine participants — start with the active character, then add
         # characters that are contextually relevant.
         backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
@@ -1629,24 +1777,56 @@ class DirectorAgent:
             f"Emit the JSON array as specified."
         )
         # Inject per-character voice guides so each character in the crew
-        # retains their distinct voice (Loop 7 fix).
+        # retains their distinct voice (Loop 7 fix). Also attach a Continuity
+        # Board slice per speaker so each mouth only "knows" its known_by facts.
+        from agents.continuity_board import (
+            filter_board_for_character,
+            format_board_prompt,
+            load_or_init_session_board,
+        )
+        crew_session_id = str(context.get("sessionId") or context.get("session_id") or "")
+        try:
+            continuity_board = await load_or_init_session_board(
+                session_factory,
+                crew_session_id,
+            )
+        except Exception:
+            logger.debug("Crew continuity board load failed")
+            continuity_board = None
         character_voice_guides: list[str] = []
         for backend_name in participants_backend:
             char_cls = CHARACTER_AGENTS.get(backend_name)
             if char_cls is not None:
                 try:
                     char_agent = char_cls(self.provider)
-                    character_voice_guides.append(
+                    block = (
                         f"CHARACTER VOICE: {backend_name}\n"
                         f"{char_agent.system_prompt()}"
                     )
+                    if continuity_board is not None:
+                        try:
+                            view = filter_board_for_character(
+                                continuity_board, backend_name
+                            )
+                            board_block = format_board_prompt(
+                                view, character_id=backend_name
+                            )
+                            block = f"{block}\n\n{board_block}"
+                        except Exception:
+                            logger.debug(
+                                "Crew board inject failed for %s", backend_name
+                            )
+                    character_voice_guides.append(block)
                 except Exception:
                     logger.debug("Failed to load system prompt for %s", backend_name)
         voice_guide_block = ""
         if character_voice_guides:
             voice_guide_block = (
-                "\n\nCHARACTER VOICE GUIDES — follow each character's voice "
-                "exactly when writing their dialogue:\n\n"
+                "\n\nCHARACTER VOICE GUIDES - follow each character's voice "
+                "exactly when writing their dialogue.\n"
+                "KNOWLEDGE RIGHTS: when writing a character's line, use ONLY the "
+                "CONTINUITY BOARD facts listed under that character. Do not let "
+                "one character speak another character's private board facts.\n\n"
                 + "\n\n---\n\n".join(character_voice_guides)
             )
         system_content = CREW_CHAT_SYSTEM_PROMPT + voice_guide_block
@@ -1660,15 +1840,11 @@ class DirectorAgent:
             scene_context=primary_context,
             characters=participants_backend,
         )
-        if provider_prefix == "cliproxy":
-            model_route = f"cliproxy/{self.provider.cli_proxy_default_model}"
-        elif provider_prefix == "stepfun":
-            model_route = "stepfun/step-3.7-flash"
-        elif provider_prefix == "minimax":
-            model_route = "minimax/MiniMax-M3"
-        else:
-            _, model_name = model_route.split("/", 1)
-            model_route = f"{provider_prefix}/{model_name}"
+        model_route = self._route_for_provider(
+            provider_prefix,
+            context.get("modelId"),
+            fallback=model_route,
+        )
         try:
             raw = await self.provider.call_model(messages, model_route)
         except Exception as exc:

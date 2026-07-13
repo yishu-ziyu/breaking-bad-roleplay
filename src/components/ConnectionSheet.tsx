@@ -1,11 +1,18 @@
 /* =================================================================
-   Connection sheet — BYOK branding UI
+   Connection sheet — BYOK branding UI (platform + multi-preset keys)
    ================================================================= */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { UseConnectionReturn } from '../hooks/useConnection'
 import type { MiniMaxRegion, ProviderId } from '../lib/providerBrands'
-import { getProviderBrand, llmSlotFor, ttsSlotFor } from '../lib/providerBrands'
+import {
+  baseUrlSlotFor,
+  brandsForMode,
+  getProviderBrand,
+  groupBrands,
+  llmSlotFor,
+  ttsSlotFor,
+} from '../lib/providerBrands'
 
 type Lang = 'zh' | 'en'
 
@@ -16,7 +23,7 @@ const copy = {
     modeByok: 'My keys',
     fieldLlm: 'Chat API key',
     fieldTts: 'Speech API key',
-    fieldBase: 'Local base URL',
+    fieldBase: 'API base URL',
     fieldRegion: 'Region',
     regionCn: 'China',
     regionGlobal: 'Global',
@@ -29,6 +36,8 @@ const copy = {
     close: 'Close',
     status: 'Status',
     placeholderKey: 'Paste key…',
+    placeholderBase: 'https://api.example.com/v1',
+    platformOnly: 'Platform demo only offers MiniMax and StepFun.',
   },
   zh: {
     title: '模型线路',
@@ -36,7 +45,7 @@ const copy = {
     modeByok: '我的密钥',
     fieldLlm: '对话密钥',
     fieldTts: '语音密钥',
-    fieldBase: '本地地址',
+    fieldBase: '接口地址',
     fieldRegion: '区域',
     regionCn: '国内站',
     regionGlobal: '国际站',
@@ -49,6 +58,8 @@ const copy = {
     close: '关闭',
     status: '状态',
     placeholderKey: '粘贴密钥…',
+    placeholderBase: 'https://api.example.com/v1',
+    platformOnly: '平台演示只提供 MiniMax 和 StepFun。',
   },
 } as const
 
@@ -67,13 +78,13 @@ type Props = {
 }
 
 export function ConnectionSheet({ conn, language }: Props) {
-  // Remount form when the sheet opens so vault → form is initial state, not an effect sync.
   if (!conn.sheetOpen) return null
   const formKey = [
     conn.view.providerId,
     conn.view.mode,
     conn.view.modelId,
     conn.view.region,
+    conn.view.baseUrl,
     conn.connectionSessionId ?? 'none',
   ].join('|')
   return <ConnectionSheetForm key={formKey} conn={conn} language={language} />
@@ -81,32 +92,68 @@ export function ConnectionSheet({ conn, language }: Props) {
 
 function ConnectionSheetForm({ conn, language }: Props) {
   const t = copy[language]
-  const { vault, view, brands, busy, message, setActive, testAndSave, ensureBound, clearProviderKeys, setSheetOpen } = conn
-  const initialBrand = getProviderBrand(view.providerId)
-  const [providerId, setProviderId] = useState<ProviderId>(view.providerId)
+  const {
+    vault,
+    view,
+    busy,
+    message,
+    setActive,
+    testAndSave,
+    ensureBound,
+    clearProviderKeys,
+    setSheetOpen,
+  } = conn
   const [mode, setMode] = useState(view.mode)
+  const [providerId, setProviderId] = useState<ProviderId>(
+    mode === 'platform' && view.providerId !== 'minimax' && view.providerId !== 'stepfun'
+      ? 'stepfun'
+      : view.providerId,
+  )
   const [llmKey, setLlmKey] = useState('')
   const [ttsKey, setTtsKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState(
-    () => vault?.slots['cliproxy.baseUrl'] || initialBrand.defaultBaseUrl || '',
-  )
+  const [baseUrl, setBaseUrl] = useState(view.baseUrl || '')
   const [region, setRegion] = useState<MiniMaxRegion>(view.region)
   const [modelId, setModelId] = useState(view.modelId)
 
+  const brands = useMemo(() => brandsForMode(mode), [mode])
+  const groups = useMemo(() => groupBrands(brands), [brands])
   const brand = getProviderBrand(providerId)
 
   const hintLlm = vault?.meta[llmSlotFor(providerId)]?.hint
   const hintTts = ttsSlotFor(providerId) ? vault?.meta[ttsSlotFor(providerId)!]?.hint : undefined
+  const hintBase = baseUrlSlotFor(providerId)
+    ? vault?.meta[baseUrlSlotFor(providerId)!]?.hint
+    : undefined
 
   const onSelectProvider = async (id: ProviderId) => {
     setProviderId(id)
     const b = getProviderBrand(id)
     setModelId(b.defaultModel)
+    setBaseUrl(b.defaultBaseUrl || '')
     await setActive({
       providerId: id,
       modelId: b.defaultModel,
       region: b.defaultRegion || undefined,
+      baseUrl: b.defaultBaseUrl,
     })
+  }
+
+  const onModeChange = async (next: 'platform' | 'byok') => {
+    setMode(next)
+    if (next === 'platform') {
+      const safeId: ProviderId =
+        providerId === 'minimax' || providerId === 'stepfun' ? providerId : 'stepfun'
+      const b = getProviderBrand(safeId)
+      setProviderId(safeId)
+      setModelId(b.defaultModel)
+      await setActive({
+        mode: 'platform',
+        providerId: safeId,
+        modelId: b.defaultModel,
+      })
+    } else {
+      await setActive({ mode: 'byok' })
+    }
   }
 
   const onSaveBind = async () => {
@@ -115,6 +162,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
       providerId,
       modelId,
       region: providerId === 'minimax' ? region : undefined,
+      baseUrl: brand.needsBaseUrl || baseUrl ? baseUrl : brand.defaultBaseUrl,
     })
     if (mode === 'byok') {
       if (llmKey.trim()) {
@@ -122,7 +170,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
           providerId,
           purpose: 'llm',
           apiKey: llmKey,
-          baseUrl: providerId === 'cliproxy' ? baseUrl : undefined,
+          baseUrl: baseUrl || brand.defaultBaseUrl,
           region: providerId === 'minimax' ? region : undefined,
           modelId,
         })
@@ -133,14 +181,6 @@ function ConnectionSheetForm({ conn, language }: Props) {
           purpose: 'tts',
           apiKey: ttsKey,
           region,
-        })
-      }
-      if (providerId === 'cliproxy' && baseUrl.trim() && !llmKey.trim()) {
-        await testAndSave({
-          providerId,
-          purpose: 'llm',
-          baseUrl,
-          modelId,
         })
       }
       await ensureBound()
@@ -164,33 +204,42 @@ function ConnectionSheetForm({ conn, language }: Props) {
           <button
             type="button"
             className={mode === 'platform' ? 'is-active' : ''}
-            onClick={() => setMode('platform')}
+            onClick={() => onModeChange('platform')}
           >
             {t.modePlatform}
           </button>
           <button
             type="button"
             className={mode === 'byok' ? 'is-active' : ''}
-            onClick={() => setMode('byok')}
+            onClick={() => onModeChange('byok')}
           >
             {t.modeByok}
           </button>
         </div>
 
-        <div className="connection-sheet__brands">
-          {brands.map(b => (
-            <button
-              key={b.id}
-              type="button"
-              className={`connection-brand${providerId === b.id ? ' is-active' : ''}`}
-              onClick={() => onSelectProvider(b.id)}
-            >
-              <strong>{b.displayName}</strong>
-              <span>{b.productLine}</span>
-              {view.platform[b.id] && mode === 'platform' && (
-                <em className="connection-brand__plat">demo</em>
+        <div className="connection-sheet__groups">
+          {groups.map(g => (
+            <div key={g.group} className="connection-sheet__group">
+              {mode === 'byok' && (
+                <p className="connection-sheet__group-label">{g.groupLabel}</p>
               )}
-            </button>
+              <div className="connection-sheet__brands">
+                {g.brands.map(b => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={`connection-brand${providerId === b.id ? ' is-active' : ''}`}
+                    onClick={() => onSelectProvider(b.id)}
+                  >
+                    <strong>{b.displayName}</strong>
+                    <span>{b.productLine}</span>
+                    {b.platformDemo && mode === 'platform' && view.platform[b.id as 'minimax' | 'stepfun'] && (
+                      <em className="connection-brand__plat">demo</em>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
 
@@ -220,6 +269,23 @@ function ConnectionSheetForm({ conn, language }: Props) {
                   <option value="cn">{t.regionCn}</option>
                   <option value="global">{t.regionGlobal}</option>
                 </select>
+              </label>
+            )}
+
+            {(brand.needsBaseUrl || providerId === 'custom') && (
+              <label>
+                <span>
+                  {t.fieldBase}
+                  {hintBase ? ` (${hintBase})` : ''}
+                </span>
+                <input
+                  type="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={t.placeholderBase}
+                  value={baseUrl}
+                  onChange={e => setBaseUrl(e.target.value)}
+                />
               </label>
             )}
 
@@ -257,20 +323,6 @@ function ConnectionSheetForm({ conn, language }: Props) {
               </label>
             )}
 
-            {brand.needsBaseUrl && (
-              <label>
-                <span>{t.fieldBase}</span>
-                <input
-                  type="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={brand.defaultBaseUrl || 'http://127.0.0.1:8317'}
-                  value={baseUrl}
-                  onChange={e => setBaseUrl(e.target.value)}
-                />
-              </label>
-            )}
-
             {brand.consoleUrl && (
               <a className="connection-sheet__docs" href={brand.consoleUrl} target="_blank" rel="noreferrer">
                 {t.getKey} ↗
@@ -282,8 +334,8 @@ function ConnectionSheetForm({ conn, language }: Props) {
         {mode === 'platform' && (
           <p className="connection-sheet__platform-note">
             {language === 'zh'
-              ? '使用部署环境中的演示密钥。适合路演；个人用量请切换「我的密钥」。'
-              : 'Uses server-side demo keys. Switch to My keys for personal usage.'}
+              ? `${t.platformOnly} 适合路演；个人用量请切换「我的密钥」。`
+              : `${t.platformOnly} Switch to My keys for personal usage.`}
           </p>
         )}
 
