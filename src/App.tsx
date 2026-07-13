@@ -17,6 +17,8 @@ import { loadStoredPrivacyKey, PRIVACY_KEY_UPDATED_EVENT } from './lib/privacyVa
 import { AuthSection } from './components/AuthSection'
 import { GifCard } from './components/GifCard'
 import { VoicePlayer } from './components/VoicePlayer'
+import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
+import { useConnection } from './hooks/useConnection'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { resolveGifUrl } from './lib/gifResolver'
 import './App.css'
@@ -65,15 +67,15 @@ function getStoryEventGif(evt: StoryEvent): string | null {
   return resolved
 }
 
-function getEventTitle(evt: StoryEvent, lang: Language): string {
-  const charId = (evt.data.character_id as string) ?? ''
+/** Type chip only (说 / 内心 / 行动 / …) — no character name. */
+function getEventTypeChip(evt: StoryEvent, lang: Language): string {
   const t = uiText[lang]
   switch (evt.type) {
     case 'outline': return t.eventOutline
     case 'scene_change': return t.eventSceneChange
-    case 'agent_speak': return `${charId} ${t.eventSpeaks}`
-    case 'agent_think': return `${charId} ${t.eventThinks}`
-    case 'agent_act': return `${charId} ${t.eventActs}`
+    case 'agent_speak': return t.eventSpeaks
+    case 'agent_think': return t.eventThinks
+    case 'agent_act': return t.eventActs
     case 'beat_ready': return t.eventBeatReady
     case 'world_state_delta': return t.eventWorldDelta
     case 'status': return t.eventStatus
@@ -81,6 +83,16 @@ function getEventTitle(evt: StoryEvent, lang: Language): string {
     case 'error': return t.eventError
     default: return evt.type
   }
+}
+
+function getEventTitle(evt: StoryEvent, lang: Language): string {
+  const charId = (evt.data.character_id as string) ?? ''
+  const chip = getEventTypeChip(evt, lang)
+  // Think / act: type chip alone on the rail (character lives on the stage).
+  if (evt.type === 'agent_think' || evt.type === 'agent_act') return chip
+  // Speak: character name is the primary rail label.
+  if (evt.type === 'agent_speak' && charId) return charId
+  return chip
 }
 
 function formatStoryPlanPreview(outline: string, lang: Language): string {
@@ -97,13 +109,20 @@ function formatStoryPlanPreview(outline: string, lang: Language): string {
 function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
   switch (evt.type) {
     case 'scene_change':
-      return ((evt.data.description as string) ?? '').replace(/^Transitioning to:\s*/i, '')
+      return ((evt.data.description as string) ?? '')
+        .replace(/^Transitioning to:\s*/i, '')
+        .replace(/^切换至[：:]\s*/, '')
     case 'agent_speak':
       return (evt.data.content as string) ?? ''
     case 'agent_think':
       return (evt.data.thought_content as string) ?? ''
-    case 'agent_act':
-      return (evt.data.action as string) ?? ''
+    case 'agent_act': {
+      // Stage-direction form: 〔靠向椅背〕
+      const action = ((evt.data.action as string) ?? '').trim()
+      if (!action) return ''
+      const bare = action.replace(/^[〔[]/, '').replace(/[〕\]]$/, '')
+      return `〔${bare}〕`
+    }
     case 'world_state_delta': {
       const deltas = evt.data.deltas as Array<Record<string, string>> | undefined
       if (!deltas?.length) return lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.'
@@ -139,6 +158,10 @@ const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
     en: 'No action received — continuing automatically.',
     zh: '未收到玩家操作 — 自动继续…',
   },
+  'All beats rendered. Roleplay outline complete.': {
+    en: 'All beats rendered. Roleplay outline complete.',
+    zh: '全部剧情节点已完成。任务收束。',
+  },
 }
 
 function translateBackendMessage(msg: string, lang: Language): string {
@@ -154,6 +177,40 @@ function translateBackendMessage(msg: string, lang: Language): string {
     }
   }
   return msg
+}
+
+/** Map director emotion_state tags for HUD display (tags stay English for GIFs). */
+const EMOTION_LABELS: Record<string, Record<Language, string>> = {
+  calm: { en: 'calm', zh: '平静' },
+  tense: { en: 'tense', zh: '紧张' },
+  angry: { en: 'angry', zh: '愤怒' },
+  fearful: { en: 'fearful', zh: '恐惧' },
+  manipulative: { en: 'manipulative', zh: '操控' },
+  guilty: { en: 'guilty', zh: '内疚' },
+  resigned: { en: 'resigned', zh: '无奈' },
+  desperate: { en: 'desperate', zh: '绝望' },
+  opening: { en: 'opening pressure', zh: '开场压迫' },
+}
+
+function formatEmotionLabel(raw: string | null | undefined, lang: Language): string {
+  if (!raw) return ''
+  const key = raw.trim().toLowerCase()
+  return EMOTION_LABELS[key]?.[lang] ?? raw
+}
+
+function truncateText(text: string, maxLen: number): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= maxLen) return cleaned
+  return `${cleaned.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`
+}
+
+function getStoryEventTimelineSummary(evt: StoryEvent, lang: Language, maxLen = 52): string {
+  const full = getStoryEventSummary(evt, lang)
+  // Act: keep one short stage-direction line on the rail.
+  if (evt.type === 'agent_act') return truncateText(full, Math.min(maxLen, 28))
+  // Delta: ultra-short consequence note.
+  if (evt.type === 'world_state_delta') return truncateText(full, Math.min(maxLen, 36))
+  return truncateText(full, maxLen)
 }
 
 function getStoryCardHeading(evt: StoryEvent | null, fallback: string): string {
@@ -314,10 +371,10 @@ const uiText: Record<Language, Record<string, string>> = {
     eventOutline: 'Story Outline',
     eventSceneChange: 'Scene Setup',
     eventSpeaks: 'speaks',
-    eventThinks: 'unspoken pressure',
+    eventThinks: 'inner',
     eventActs: 'acts',
     eventBeatReady: 'Beat decision',
-    eventWorldDelta: 'Consequences Changed',
+    eventWorldDelta: 'Consequences',
     eventStatus: 'Scene Status',
     eventComplete: 'Scene Wrapped',
     eventError: 'Error',
@@ -352,13 +409,21 @@ const uiText: Record<Language, Record<string, string>> = {
     location: 'Location',
     tension: 'Tension',
     time: 'Time',
-    sceneTimeline: 'Scene Timeline',
+    sceneTimeline: 'Beats',
     unspokenPressure: 'Unspoken Pressure',
     possibleConsequences: 'Possible Consequences',
     relationshipImpact: 'Relationship Impact',
     currentBeat: 'Current Beat',
     sceneFallback: 'Scene board is waiting for the first beat.',
     storyLocationFallback: 'North of ABQ',
+    outlineExpand: 'Show outline',
+    outlineCollapse: 'Hide outline',
+    timelineHint: 'Tap a beat to focus the stage',
+    archiveHandle: 'Archive',
+    timelineCollapse: 'Hide rail',
+    timelineExpand: 'Show rail',
+    gifToggleHide: 'Hide GIF',
+    gifToggleShow: 'Show GIF',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
@@ -408,10 +473,10 @@ const uiText: Record<Language, Record<string, string>> = {
     eventOutline: '故事大纲',
     eventSceneChange: '场景建立',
     eventSpeaks: '说',
-    eventThinks: '未说出口',
+    eventThinks: '内心',
     eventActs: '行动',
     eventBeatReady: '关键选择',
-    eventWorldDelta: '后果变化',
+    eventWorldDelta: '后果',
     eventStatus: '现场状态',
     eventComplete: '任务收束',
     eventError: '错误',
@@ -446,13 +511,21 @@ const uiText: Record<Language, Record<string, string>> = {
     location: '地点',
     tension: '张力',
     time: '时间',
-    sceneTimeline: '分镜时间线',
+    sceneTimeline: '分镜',
     unspokenPressure: '未说出口的压力',
     possibleConsequences: '可能后果',
     relationshipImpact: '关系影响',
     currentBeat: '当前节点',
     sceneFallback: '场景记录正在等待第一个剧情节点。',
     storyLocationFallback: '阿尔伯克基北部',
+    outlineExpand: '展开大纲',
+    outlineCollapse: '收起大纲',
+    timelineHint: '点选分镜，主舞台切换',
+    archiveHandle: '档案',
+    timelineCollapse: '收起分镜',
+    timelineExpand: '展开分镜',
+    gifToggleHide: '关 GIF',
+    gifToggleShow: '开 GIF',
   },
 }
 
@@ -570,7 +643,13 @@ function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchP
   )
 }
 
-const DEFAULT_STORY_PROMPT: string = "Gus Fring sits across from Walter White in the Los Pollos Hermanos office. The air is still. Gus studies Walt with calm precision. Walt's pride wars with his fear. Jesse is waiting in the parking lot, not knowing this meeting could change everything."
+const DEFAULT_STORY_PROMPT_EN =
+  "Gus Fring sits across from Walter White in the Los Pollos Hermanos office. The air is still. Gus studies Walt with calm precision. Walt's pride wars with his fear. Jesse is waiting in the parking lot, not knowing this meeting could change everything."
+const DEFAULT_STORY_PROMPT_ZH =
+  "古斯·弗林格与沃尔特·怀特对坐在洛斯波罗斯·赫尔曼诺斯餐厅办公室。空气凝固。古斯冷静审视沃尔特。沃尔特的自尊与恐惧交战。杰西在停车场等候，不知道这次会面可能改变一切。"
+function defaultStoryPrompt(lang: Language): string {
+  return lang === 'zh' ? DEFAULT_STORY_PROMPT_ZH : DEFAULT_STORY_PROMPT_EN
+}
 
 /* ------------------------------------------------------------------ */
 /*  App                                                               */
@@ -604,7 +683,7 @@ function App() {
 
   const [view, setView] = usePersistedState<View>('view', 'chat')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
-  const [llmProvider, setLlmProvider] = usePersistedState<string>('llm-v2', 'minimax')
+  const connection = useConnection()
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -612,6 +691,14 @@ function App() {
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Story board: outline collapsed by default to free stage space. */
+  const [outlineExpanded, setOutlineExpanded] = useState(false)
+  /** null = auto-follow latest card event; number = user pinned a timeline row. */
+  const [pinnedStoryEventIndex, setPinnedStoryEventIndex] = useState<number | null>(null)
+  /** Narrow beat rail open by default; user can fold to give stage full width. */
+  const [timelineRailOpen, setTimelineRailOpen] = useState(true)
+  /** GIF on stage can be muted so paper text stays primary. */
+  const [storyGifHidden, setStoryGifHidden] = useState(false)
 
   // Auth state
   const auth = useAuth()
@@ -670,6 +757,11 @@ function App() {
   // Story state
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
+
+  // Keep story SSE bind token in sync with connection vault.
+  useEffect(() => {
+    story.setConnectionSessionId(connection.connectionSessionId)
+  }, [connection.connectionSessionId, story])
 
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
@@ -805,25 +897,51 @@ function App() {
 
   /* ---- Story start ---- */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // Playing story: collapse global archive sidebar to a thin handle (layout blueprint).
+  useEffect(() => {
+    const playing =
+      story.connectionState === 'connecting'
+      || story.connectionState === 'streaming'
+      || story.connectionState === 'beat_paused'
+      || story.connectionState === 'complete'
+    if (!playing) return
+    // Defer so we do not cascade-render inside the effect body (react-hooks/set-state-in-effect).
+    queueMicrotask(() => setSidebarCollapsed(true))
+  }, [story.connectionState])
+
   const handleStartStory = useCallback(async () => {
     if (!storyTask.trim()) return
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     setError(null)
     try {
-      await story.startStory(storyTask, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
+      if (!connection.view.canStart) {
+        connection.setSheetOpen(true)
+        setError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
+        return
+      }
+      const bindId = await connection.ensureBound()
+      story.setConnectionSessionId(bindId)
+      await story.startStory(
+        storyTask,
+        selectedCharId,
+        getVoiceExample(selectedCharId, relation) ?? null,
+        language,
+        bindId,
+      )
       setStoryTask('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [storyTask, story, selectedCharId, relation, language])
+  }, [storyTask, story, selectedCharId, relation, language, connection])
 
   /* ---- Enter world from landing screen ---- */
   const handleEnterWorld = useCallback(() => {
     setHasEnteredWorld(true)
     setView('chat')
-    setStoryTask(DEFAULT_STORY_PROMPT)
+    setStoryTask(defaultStoryPrompt(language))
     story.reset()
-  }, [setHasEnteredWorld, setView, story])
+  }, [setHasEnteredWorld, setView, story, language])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -867,6 +985,8 @@ function App() {
     }
 
     try {
+      const bindId = await connection.ensureBound()
+      story.setConnectionSessionId(bindId)
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -877,10 +997,11 @@ function App() {
           mode,
           history: nextHistory.slice(-10).map(m => ({ sender: m.sender, text: m.text })),
           language,
-          llmProvider,
+          llmProvider: connection.view.providerId,
           voiceExample: getVoiceExample(selectedCharId, relation) ?? null,
           memorySummary: updatedAfterUser.summary || undefined,
           keyFacts: updatedAfterUser.keyFacts.length > 0 ? updatedAfterUser.keyFacts : undefined,
+          connectionSessionId: bindId,
         }),
       })
       if (!res.ok) {
@@ -967,7 +1088,7 @@ function App() {
     } finally {
       setIsSending(false)
     }
-  }, [message, isSending, messages, selectedCharId, relation, mode, language, llmProvider, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key])
+  }, [message, isSending, messages, selectedCharId, relation, mode, language, connection, story, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key])
 
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {
@@ -1000,10 +1121,36 @@ function App() {
     return [story.outline, spoken].filter(Boolean).join('\n\n')
   }, [story.events, story.outline])
 
+  // Live streaming should follow the latest beat; clear manual pin.
+  useEffect(() => {
+    if (story.connectionState !== 'streaming') return
+    queueMicrotask(() => setPinnedStoryEventIndex(null))
+  }, [story.connectionState, story.events.length])
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setPinnedStoryEventIndex(null)
+      setOutlineExpanded(false)
+      setTimelineRailOpen(true)
+      setStoryGifHidden(false)
+    })
+  }, [story.sessionId])
+
   const currentStoryEvent = useMemo(() => {
+    if (
+      pinnedStoryEventIndex != null
+      && pinnedStoryEventIndex >= 0
+      && pinnedStoryEventIndex < story.events.length
+    ) {
+      const pinned = story.events[pinnedStoryEventIndex]
+      if (STORY_CARD_EVENT_TYPES.has(pinned.type)) return pinned
+    }
     return findLastStoryEvent(story.events, evt => STORY_CARD_EVENT_TYPES.has(evt.type))
-  }, [story.events])
+  }, [pinnedStoryEventIndex, story.events])
   const currentStoryText = currentStoryEvent ? getStoryEventSummary(currentStoryEvent, language) : t.sceneFallback
+  const currentStoryTypeChip = currentStoryEvent
+    ? getEventTypeChip(currentStoryEvent, language)
+    : t.currentBeat
   const currentStoryTitle = currentStoryEvent ? getEventTitle(currentStoryEvent, language) : t.currentBeat
   const currentStoryHeading = getStoryCardHeading(currentStoryEvent, currentStoryTitle)
   const currentStorySpeakerId = currentStoryEvent?.type === 'agent_speak'
@@ -1012,28 +1159,49 @@ function App() {
   const currentStorySpeakerText = currentStoryEvent?.type === 'agent_speak'
     ? ((currentStoryEvent.data.content as string) ?? '')
     : ''
+  const latestWorldDelta = useMemo(
+    () => findLastStoryEvent(story.events, evt => evt.type === 'world_state_delta'),
+    [story.events],
+  )
+  const latestWorldDeltaText = latestWorldDelta
+    ? getStoryEventTimelineSummary(latestWorldDelta, language, 96)
+    : ''
   const storyLocation = useMemo(() => {
     const latest = findLastStoryEvent(story.events, evt => evt.type === 'scene_change')
     if (!latest) return t.storyLocationFallback
     const destination = typeof latest.data.to_scene === 'string' ? latest.data.to_scene : ''
     return (destination || getStoryEventSummary(latest, language)).slice(0, 64)
-  }, [language, story.events, t.storyLocationFallback])
+  }, [language, story, t.storyLocationFallback])
   const storyBeatLabel = language === 'zh'
     ? `节点 ${Math.max(story.beatIndex, 1)}`
     : `Beat ${Math.max(story.beatIndex, 1)}`
+  const storyTensionLabel = formatEmotionLabel(
+    (currentStoryEvent?.data?.emotion_state as string | undefined)
+      ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined),
+    language,
+  )
 
   const handleContinueChapter = useCallback(async () => {
-    const prompt = `${DEFAULT_STORY_PROMPT}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
+    const base = defaultStoryPrompt(language)
+    const prompt = language === 'zh'
+      ? `${base}\n\n作为第二章继续。保留第一章后果，提高压力，不要重开故事。\n\n第一章上下文：\n${storyContextSummary || '暂无上下文。'}`
+      : `${base}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
     await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
   const handleBranchStory = useCallback(async () => {
-    const prompt = `${DEFAULT_STORY_PROMPT}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.\n\nOriginal context:\n${storyContextSummary || 'No previous context was captured.'}`
+    const base = defaultStoryPrompt(language)
+    const prompt = language === 'zh'
+      ? `${base}\n\n从关键节点分叉。保留设定，但因角色冲突走向完全不同的剧情。\n\n原上下文：\n${storyContextSummary || '暂无上下文。'}`
+      : `${base}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.\n\nOriginal context:\n${storyContextSummary || 'No previous context was captured.'}`
     await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
   const handleReplayBeat = useCallback(async () => {
-    const prompt = `${DEFAULT_STORY_PROMPT}\n\nReplay the last beat from a more intimate angle. Keep the same premise, but reveal a hidden motive or unspoken fear that was not explicit before.\n\nPrevious context:\n${storyContextSummary || 'No previous context was captured.'}`
+    const base = defaultStoryPrompt(language)
+    const prompt = language === 'zh'
+      ? `${base}\n\n用更贴近的角度重演上一拍。同一前提，但揭示之前未明说的动机或恐惧。\n\n先前上下文：\n${storyContextSummary || '暂无上下文。'}`
+      : `${base}\n\nReplay the last beat from a more intimate angle. Keep the same premise, but reveal a hidden motive or unspoken fear that was not explicit before.\n\nPrevious context:\n${storyContextSummary || 'No previous context was captured.'}`
     await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
@@ -1101,16 +1269,19 @@ function App() {
           </button>
         </div>
       )}
-      <main className="app-shell" lang={language === 'zh' ? 'zh-CN' : 'en'}>
+      <main
+        className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}`}
+        lang={language === 'zh' ? 'zh-CN' : 'en'}
+      >
         <div className={`sidebar-wrapper ${sidebarCollapsed ? 'sidebar-wrapper--collapsed' : ''}`}>
           <button
             type="button"
             className="sidebar__toggle"
             onClick={() => setSidebarCollapsed(v => !v)}
-            aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            aria-label={sidebarCollapsed ? t.archiveHandle : (language === 'zh' ? '收起档案' : 'Hide archive')}
             aria-expanded={!sidebarCollapsed}
           >
-            {sidebarCollapsed ? '◂ Sidebar' : '▸'}
+            {sidebarCollapsed ? t.archiveHandle : '▸'}
           </button>
           <aside className="sidebar">
             {/* Brand */}
@@ -1193,20 +1364,15 @@ function App() {
           </section>
         )}
 
-        {/* LLM Provider selector */}
-        <section>
+        {/* Model line — BYOK branding entry */}
+        <section className="connection-sidebar-block">
           <span className="field-label">{t.model}</span>
-          <select
-            value={llmProvider}
-            onChange={e => setLlmProvider(e.target.value)}
-          >
-            <option value="minimax">MiniMax M3</option>
-            <option value="stepfun">StepFun</option>
-            <option value="cliproxy">CLIProxy (本地)</option>
-          </select>
+          <ConnectionChip conn={connection} language={language} />
         </section>
           </aside>
         </div>
+
+        <ConnectionSheet conn={connection} language={language} />
 
       {/* ===================== MAIN PANEL ===================== */}
       {view === 'story' ? (
@@ -1231,11 +1397,11 @@ function App() {
             </div>
             <div className="story-hud__metric">
               <span>{t.tension}</span>
-              <strong>
-                {currentStoryEvent?.data?.emotion_state
-                  ? currentStoryEvent.data.emotion_state as string
-                  : ''}
-              </strong>
+              <strong title={storyTensionLabel}>{storyTensionLabel}</strong>
+            </div>
+            <div className="story-hud__metric story-hud__connection">
+              <span>{t.model}</span>
+              <ConnectionChip conn={connection} language={language} compact />
             </div>
             <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
           </header>
@@ -1293,100 +1459,163 @@ function App() {
           {(story.connectionState === 'streaming'
             || story.connectionState === 'beat_paused'
             || story.connectionState === 'complete') && (
-            <div className={`story-stream story-stream--${story.connectionState}`}>
+            <div className={`story-stream story-stream--${story.connectionState}${timelineRailOpen ? '' : ' story-stream--rail-collapsed'}`}>
               <div className="story-board__brief">
                 {story.outline && (
-                  <div className="story-outline">
-                    <strong>{t.storyOutline}</strong>
-                    <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
-                    <p className="story-outline__body">{story.outline}</p>
+                  <div className={`story-outline${outlineExpanded ? ' is-expanded' : ' is-collapsed'}`}>
+                    <div className="story-outline__header">
+                      <strong>{t.storyOutline}</strong>
+                      <button
+                        type="button"
+                        className="story-outline__toggle"
+                        aria-expanded={outlineExpanded}
+                        onClick={() => setOutlineExpanded(v => !v)}
+                      >
+                        {outlineExpanded ? t.outlineCollapse : t.outlineExpand}
+                      </button>
+                    </div>
+                    {!outlineExpanded && (
+                      <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
+                    )}
+                    {outlineExpanded && (
+                      <p className="story-outline__body">{story.outline}</p>
+                    )}
                   </div>
                 )}
               </div>
 
+              {/* Stage (~70%) first, narrow beat rail (~25%) second — blueprint. */}
               <div className="story-board__grid">
-                <aside className="story-timeline" aria-label={t.sceneTimeline}>
-                  <h3>{t.sceneTimeline}</h3>
-                  <div className="story-events">
-                    {story.events.map((evt, i) => (
-                      <div
-                        key={`${i}-${evt.type}-${evt.received_at ?? ''}`}
-                        className={`story-event story-event--${evt.type}${evt === currentStoryEvent ? ' is-active' : ''}`}
-                      >
-                        <span className="story-event__dot" aria-hidden="true" />
-                        <strong>{getEventTitle(evt, language)}</strong>
-                        <div className="event-body">
-                          {evt.type === 'scene_change' && (
-                            <p>{(evt.data.description as string) ?? ''}</p>
-                          )}
-                          {evt.type === 'agent_speak' && (() => {
-                            const speakCharId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
-                            const speakText = (evt.data.content as string) ?? ''
-                            return (
-                              <div className="story-event__content">
-                                <p><em>{(evt.data.character_id as string) ?? ''}:</em> {speakText}</p>
-                                {speakCharId && speakText && (
-                                  <VoicePlayer
-                                    text={speakText}
-                                    characterId={speakCharId}
-                                    language={language}
-                                  />
-                                )}
-                                <GifCard src={getStoryEventGif(evt)} alt={(evt.data.gif_search_query as string) ?? ''} />
-                              </div>
-                            )
-                          })()}
-                          {evt.type === 'agent_think' && (
-                            <p className="thought"><em>{(evt.data.character_id as string) ?? ''}:</em> {(evt.data.thought_content as string) ?? ''}</p>
-                          )}
-                          {evt.type === 'agent_act' && (
-                            <p><em>{(evt.data.character_id as string) ?? ''}</em> {(evt.data.action as string) ?? ''}</p>
-                          )}
-                          {evt.type === 'world_state_delta' && (
-                            <ul className="world-delta">
-                              {(evt.data.deltas as Array<Record<string, string>> | undefined)?.map((d, j) => {
-                                const hasContent = d.target || d.entity || d.field || d.old_value || d.new_value
-                                if (!hasContent) return null
-                                const entity = d.target ?? d.entity ?? ''
-                                if (!entity && !d.field) return null
-                                return (
-                                  <li key={j}>
-                                    {entity}: {d.field} {d.old_value ?? '∅'} → {d.new_value ?? '∅'}
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                          {evt.type === 'status' && (
-                            <p className="status-msg">{evt.data.message as string}</p>
-                          )}
-                          {evt.type === 'complete' && (
-                            <p>{(evt.data.message as string) ?? t.storyComplete}</p>
-                          )}
-                          {evt.type === 'error' && (
-                            <p className="status-msg">⚠ {(evt.data.message as string) ?? t.eventError}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </aside>
-
                 <section className={`story-scene-card story-scene-card--${currentStoryEvent?.type ?? 'empty'}`}>
                   <div className="story-scene-card__paper">
                     <div className="story-scene-card__meta">
-                      <span>{currentStoryTitle}</span>
+                      <span className={`story-scene-card__chip story-scene-card__chip--${currentStoryEvent?.type ?? 'empty'}`}>
+                        {currentStoryTypeChip}
+                      </span>
+                      {currentStoryHeading && currentStoryHeading !== currentStoryTypeChip && (
+                        <span className="story-scene-card__speaker">{currentStoryHeading}</span>
+                      )}
                       <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+                      <button
+                        type="button"
+                        className="story-scene-card__gif-toggle"
+                        onClick={() => setStoryGifHidden(v => !v)}
+                      >
+                        {storyGifHidden ? t.gifToggleShow : t.gifToggleHide}
+                      </button>
                     </div>
-                    <h3>{currentStoryHeading}</h3>
-                    <p className="story-scene-card__quote">{currentStoryText}</p>
+                    <p className={[
+                      'story-scene-card__quote',
+                      currentStoryEvent?.type === 'agent_think' ? 'is-thought' : '',
+                      currentStoryEvent?.type === 'agent_act' ? 'is-stage-dir' : '',
+                      currentStoryEvent?.type === 'agent_speak' ? 'is-speak' : '',
+                    ].filter(Boolean).join(' ')}>
+                      {currentStoryText}
+                    </p>
                     {currentStorySpeakerId && currentStorySpeakerText && (
-                      <VoicePlayer text={currentStorySpeakerText} characterId={currentStorySpeakerId} language={language} />
+                      <VoicePlayer
+                        text={currentStorySpeakerText}
+                        characterId={currentStorySpeakerId}
+                        language={language}
+                        connectionSessionId={connection.connectionSessionId}
+                      />
                     )}
-                    <GifCard src={currentStoryEvent ? getStoryEventGif(currentStoryEvent) : null} alt={t.gifTrigger} />
+                    {!storyGifHidden && (
+                      <GifCard
+                        src={currentStoryEvent ? getStoryEventGif(currentStoryEvent) : null}
+                        alt={t.gifTrigger}
+                      />
+                    )}
                   </div>
                 </section>
+
+                {timelineRailOpen ? (
+                  <aside className="story-timeline" aria-label={t.sceneTimeline}>
+                    <div className="story-timeline__head">
+                      <h3>{t.sceneTimeline}</h3>
+                      <button
+                        type="button"
+                        className="story-timeline__toggle"
+                        aria-expanded
+                        onClick={() => setTimelineRailOpen(false)}
+                      >
+                        {t.timelineCollapse}
+                      </button>
+                    </div>
+                    <p className="story-timeline__hint">{t.timelineHint}</p>
+                    <div className="story-events">
+                      {story.events.map((evt, i) => {
+                        const isCardType = STORY_CARD_EVENT_TYPES.has(evt.type)
+                        const isActive = evt === currentStoryEvent
+                        const summary = getStoryEventTimelineSummary(evt, language)
+                        if (!summary && evt.type !== 'error' && evt.type !== 'complete') {
+                          if (evt.type === 'status' || evt.type === 'outline' || evt.type === 'beat_ready') {
+                            return null
+                          }
+                        }
+                        const isAct = evt.type === 'agent_act'
+                        const isThink = evt.type === 'agent_think'
+                        const isDelta = evt.type === 'world_state_delta'
+                        return (
+                          <button
+                            key={`${i}-${evt.type}-${evt.received_at ?? ''}`}
+                            type="button"
+                            className={[
+                              'story-event',
+                              `story-event--${evt.type}`,
+                              isActive ? 'is-active' : '',
+                              isCardType ? 'story-event--selectable' : '',
+                              isAct ? 'story-event--stage-dir' : '',
+                              isThink ? 'story-event--inner' : '',
+                              isDelta ? 'story-event--delta-thin' : '',
+                            ].filter(Boolean).join(' ')}
+                            onClick={() => {
+                              if (isCardType) setPinnedStoryEventIndex(i)
+                            }}
+                            disabled={!isCardType}
+                          >
+                            <span className="story-event__dot" aria-hidden="true" />
+                            {!isAct && (
+                              <strong className={isThink ? 'story-event__label--inner' : undefined}>
+                                {getEventTitle(evt, language)}
+                              </strong>
+                            )}
+                            {summary && (
+                              <p className={[
+                                'story-event__summary',
+                                isThink ? 'thought' : '',
+                                isAct ? 'stage-dir' : '',
+                              ].filter(Boolean).join(' ')}>
+                                {summary}
+                              </p>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </aside>
+                ) : (
+                  /* Collapsed: one edge tab only — no empty full-height black rail. */
+                  <button
+                    type="button"
+                    className="story-timeline-handle"
+                    aria-expanded={false}
+                    aria-label={t.timelineExpand}
+                    onClick={() => setTimelineRailOpen(true)}
+                  >
+                    <span className="story-timeline-handle__label">{t.sceneTimeline}</span>
+                    <span className="story-timeline-handle__chev" aria-hidden="true">‹</span>
+                  </button>
+                )}
               </div>
+
+              {/* Consequences: thin strip, never primary reading surface. */}
+              {latestWorldDeltaText && (
+                <div className="story-delta-strip" aria-label={t.eventWorldDelta}>
+                  <span>{t.eventWorldDelta}</span>
+                  <p>{latestWorldDeltaText}</p>
+                </div>
+              )}
 
               {/* Streaming indicator */}
               {story.connectionState === 'streaming' && (
@@ -1403,7 +1632,7 @@ function App() {
                 </div>
               )}
 
-              {/* beat_paused: decision controls */}
+              {/* Decision bar: only when paused, sticky bottom. */}
               {story.connectionState === 'beat_paused' && (
                 <div className="beat-paused">
                   <p>{t.directorDecision}</p>
@@ -1418,12 +1647,6 @@ function App() {
                 </div>
               )}
 
-              {/* complete: restart and follow-up entries.
-                  Each new-session button seeds the next story with the
-                  recent context so the user feels like they are picking up
-                  where the last chapter left off. The buttons are labelled
-                  "Start Again" rather than "Continue" so users do not
-                  expect an in-band continuation of the closed session. */}
               {story.connectionState === 'complete' && (
                 <div className="story-complete">
                   <p>🎬 {t.storyComplete}</p>

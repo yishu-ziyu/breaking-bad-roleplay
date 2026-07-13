@@ -1,3 +1,6 @@
+/* react-hooks/refs false-positives on createElement + click handlers that only
+ * touch refs at click time (needed so node:test can render without JSX transform). */
+/* eslint-disable react-hooks/refs */
 import { createElement, useEffect, useRef, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 import { hasClonedVoice } from '../lib/voiceCasting'
@@ -14,6 +17,7 @@ export interface VoicePlayerProps {
   language: 'en' | 'zh'
   label?: string
   unavailableText?: string
+  connectionSessionId?: string | null
 }
 
 function getSpeechSynthesis(): SpeechSynthLike | undefined {
@@ -22,7 +26,14 @@ function getSpeechSynthesis(): SpeechSynthLike | undefined {
   return g.speechSynthesis
 }
 
-export function VoicePlayer({ text, characterId, language, label, unavailableText }: VoicePlayerProps) {
+export function VoicePlayer({
+  text,
+  characterId,
+  language,
+  label,
+  unavailableText,
+  connectionSessionId,
+}: VoicePlayerProps) {
   const [state, setState] = useState<PlayState>('idle')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const objectUrlRef = useRef<string | null>(null)
@@ -81,6 +92,7 @@ export function VoicePlayer({ text, characterId, language, label, unavailableTex
           text,
           characterId,
           language,
+          connectionSessionId: connectionSessionId || undefined,
         }),
       })
       if (!res.ok) {
@@ -97,7 +109,6 @@ export function VoicePlayer({ text, characterId, language, label, unavailableTex
       audio.onerror = () => setState('idle')
       await audio.play()
     } catch {
-      // Fall back to browser TTS if clone path fails and synth exists.
       if (synth) {
         createPlayHandler(text, characterId, language, synth, setState)()
       } else {

@@ -368,7 +368,8 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
   // BeatControls NOT visible during streaming
   await expect(page.locator('.beat-controls')).toHaveCount(0)
   await expect(page.locator('.story-outline')).toBeVisible()
-  await expect(page.locator('.story-outline p')).toContainText('methylamine')
+  await page.locator('.story-outline__toggle').click()
+  await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
   // Emit scene_change
   await emitSSE(page, 'scene_change', { data: { description: 'Superlab, underground.' } })
@@ -385,7 +386,8 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
     },
   })
   await page.waitForTimeout(50)
-  await expect(page.locator('.story-event--agent_speak p')).toContainText('precise')
+  await expect(page.locator('.story-scene-card__quote')).toContainText('precise')
+  await expect(page.locator('.story-event--agent_speak .story-event__summary')).toContainText('precise')
 
   // Continue events to beat_ready
   await emitSSE(page, 'world_state_delta', {
