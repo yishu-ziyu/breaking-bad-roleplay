@@ -8,9 +8,13 @@ from agents.tts import TTSError, _hex_to_bytes, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS, get_clone_voice_id
 
 
-def test_clone_map_covers_verified_trio():
-    assert set(CLONE_VOICE_IDS) == {"walter", "gus", "mike"}
-    assert get_clone_voice_id("jesse") is None
+def test_clone_map_covers_verified_voices():
+    assert set(CLONE_VOICE_IDS) == {
+        "walter", "gus", "mike", "skyler", "saul", "jesse",
+    }
+    assert get_clone_voice_id("jesse") == "bbclone_jesse_v1"
+    assert get_clone_voice_id("skyler") == "bbclone_skyler_v1"
+    assert get_clone_voice_id("saul") == "bbclone_saul_v1"
 
 
 def test_hex_to_bytes_roundtrip():
@@ -23,7 +27,7 @@ async def test_synthesize_rejects_unknown_character():
     with pytest.raises(TTSError) as ei:
         await synthesize_character_speech(
             text="hi",
-            character_id="jesse",
+            character_id="unknown_npc",
             language="en",
             api_key="k",
         )

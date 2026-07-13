@@ -42,6 +42,5 @@ materials/breaking-bad/voice-archetypes/
 ## Status
 
 - [x] Voice Design batch deleted (user rejected quality)
-- [ ] Receive 6 reference audio files
-- [ ] Clone + preview
-- [ ] Wire app TTS
+- [x] Cloned + wired: Walter / Gus / Mike / Skyler / Saul / Jesse (all six)
+- [x] Wire app TTS for cloned characters

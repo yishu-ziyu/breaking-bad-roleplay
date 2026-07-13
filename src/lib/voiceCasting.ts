@@ -8,6 +8,9 @@ export const CLONE_VOICE_CHARACTER_IDS: ReadonlySet<CharacterId> = new Set([
   'walter',
   'gus',
   'mike',
+  'skyler',
+  'saul',
+  'jesse',
 ])
 
 export function hasClonedVoice(characterId: string): boolean {
