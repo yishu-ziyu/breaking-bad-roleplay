@@ -132,7 +132,7 @@ test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
   await mockAutoStoryStart(page)
   await gotoFresh(page)
   // Click through landing screen to reveal auth section
-  const enterBtn = page.getByRole('button', { name: /ENTER THE WORLD|进入世界/ })
+  const enterBtn = page.getByRole('button', { name: /Chat with Walter|和 Walter 聊聊|ENTER THE WORLD|进入世界/ })
   if (await enterBtn.count() > 0) await enterBtn.click()
   const cta = page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })
   await expect(cta).toBeVisible()
