@@ -4,6 +4,7 @@
 import { createElement, useEffect, useRef, useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 import { hasClonedVoice } from '../lib/voiceCasting'
+import { guestHeaders } from '../lib/guestId'
 import {
   createPlayHandler,
   handleVoiceToggle,
@@ -87,7 +88,7 @@ export function VoicePlayer({
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...guestHeaders() },
         body: JSON.stringify({
           text,
           characterId,
@@ -97,7 +98,11 @@ export function VoicePlayer({
       })
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}))
-        throw new Error(detail.detail || `TTS failed (${res.status})`)
+        const msg =
+          typeof detail.detail === 'object' && detail.detail?.message
+            ? detail.detail.message
+            : detail.detail || `TTS failed (${res.status})`
+        throw new Error(msg)
       }
       const blob = await res.blob()
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)

@@ -5,6 +5,7 @@
    ================================================================= */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getOrCreateGuestId } from '../lib/guestId'
 
 export interface StoryEvent {
   type: string
@@ -149,6 +150,7 @@ export function buildStreamQuery(opts: {
   voiceExample?: string | null
   language?: string | null
   connectionSessionId?: string | null
+  guestId?: string | null
 }): string {
   const parts: string[] = []
   if (opts.voiceExample) {
@@ -158,6 +160,11 @@ export function buildStreamQuery(opts: {
   parts.push(`language=${encodeURIComponent(language)}`)
   if (opts.connectionSessionId) {
     parts.push(`connection_session=${encodeURIComponent(opts.connectionSessionId)}`)
+  }
+  // EventSource cannot set headers; guest UUID goes in the query (not a secret).
+  const guest = (opts.guestId && opts.guestId.trim()) || getOrCreateGuestId()
+  if (guest) {
+    parts.push(`guest_id=${encodeURIComponent(guest)}`)
   }
   return `?${parts.join('&')}`
 }
