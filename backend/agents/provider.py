@@ -1,6 +1,7 @@
 import httpx
 from dataclasses import dataclass
 from pathlib import Path
+from agents.credential_context import get_credential_override
 from agents.tools import (
     Tool,
     ToolCall,
@@ -9,6 +10,10 @@ from agents.tools import (
     parse_tool_calls_anthropic,
     parse_tool_calls_openai,
 )
+
+MINIMAX_HOST_CN = "https://api.minimaxi.com"
+MINIMAX_HOST_GLOBAL = "https://api.minimax.io"
+STEPFUN_HOST = "https://api.stepfun.com"
 
 
 class ProviderFacade:
@@ -39,6 +44,51 @@ class ProviderFacade:
             timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0),
             trust_env=False,
         )
+
+    # ------------------------------------------------------------------
+    # BYOK-aware credential helpers (request ContextVar first, env fallback)
+    # ------------------------------------------------------------------
+
+    def effective_minimax_llm_key(self) -> str:
+        ov = get_credential_override()
+        if ov and ov.provider_id == "minimax" and ov.llm_key:
+            return ov.llm_key
+        if ov and ov.llm_key and ov.provider_id in (None, "", "minimax"):
+            return ov.llm_key
+        return self.minimax_key
+
+    def effective_minimax_tts_key(self) -> str:
+        ov = get_credential_override()
+        if ov and ov.tts_key:
+            return ov.tts_key
+        if ov and ov.provider_id == "minimax" and ov.llm_key:
+            return ov.llm_key
+        return self.minimax_key
+
+    def effective_stepfun_key(self) -> str:
+        ov = get_credential_override()
+        if ov and ov.provider_id == "stepfun" and ov.llm_key:
+            return ov.llm_key
+        return self.stepfun_key
+
+    def effective_cli_proxy_key(self) -> str:
+        ov = get_credential_override()
+        if ov and ov.provider_id == "cliproxy" and ov.llm_key:
+            return ov.llm_key
+        return self.cli_proxy_key
+
+    def effective_cli_proxy_base_url(self) -> str:
+        ov = get_credential_override()
+        if ov and ov.provider_id == "cliproxy" and ov.base_url:
+            return ov.base_url.rstrip("/")
+        return self.cli_proxy_base_url
+
+    def effective_minimax_host(self) -> str:
+        ov = get_credential_override()
+        region = (ov.region if ov else None) or "cn"
+        if region == "global":
+            return MINIMAX_HOST_GLOBAL
+        return MINIMAX_HOST_CN
 
     def _load_cli_proxy_api_key(self) -> str:
         config_path = Path.home() / ".cli-proxy-api" / "config.yaml"
@@ -90,7 +140,7 @@ class ProviderFacade:
             try:
                 return await self._call_stepfun(messages, model)
             except httpx.HTTPStatusError:
-                if not self.minimax_key:
+                if not self.effective_minimax_llm_key():
                     raise
                 return await self._call_minimax(messages, "MiniMax-M3", max_tokens)
         if provider == "cliproxy":
@@ -100,12 +150,15 @@ class ProviderFacade:
     async def _call_minimax(
         self, messages: list[dict], model: str, max_tokens: int
     ) -> str:
+        key = self.effective_minimax_llm_key()
+        if not key:
+            raise RuntimeError("MiniMax API key is not configured")
         resp = await self._client.post(
-            "https://api.minimaxi.com/anthropic/v1/messages",
+            f"{self.effective_minimax_host()}/anthropic/v1/messages",
             headers={
                 "Content-Type": "application/json",
                 "anthropic-version": "2023-06-01",
-                "x-api-key": self.minimax_key,
+                "x-api-key": key,
             },
             json={
                 "model": model,
@@ -130,10 +183,13 @@ class ProviderFacade:
         return content
 
     async def _call_stepfun(self, messages: list[dict], model: str) -> str:
+        key = self.effective_stepfun_key()
+        if not key:
+            raise RuntimeError("StepFun API key is not configured")
         resp = await self._client.post(
-            "https://api.stepfun.com/v1/chat/completions",
+            f"{STEPFUN_HOST}/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {self.stepfun_key}",
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
             json={
@@ -158,7 +214,8 @@ class ProviderFacade:
     async def _call_cli_proxy(
         self, messages: list[dict], model: str, max_tokens: int
     ) -> str:
-        if not self.cli_proxy_key:
+        key = self.effective_cli_proxy_key()
+        if not key:
             raise RuntimeError("CLIProxy API key is not configured")
 
         system_parts, anthropic_messages = _split_anthropic_messages(messages)
@@ -172,11 +229,11 @@ class ProviderFacade:
             payload["system"] = "\n\n".join(system_parts)
 
         resp = await self._client.post(
-            f"{self.cli_proxy_base_url}/v1/messages",
+            f"{self.effective_cli_proxy_base_url()}/v1/messages",
             headers={
                 "Content-Type": "application/json",
                 "anthropic-version": "2023-06-01",
-                "x-api-key": self.cli_proxy_key,
+                "x-api-key": key,
             },
             json=payload,
         )
@@ -250,7 +307,7 @@ class ProviderFacade:
             try:
                 return await self._call_stepfun_with_tools(messages, model, tools, tool_choice)
             except httpx.HTTPStatusError:
-                if not self.minimax_key:
+                if not self.effective_minimax_llm_key():
                     raise
                 return await self._call_minimax_with_tools(messages, "MiniMax-M3", tools, max_tokens)
         if provider == "cliproxy":
@@ -260,12 +317,15 @@ class ProviderFacade:
     async def _call_minimax_with_tools(
         self, messages: list[dict], model: str, tools: list[Tool], max_tokens: int
     ) -> "ModelResult":
+        key = self.effective_minimax_llm_key()
+        if not key:
+            raise RuntimeError("MiniMax API key is not configured")
         resp = await self._client.post(
-            "https://api.minimaxi.com/anthropic/v1/messages",
+            f"{self.effective_minimax_host()}/anthropic/v1/messages",
             headers={
                 "Content-Type": "application/json",
                 "anthropic-version": "2023-06-01",
-                "x-api-key": self.minimax_key,
+                "x-api-key": key,
             },
             json={
                 "model": model,
@@ -283,10 +343,13 @@ class ProviderFacade:
     async def _call_stepfun_with_tools(
         self, messages: list[dict], model: str, tools: list[Tool], tool_choice: str
     ) -> "ModelResult":
+        key = self.effective_stepfun_key()
+        if not key:
+            raise RuntimeError("StepFun API key is not configured")
         resp = await self._client.post(
-            "https://api.stepfun.com/v1/chat/completions",
+            f"{STEPFUN_HOST}/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {self.stepfun_key}",
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
             json={
@@ -314,7 +377,8 @@ class ProviderFacade:
     async def _call_cli_proxy_with_tools(
         self, messages: list[dict], model: str, tools: list[Tool], max_tokens: int
     ) -> "ModelResult":
-        if not self.cli_proxy_key:
+        key = self.effective_cli_proxy_key()
+        if not key:
             raise RuntimeError("CLIProxy API key is not configured")
         system_parts, anthropic_messages = _split_anthropic_messages(messages)
         payload = {
@@ -327,11 +391,11 @@ class ProviderFacade:
         if system_parts:
             payload["system"] = "\n\n".join(system_parts)
         resp = await self._client.post(
-            f"{self.cli_proxy_base_url}/v1/messages",
+            f"{self.effective_cli_proxy_base_url()}/v1/messages",
             headers={
                 "Content-Type": "application/json",
                 "anthropic-version": "2023-06-01",
-                "x-api-key": self.cli_proxy_key,
+                "x-api-key": key,
             },
             json=payload,
         )
