@@ -18,6 +18,11 @@ from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
 from agents.credential_context import use_credentials, CredentialOverride
 from agents.connection_sessions import connection_store, session_public_view
+from agents.quota import (
+    enforce_platform_quota,
+    read_quota_snapshot,
+    normalize_guest_id,
+)
 from config import settings
 from models.schemas import (
     SessionCreate,
@@ -31,6 +36,50 @@ import httpx
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _guest_id_from_request(request: Request, explicit: str | None = None) -> str | None:
+    raw = explicit or request.headers.get("x-guest-id") or request.headers.get("X-Guest-Id")
+    return normalize_guest_id(raw)
+
+
+def _quota_http_exception(decision) -> HTTPException:
+    """Map quota denial to HTTP without leaking secrets or internals."""
+    snap = decision.snapshot
+    detail = {
+        "code": decision.reason or "quota_denied",
+        "message": {
+            "free_quota_exhausted": "Free demo credits used up for today. Connect your own key to continue.",
+            "global_budget_exhausted": "Platform demo is at capacity today. Try again tomorrow or use your own key.",
+            "rate_limited": "Too many requests from this network. Slow down or use your own key.",
+        }.get(decision.reason or "", "Platform free tier unavailable."),
+        "remaining": snap.remaining,
+        "limit": snap.limit,
+        "globalRemaining": snap.global_remaining,
+        "day": snap.day,
+        "byok": snap.byok,
+    }
+    return HTTPException(status_code=decision.http_status, detail=detail)
+
+
+def _require_platform_quota(
+    request: Request,
+    *,
+    action: str,
+    mode: str | None = None,
+    connection_session_id: str | None = None,
+    guest_id: str | None = None,
+):
+    decision = enforce_platform_quota(
+        request=request,
+        action=action,
+        mode=mode,
+        connection_session_id=connection_session_id,
+        guest_id=guest_id or _guest_id_from_request(request),
+    )
+    if not decision.allowed:
+        raise _quota_http_exception(decision)
+    return decision.snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +388,41 @@ async def connections_unbind(session_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Platform free-tier quota (server-enforced; keys never exposed)
+# ---------------------------------------------------------------------------
+
+@router.get("/quota")
+async def get_quota(
+    request: Request,
+    guest_id: str | None = Query(default=None),
+    connection_session: str | None = Query(default=None),
+):
+    """Return remaining free credits for this guest/IP (or BYOK unlimited)."""
+    gid = _guest_id_from_request(request, guest_id)
+    snap = read_quota_snapshot(
+        request=request,
+        guest_id=gid,
+        connection_session_id=connection_session,
+    )
+    return {
+        "day": snap.day,
+        "used": snap.used,
+        "limit": snap.limit,
+        "remaining": snap.remaining,
+        "globalUsed": snap.global_used,
+        "globalLimit": snap.global_limit,
+        "globalRemaining": snap.global_remaining,
+        "byok": snap.byok,
+        "costs": {
+            "chatDirect": 1,
+            "chatCrew": 2,
+            "storyBeat": 5,
+            "tts": 1,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # TTS (cloned character voices via MiniMax T2A)
 # ---------------------------------------------------------------------------
 
@@ -361,19 +445,27 @@ async def list_tts_voices():
 
 @router.post("/tts")
 async def synthesize_tts(
+    request: Request,
     payload: TtsRequest,
     provider: ProviderFacade = Depends(get_provider),
 ):
     """Synthesize speech for a cloned character voice. Returns audio/mpeg."""
+    snap = _require_platform_quota(
+        request,
+        action="tts",
+        connection_session_id=payload.connectionSessionId,
+    )
     override = _resolve_override_from_session(payload.connectionSessionId)
+    # Platform key stays server-side only. BYOK uses bind override keys.
     api_key = settings.minimax_api_key
     if override is not None:
-        # Prefer TTS slot, then LLM slot from bind, then platform.
         api_key = override.tts_key or override.llm_key or api_key
     elif hasattr(provider, "effective_minimax_tts_key"):
-        # Still allow ambient context if set
         with use_credentials(override):
             api_key = provider.effective_minimax_tts_key() or api_key
+
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Speech is not configured on this server.")
 
     try:
         with use_credentials(override):
@@ -384,6 +476,7 @@ async def synthesize_tts(
                 api_key=api_key,
             )
     except TTSError as exc:
+        # Never echo raw provider bodies (may include account hints).
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
         logger.exception("TTS endpoint failed for character %s", payload.characterId)
@@ -395,6 +488,7 @@ async def synthesize_tts(
         headers={
             "Cache-Control": "no-store",
             "X-Voice-Character": payload.characterId,
+            "X-Quota-Remaining": str(snap.remaining if not snap.byok else "byok"),
         },
     )
 
@@ -562,10 +656,12 @@ async def session_action(
 
 @router.get("/session/{session_id}/stream")
 async def stream_session(
+    request: Request,
     session_id: str,
     voice_example: str | None = Query(default=None),
     language: str = Query(default="en"),
     connection_session: str | None = Query(default=None),
+    guest_id: str | None = Query(default=None),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -586,6 +682,9 @@ async def stream_session(
     own short-lived sessions per beat), and re-open a session for each
     per-event stop-signal check. No DB connection is held during the
     inter-beat waits.
+
+    Platform free-tier: one story beat costs 5 credits (charged after session
+    validation, before LLM work). BYOK connection_session skips the meter.
     """
     # Existence check + task_prompt fetch — short-lived session so the
     # connection returns to the pool before the SSE stream starts.
@@ -604,6 +703,15 @@ async def stream_session(
             )
 
         resolved_session_id = session.id
+
+    # Charge only after the session is known valid (do not bill 404s).
+    # SSE cannot set custom headers; guest_id query must be a UUID.
+    _require_platform_quota(
+        request,
+        action="story_beat",
+        connection_session_id=connection_session,
+        guest_id=_guest_id_from_request(request, guest_id),
+    )
 
     bind_override = _resolve_override_from_session(connection_session)
 
@@ -794,6 +902,7 @@ class ChatResponseCrew(BaseModel):
 
 @router.post("/chat")
 async def chat(
+    request: Request,
     payload: ChatRequest,
     director: DirectorAgent = Depends(get_director),
 ):
@@ -820,6 +929,13 @@ async def chat(
             detail=f"Invalid mode '{payload.mode}'. Expected 'direct' or 'crew'.",
         )
 
+    snap = _require_platform_quota(
+        request,
+        action="chat",
+        mode=payload.mode,
+        connection_session_id=payload.connectionSessionId,
+    )
+
     bind_override = _resolve_override_from_session(payload.connectionSessionId)
     # Prefer provider from bind when present
     llm_provider = payload.llmProvider
@@ -841,6 +957,8 @@ async def chat(
                 },
                 session_factory=async_session_factory,
             )
+        if isinstance(result, dict) and not snap.byok:
+            result = {**result, "quotaRemaining": snap.remaining}
         return result
     except HTTPException:
         raise

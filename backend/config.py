@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     allowed_origins: str = ""
     log_level: str = "INFO"
 
+    # Platform free-tier (server-enforced). Keys never leave the server.
+    # Costs: chat direct=1, crew=2, story beat=5, tts=1.
+    free_credits_guest: int = 8
+    # Site-wide daily budget for platform keys (sum of all free-tier spends).
+    platform_daily_credit_budget: int = 5000
+    # Burst shield: max billable platform ops per IP per rolling hour.
+    platform_rate_limit_per_hour: int = 40
+    # Salt for hashing client IPs in quota identity (not a secret key material).
+    quota_ip_salt: str = "abq-quota-v1"
+
     @model_validator(mode="after")
     def _require_at_least_one_api_key(self) -> "Settings":
         if not (self.minimax_api_key or self.stepfun_api_key or self.cli_proxy_api_key):
