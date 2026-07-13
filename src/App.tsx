@@ -1617,7 +1617,6 @@ function App() {
                       {currentStoryHeading && currentStoryHeading !== currentStoryTypeChip && (
                         <span className="story-scene-card__speaker">{currentStoryHeading}</span>
                       )}
-                      <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
                       <button
                         type="button"
                         className="story-scene-card__gif-toggle"
