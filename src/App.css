@@ -2526,13 +2526,45 @@ button.story-event {
   font-size: 10px;
 }
 
+/* Compact chip sits on dark story/chat HUD — solid cream text, dark glass, no yellow wash */
 .connection-chip--compact {
   width: auto;
   min-height: 32px;
   padding: 6px 10px;
-  background: rgba(247, 206, 70, 0.12);
-  border-color: rgba(247, 206, 70, 0.28);
-  color: rgba(255, 247, 208, 0.92);
+  background: rgba(6, 10, 8, 0.78);
+  border-color: rgba(247, 206, 70, 0.42);
+  color: #fff8d6;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.connection-chip--compact .connection-chip__label {
+  color: #fff8d6;
+  opacity: 1;
+}
+
+.connection-chip--compact .connection-chip__caret {
+  color: rgba(255, 248, 214, 0.78);
+  opacity: 1;
+}
+
+.connection-chip--compact:hover,
+.connection-chip--compact:focus-visible {
+  background: rgba(247, 206, 70, 0.16);
+  border-color: rgba(247, 206, 70, 0.72);
+  color: #fffef0;
+  outline: 2px solid rgba(247, 206, 70, 0.4);
+  outline-offset: 2px;
+}
+
+.connection-chip--compact:hover .connection-chip__label,
+.connection-chip--compact:focus-visible .connection-chip__label {
+  color: #fffef0;
+}
+
+.story-hud .connection-chip--compact {
+  color: #fff8d6;
 }
 
 .quota-pill {
@@ -2558,10 +2590,11 @@ button.story-event {
   margin: 0.25rem 0 0;
   padding: 0.15rem 0.45rem;
   font-size: 0.65rem;
+  color: rgba(255, 248, 214, 0.9);
 }
 
 .connection-chip--compact .connection-chip__status {
-  color: rgba(255, 247, 208, 0.55);
+  color: rgba(255, 248, 214, 0.72);
 }
 
 .connection-sheet-overlay {
