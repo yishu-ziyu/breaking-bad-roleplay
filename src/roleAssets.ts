@@ -278,9 +278,9 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
       {
         id: 'mike-resigned-calm',
         source: 'giphy',
-        url: 'https://media.giphy.com/media/M0XoCjRUkhSYE/giphy.gif',
+        url: 'https://media.giphy.com/media/Pkit5v6UWonyFyjwjl/giphy.gif',
         tags: ['restraint', 'tense', 'default'],
-        usageNotes: 'Mike resigned, been-through-it-all calm, or low-emotion pressure.',
+        usageNotes: 'Mike resigned, been-through-it-all calm, or low-emotion pressure. "I don\'t think fear is a great motivator."',
         safetyNotes: fictionalRoleSafetyNote,
         copyrightNotes: platformCopyrightNote,
       },
