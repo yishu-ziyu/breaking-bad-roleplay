@@ -1,6 +1,12 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { beatIndexFromBeatId, deriveBeatProgressFromMessages, pingSession } from './useStoryStream'
+import {
+  beatIndexFromBeatId,
+  buildStreamQuery,
+  deriveBeatProgressFromMessages,
+  pingSession,
+  readPersistedStoryLanguage,
+} from './useStoryStream'
 
 const originalFetch = globalThis.fetch
 
@@ -48,6 +54,45 @@ describe('useStoryStream pingSession', () => {
     const alive = await pingSession('temporarily-unavailable')
 
     assert.equal(alive, 'error')
+  })
+})
+
+describe('buildStreamQuery (continue must keep language)', () => {
+  it('always includes language, defaulting to en', () => {
+    assert.equal(buildStreamQuery({}), '?language=en')
+    assert.equal(buildStreamQuery({ language: null }), '?language=en')
+    assert.equal(buildStreamQuery({ language: '' }), '?language=en')
+  })
+
+  it('preserves zh on continue-style reconnects', () => {
+    assert.equal(buildStreamQuery({ language: 'zh' }), '?language=zh')
+  })
+
+  it('includes voice_example when provided', () => {
+    const qs = buildStreamQuery({ language: 'zh', voiceExample: 'Say my name.' })
+    assert.ok(qs.includes('language=zh'))
+    assert.ok(qs.includes('voice_example='))
+    assert.ok(qs.includes(encodeURIComponent('Say my name.')))
+  })
+})
+
+describe('readPersistedStoryLanguage', () => {
+  it('reads abq_language from localStorage when present', () => {
+    const original = globalThis.localStorage
+    const store: Record<string, string> = { abq_language: JSON.stringify('zh') }
+    // minimal localStorage mock for node:test
+    // @ts-expect-error test stub
+    globalThis.localStorage = {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v },
+      removeItem: (k: string) => { delete store[k] },
+    }
+    try {
+      assert.equal(readPersistedStoryLanguage(), 'zh')
+    } finally {
+      // @ts-expect-error restore
+      globalThis.localStorage = original
+    }
   })
 })
 
