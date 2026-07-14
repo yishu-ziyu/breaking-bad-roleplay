@@ -65,7 +65,68 @@ def _char_label(name: str) -> str:
     return str(name).strip() or "unknown"
 
 
-def characters_from_messages(messages: list[Any]) -> list[dict[str, Any]]:
+_CHAR_LABEL_ZH: dict[str, str] = {
+    "walter": "沃尔特",
+    "walter white": "沃尔特",
+    "jesse": "杰西",
+    "jesse pinkman": "杰西",
+    "skyler": "斯凯勒",
+    "skyler white": "斯凯勒",
+    "saul": "索尔",
+    "saul goodman": "索尔",
+    "mike": "麦克",
+    "mike ehrmantraut": "麦克",
+    "gus": "古斯",
+    "gus fring": "古斯",
+    "hank": "汉克",
+    "marie": "玛丽",
+}
+
+
+def _pick_localized_text(item: dict[str, Any] | str | None, language: str = "en") -> str:
+    """Prefer text_zh when language is Chinese; never invent new prose."""
+    lang = (language or "en").lower()
+    if isinstance(item, str):
+        return item
+    if not isinstance(item, dict):
+        return ""
+    if lang.startswith("zh"):
+        zh = item.get("text_zh") or item.get("label_zh")
+        if zh:
+            return str(zh)
+    return str(item.get("text") or item.get("label") or "")
+
+
+def _char_label_localized(name: str, language: str = "en") -> str:
+    raw = str(name or "").strip()
+    if not raw:
+        return "unknown"
+    if (language or "en").lower().startswith("zh"):
+        key = raw.lower()
+        if key in _CHAR_LABEL_ZH:
+            return _CHAR_LABEL_ZH[key]
+        # strip char_ prefix from node ids
+        bare = key.replace("char_", "").replace("_", " ")
+        if bare in _CHAR_LABEL_ZH:
+            return _CHAR_LABEL_ZH[bare]
+        # English full names still present
+        for eng, zh in _CHAR_LABEL_ZH.items():
+            if eng in key:
+                return zh
+        # last resort: run director normalizer if available
+        try:
+            from agents.director import normalize_zh_character_names
+            return normalize_zh_character_names(raw)
+        except Exception:
+            return raw
+    return raw
+
+
+
+def characters_from_messages(
+    messages: list[Any],
+    language: str = "en",
+) -> list[dict[str, Any]]:
     seen: dict[str, dict[str, Any]] = {}
     for msg in messages or []:
         name = getattr(msg, "character_name", None) or (
@@ -74,17 +135,14 @@ def characters_from_messages(messages: list[Any]) -> list[dict[str, Any]]:
         if not name:
             continue
         nid = _char_node_id(str(name))
+        label = _char_label_localized(str(name), language)
         if nid not in seen:
             seen[nid] = {
                 "id": nid,
                 "kind": "character",
-                "label": _char_label(str(name)),
+                "label": label,
                 "speak_count": 0,
             }
-        else:
-            # Prefer fuller display label when available
-            if len(str(name)) > len(seen[nid]["label"]):
-                seen[nid]["label"] = _char_label(str(name))
         seen[nid]["speak_count"] += 1
     return list(seen.values())
 
@@ -125,7 +183,62 @@ def co_presence_edges(messages: list[Any]) -> list[dict[str, Any]]:
     return edges
 
 
-def board_layers(board: dict[str, Any] | None) -> tuple[list[dict], list[dict], list[dict]]:
+
+def enrich_board_locale(board: dict[str, Any] | None, language: str = "en") -> dict[str, Any] | None:
+    """For Chinese UI, fill missing text_zh from era pack by id (covers old sessions)."""
+    if not board or not str(language).lower().startswith("zh"):
+        return board
+    try:
+        from agents.continuity_board import load_era_pack
+        pack = load_era_pack(str(board.get("era") or "s3_mid"))
+    except Exception:
+        return board
+    out = dict(board)
+    if not out.get("label_zh") and pack.get("label_zh"):
+        out["label_zh"] = pack.get("label_zh")
+    if not out.get("label") and pack.get("label"):
+        out["label"] = pack.get("label")
+    fact_zh = {
+        str(f.get("id")): f.get("text_zh")
+        for f in (pack.get("shared_facts") or [])
+        if isinstance(f, dict) and f.get("id") and f.get("text_zh")
+    }
+    ten_zh = {
+        str(t.get("id")): t.get("text_zh")
+        for t in (pack.get("open_tensions") or [])
+        if isinstance(t, dict) and t.get("id") and t.get("text_zh")
+    }
+    facts = []
+    for f in out.get("shared_facts") or []:
+        if not isinstance(f, dict):
+            facts.append(f)
+            continue
+        nf = dict(f)
+        if not nf.get("text_zh"):
+            zh = fact_zh.get(str(nf.get("id") or ""))
+            if zh:
+                nf["text_zh"] = zh
+        facts.append(nf)
+    out["shared_facts"] = facts
+    tensions = []
+    for t in out.get("open_tensions") or []:
+        if not isinstance(t, dict):
+            tensions.append(t)
+            continue
+        nt = dict(t)
+        if not nt.get("text_zh"):
+            zh = ten_zh.get(str(nt.get("id") or ""))
+            if zh:
+                nt["text_zh"] = zh
+        tensions.append(nt)
+    out["open_tensions"] = tensions
+    return out
+
+
+def board_layers(
+    board: dict[str, Any] | None,
+    language: str = "en",
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Return (fact_nodes, tension_edges, cost_nodes) from continuity board."""
     if not board:
         return [], [], []
@@ -134,11 +247,12 @@ def board_layers(board: dict[str, Any] | None) -> tuple[list[dict], list[dict], 
         if not isinstance(f, dict):
             continue
         fid = str(f.get("id") or _slug(str(f.get("text") or "fact")))
+        label = _pick_localized_text(f, language) or fid
         facts.append(
             {
                 "id": f"fact_{_slug(fid)}",
                 "kind": "fact",
-                "label": str(f.get("text") or fid)[:160],
+                "label": label[:160],
                 "known_by": list(f.get("known_by") or []),
                 "irreversible": bool(f.get("irreversible")),
             }
@@ -148,6 +262,7 @@ def board_layers(board: dict[str, Any] | None) -> tuple[list[dict], list[dict], 
         if not isinstance(t, dict):
             continue
         parties = [str(p) for p in (t.get("parties") or [])]
+        label = _pick_localized_text(t, language) or "tension"
         if len(parties) < 2:
             # still keep as node-like edge stub to primary party if any
             if parties:
@@ -157,7 +272,7 @@ def board_layers(board: dict[str, Any] | None) -> tuple[list[dict], list[dict], 
                         "source": _char_node_id(parties[0]),
                         "target": _char_node_id(parties[0]),
                         "kind": "tension",
-                        "label": str(t.get("text") or "tension")[:120],
+                        "label": label[:120],
                     }
                 )
             continue
@@ -170,19 +285,22 @@ def board_layers(board: dict[str, Any] | None) -> tuple[list[dict], list[dict], 
                     "source": _char_node_id(a),
                     "target": _char_node_id(b),
                     "kind": "tension",
-                    "label": str(t.get("text") or "tension")[:120],
+                    "label": label[:120],
                 }
             )
     costs: list[dict[str, Any]] = []
     for i, c in enumerate(board.get("irreversible_costs") or []):
-        text = c if isinstance(c, str) else str((c or {}).get("text") or c)
-        if not text:
+        if isinstance(c, str):
+            cost_text = c
+        else:
+            cost_text = _pick_localized_text(c, language) or str((c or {}).get("text") or c)
+        if not cost_text:
             continue
         costs.append(
             {
                 "id": f"cost_{i}",
                 "kind": "cost",
-                "label": text[:160],
+                "label": cost_text[:160],
             }
         )
     return facts, tensions, costs
@@ -258,12 +376,14 @@ def build_plot_graph(
     outline: str | None = None,
     messages: list[Any] | None = None,
     board: dict[str, Any] | None = None,
+    language: str = "en",
 ) -> dict[str, Any]:
     """Assemble the personal plot graph for one session."""
     messages = messages or []
+    board = enrich_board_locale(board, language)
     beats = parse_outline_beats(outline)
-    chars = characters_from_messages(messages)
-    facts, tensions, costs = board_layers(board)
+    chars = characters_from_messages(messages, language=language)
+    facts, tensions, costs = board_layers(board, language=language)
     # Ensure character nodes exist for board known_by even if they never spoke
     char_ids = {c["id"] for c in chars}
     for fact in facts:
@@ -274,7 +394,7 @@ def build_plot_graph(
                     {
                         "id": cid,
                         "kind": "character",
-                        "label": _char_label(str(who)),
+                        "label": _char_label_localized(str(who), language),
                         "speak_count": 0,
                     }
                 )
@@ -288,7 +408,7 @@ def build_plot_graph(
                     {
                         "id": cid,
                         "kind": "character",
-                        "label": label,
+                        "label": _char_label_localized(label, language),
                         "speak_count": 0,
                     }
                 )
@@ -312,7 +432,12 @@ def build_plot_graph(
         "session_id": session_id,
         "title": title or "Untitled session",
         "task_prompt": task_prompt or "",
-        "era": (board or {}).get("era") or default_era_id(),
+        "era": (
+            ((board or {}).get("label_zh") if str(language).lower().startswith("zh") else None)
+            or (board or {}).get("label")
+            or (board or {}).get("era")
+            or default_era_id()
+        ),
         "summary": {
             "beat_count": len(beats),
             "character_count": len(chars),

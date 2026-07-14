@@ -1,41 +1,81 @@
 {
   "era": "s1_early",
   "label": "Pilot neighborhood",
-  "present_cast_default": ["walter", "jesse", "skyler"],
+  "present_cast_default": [
+    "walter",
+    "jesse",
+    "skyler"
+  ],
   "shared_facts": [
     {
       "id": "s1_cancer_private",
       "text": "Walt has received a serious medical diagnosis he has not fully shared with the household.",
-      "known_by": ["walter"],
-      "hidden_from": ["jesse", "skyler", "saul", "mike", "gus"],
-      "irreversible": false
+      "known_by": [
+        "walter"
+      ],
+      "hidden_from": [
+        "jesse",
+        "skyler",
+        "saul",
+        "mike",
+        "gus"
+      ],
+      "irreversible": false,
+      "text_zh": "沃尔特收到了严重的医学诊断，还没有完整告诉家里。"
     },
     {
       "id": "s1_partnership_starts",
       "text": "Walt and Jesse have begun a dangerous partnership outside normal life.",
-      "known_by": ["walter", "jesse"],
-      "hidden_from": ["skyler", "saul", "mike", "gus"],
-      "irreversible": false
+      "known_by": [
+        "walter",
+        "jesse"
+      ],
+      "hidden_from": [
+        "skyler",
+        "saul",
+        "mike",
+        "gus"
+      ],
+      "irreversible": false,
+      "text_zh": "沃尔特和杰西已经在正常生活之外开始危险的合伙。"
     },
     {
       "id": "s1_gray_matter_wound",
       "text": "Walt carries a deep pride wound about lost scientific success and status.",
-      "known_by": ["walter"],
-      "hidden_from": ["jesse", "skyler", "saul", "mike", "gus"],
-      "irreversible": false
+      "known_by": [
+        "walter"
+      ],
+      "hidden_from": [
+        "jesse",
+        "skyler",
+        "saul",
+        "mike",
+        "gus"
+      ],
+      "irreversible": false,
+      "text_zh": "沃尔特对失去的科学成就与地位，带着很深的自尊伤口。"
     }
   ],
   "open_tensions": [
     {
       "id": "s1_ten_family_vs_secret",
       "text": "Walt wants control and money without losing the household story; Skyler senses cracks.",
-      "parties": ["walter", "skyler"]
+      "parties": [
+        "walter",
+        "skyler"
+      ],
+      "text_zh": "沃尔特想要掌控与金钱，又不想失去家里的体面故事；斯凯勒已经察觉裂缝。"
     },
     {
       "id": "s1_ten_teacher_student",
       "text": "Walt wants obedience dressed as partnership; Jesse wants respect and not to be disposable.",
-      "parties": ["walter", "jesse"]
+      "parties": [
+        "walter",
+        "jesse"
+      ],
+      "text_zh": "沃尔特要的是包装成合伙的服从；杰西要的是尊重，而不是被当工具。"
     }
   ],
-  "irreversible_costs": []
+  "irreversible_costs": [],
+  "label_zh": "第一季早期：教学、诊断与第一次越界"
 }
