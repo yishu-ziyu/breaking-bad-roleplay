@@ -23,7 +23,8 @@
       "hidden_from": [
         "skyler"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "制毒合伙在古斯·弗林格的组织与标准下运行。"
     },
     {
       "id": "s3_mike_discipline",
@@ -37,7 +38,8 @@
       "hidden_from": [
         "skyler"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "麦克替古斯执行专业纪律；凭自尊行事只会制造更多尸体。"
     },
     {
       "id": "s3_skyler_suspects",
@@ -50,7 +52,8 @@
         "jesse",
         "gus"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "斯凯勒知道家里的故事不完整、很危险，但还没有全图。"
     },
     {
       "id": "s3_saul_transactional",
@@ -63,7 +66,8 @@
       "hidden_from": [
         "gus"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "索尔是处理法律压力和退路的交易型顾问，不是共谋的伙伴。"
     },
     {
       "id": "s3_walt_jesse_hierarchy",
@@ -77,7 +81,8 @@
       "hidden_from": [
         "skyler"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "沃尔特仍以师长对弟子的口吻对杰西说话，同时把他当脏活的手。"
     },
     {
       "id": "s3_jesse_trust_ledger",
@@ -91,7 +96,8 @@
         "skyler",
         "gus"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "杰西对沃尔特的信任已经透支：他还会接电话，但一被利用就退缩。"
     },
     {
       "id": "s3_pair_room_rule",
@@ -104,7 +110,8 @@
         "skyler",
         "saul"
       ],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "沃尔特和杰西同处一室时，冲突多半是控制仪式对上疲惫良知，不是物流细节。"
     }
   ],
   "open_tensions": [
@@ -114,7 +121,8 @@
       "parties": [
         "mike",
         "walter"
-      ]
+      ],
+      "text_zh": "麦克的半吊子警告，撞上沃尔特要把威胁按自己的方式做完的执念。"
     },
     {
       "id": "s3_ten_jesse_used",
@@ -123,7 +131,8 @@
         "jesse",
         "walter",
         "gus"
-      ]
+      ],
+      "text_zh": "杰西的忠诚正被当资源花掉；他想退出下一轮暴力循环。"
     },
     {
       "id": "s3_ten_standards",
@@ -131,7 +140,8 @@
       "parties": [
         "gus",
         "walter"
-      ]
+      ],
+      "text_zh": "古斯要看不见的秩序；沃尔特的失控让标准变成私人恩怨。"
     },
     {
       "id": "s3_ten_approval_vs_use",
@@ -139,8 +149,10 @@
       "parties": [
         "walter",
         "jesse"
-      ]
+      ],
+      "text_zh": "杰西仍想要沃尔特的认可；沃尔特仍把认可当牵绳。这就是场景引擎。"
     }
   ],
-  "irreversible_costs": []
+  "irreversible_costs": [],
+  "label_zh": "第三季中段：苍蝇 / 半吊子 / 全力以赴一带"
 }

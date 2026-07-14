@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildSituationMap, fetchPlotGraph, type PlotGraphData } from './PlotGraphPanel.tsx'
+import {
+  buildSituationMap,
+  fetchPlotGraph,
+  shortMapLabel,
+  type PlotGraphData,
+} from './PlotGraphPanel.tsx'
 
-test('fetchPlotGraph hits session plot-graph endpoint', async () => {
+test('fetchPlotGraph hits session plot-graph endpoint with language', async () => {
   const calls: string[] = []
   const original = globalThis.fetch
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -23,8 +28,8 @@ test('fetchPlotGraph hits session plot-graph endpoint', async () => {
     )
   }) as typeof fetch
   try {
-    const data = await fetchPlotGraph('s1')
-    assert.equal(calls[0], '/api/session/s1/plot-graph')
+    const data = await fetchPlotGraph('s1', 'zh')
+    assert.equal(calls[0], '/api/session/s1/plot-graph?language=zh')
     assert.equal(data.session_id, 's1')
     assert.equal(data.nodes[0].kind, 'beat')
   } finally {
@@ -81,7 +86,6 @@ test('buildSituationMap splits past / current / fog without inventing futures', 
   assert.equal(view.current?.label, 'Partner starts to doubt you')
   assert.deepEqual(view.known, ['Cargo count does not match'])
   assert.deepEqual(view.shifting, ['Trust down'])
-  // fog dedupes identical tension labels
   assert.deepEqual(view.fog, [
     'Loyalty is being spent as a resource',
     'Police heat rising',
@@ -94,4 +98,12 @@ test('buildSituationMap handles empty graph', () => {
   assert.equal(view.current, null)
   assert.equal(view.past.length, 0)
   assert.equal(view.fog.length, 0)
+})
+
+test('shortMapLabel truncates without inventing content', () => {
+  assert.equal(shortMapLabel('短'), '短')
+  const long = '洛斯波洛斯兄弟快餐办公室 - 古斯与沃尔特正面对峙：古斯以冷漠的礼貌邀请沃尔特坐下'
+  const out = shortMapLabel(long, 18)
+  assert.ok(out.length <= 19)
+  assert.ok(out.endsWith('…') || out.length <= 18)
 })

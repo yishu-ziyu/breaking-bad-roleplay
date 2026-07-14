@@ -423,6 +423,11 @@ const uiText: Record<Language, Record<string, string>> = {
     plotNetNoPast: 'This is where the thread starts.',
     plotNetNoFog: 'No open pressure yet - the next beat will write the fog.',
     plotNetHint: 'Past is fact. Present is the door. Future is fog - only this session.',
+    plotNetBeats: 'beats',
+    plotNetCastMeta: 'cast',
+    plotNetLines: 'lines',
+    plotNetNowTag: 'NOW',
+    plotNetFogTag: 'FOG',
     pressureDossier: 'Relationship pressure',
     pressureTrust: 'Trust',
     pressureStyle: 'Pressure',
@@ -540,6 +545,11 @@ const uiText: Record<Language, Record<string, string>> = {
     plotNetNoPast: '这就是线头开始的地方。',
     plotNetNoFog: '还没有未解压力，下一拍会写出迷雾。',
     plotNetHint: '过去是图，现在是门，未来是雾。只来自本局。',
+    plotNetBeats: '节拍',
+    plotNetCastMeta: '角色',
+    plotNetLines: '台词',
+    plotNetNowTag: '此刻',
+    plotNetFogTag: '迷雾',
     pressureDossier: '关系压力',
     pressureTrust: '信任',
     pressureStyle: '施压方式',
@@ -1891,6 +1901,7 @@ function App() {
         sessionId={story.sessionId}
         open={plotMapOpen}
         onClose={() => setPlotMapOpen(false)}
+        language={language}
         labels={{
           plotNet: t.plotNet,
           plotNetShow: t.plotNetShow,
@@ -1907,6 +1918,11 @@ function App() {
           plotNetNoPast: t.plotNetNoPast,
           plotNetNoFog: t.plotNetNoFog,
           plotNetHint: t.plotNetHint,
+          plotNetBeats: t.plotNetBeats,
+          plotNetCastMeta: t.plotNetCastMeta,
+          plotNetLines: t.plotNetLines,
+          plotNetNowTag: t.plotNetNowTag,
+          plotNetFogTag: t.plotNetFogTag,
         }}
       />
     </main>

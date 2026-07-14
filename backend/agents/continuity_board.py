@@ -80,6 +80,8 @@ def new_session_board(
     return {
         "session_id": session_id,
         "era": pack.get("era", era),
+        "label": pack.get("label"),
+        "label_zh": pack.get("label_zh"),
         "location": location,
         "present_cast": cast,
         "shared_facts": deepcopy(pack.get("shared_facts") or []),

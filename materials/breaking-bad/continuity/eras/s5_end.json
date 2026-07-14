@@ -1,35 +1,63 @@
 {
   "era": "s5_end",
   "label": "Ozymandias / Felina neighborhood",
-  "present_cast_default": ["walter", "jesse", "skyler", "saul", "mike"],
+  "present_cast_default": [
+    "walter",
+    "jesse",
+    "skyler",
+    "saul",
+    "mike"
+  ],
   "shared_facts": [
     {
       "id": "s5_empire_collapse",
       "text": "The empire is collapsed or collapsing; public family exposure is high.",
-      "known_by": ["walter", "jesse", "skyler", "saul"],
+      "known_by": [
+        "walter",
+        "jesse",
+        "skyler",
+        "saul"
+      ],
       "hidden_from": [],
-      "irreversible": true
+      "irreversible": true,
+      "text_zh": "帝国已经崩塌或正在崩塌；家庭被公开暴露的程度很高。"
     },
     {
       "id": "s5_many_bodies",
       "text": "Multiple irreversible deaths and betrayals already sit on the ledger.",
-      "known_by": ["walter", "jesse", "skyler", "saul", "mike"],
+      "known_by": [
+        "walter",
+        "jesse",
+        "skyler",
+        "saul",
+        "mike"
+      ],
       "hidden_from": [],
-      "irreversible": true
+      "irreversible": true,
+      "text_zh": "账本上已经堆着多起不可逆的死亡与背叛。"
     },
     {
       "id": "s5_walt_motive",
       "text": "Walt can no longer honestly claim pure provider motive; pride is visible.",
-      "known_by": ["walter", "skyler"],
+      "known_by": [
+        "walter",
+        "skyler"
+      ],
       "hidden_from": [],
-      "irreversible": false
+      "irreversible": false,
+      "text_zh": "沃尔特再也无法诚实地声称自己只是为了养家；自尊已经露出来了。"
     }
   ],
   "open_tensions": [
     {
       "id": "s5_ten_aftermath",
       "text": "Survivors negotiate what is left: money, safety, guilt, and who still gets a future.",
-      "parties": ["walter", "jesse", "skyler"]
+      "parties": [
+        "walter",
+        "jesse",
+        "skyler"
+      ],
+      "text_zh": "幸存者在谈剩下的东西：钱、安全、愧疚，以及谁还有未来。"
     }
   ],
   "irreversible_costs": [
@@ -37,5 +65,6 @@
       "id": "s5_cost_exposure",
       "text": "Family cover story is broken beyond simple repair."
     }
-  ]
+  ],
+  "label_zh": "第五季末：帝国、裂痕与收场"
 }
