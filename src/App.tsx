@@ -408,18 +408,21 @@ const uiText: Record<Language, Record<string, string>> = {
     replayBeat: 'Replay Last Beat',
     startAgain: 'Start Again',
     storyCompleteHint: 'Each new beat will pick up the last chapter\'s context.',
-    plotNet: 'Your plot net',
-    plotNetShow: 'Show plot net',
-    plotNetHide: 'Hide net',
-    plotNetLoad: 'Loading plot net…',
-    plotNetError: 'Could not load plot net.',
-    plotNetEmpty: 'Play a few beats first - the net grows from what you lived.',
-    plotNetSpine: 'Time spine',
-    plotNetTensions: 'Live tensions',
+    plotNet: 'Situation map',
+    plotNetShow: 'Open situation map',
+    plotNetHide: 'Close',
+    plotNetLoad: 'Reading the room…',
+    plotNetError: 'Could not load the map.',
+    plotNetEmpty: 'Play a few beats first - the map grows from what you lived.',
+    plotNetPast: 'Already lived',
+    plotNetNow: 'Current situation',
+    plotNetFog: 'Unknown future',
+    plotNetKnown: 'You already know',
+    plotNetShifting: 'Still shifting',
     plotNetCast: 'Who spoke',
-    plotNetFacts: 'Room facts',
-    plotNetCosts: 'Costs paid',
-    plotNetHint: 'Built only from this session - your spine, co-presence, and what each mouth knew.',
+    plotNetNoPast: 'This is where the thread starts.',
+    plotNetNoFog: 'No open pressure yet - the next beat will write the fog.',
+    plotNetHint: 'Past is fact. Present is the door. Future is fog - only this session.',
     pressureDossier: 'Relationship pressure',
     pressureTrust: 'Trust',
     pressureStyle: 'Pressure',
@@ -522,18 +525,21 @@ const uiText: Record<Language, Record<string, string>> = {
     replayBeat: '重演最后节点',
     startAgain: '重新开始',
     storyCompleteHint: '下一节会用上一章的剧情作为起点。',
-    plotNet: '你的剧情网',
-    plotNetShow: '展开剧情网',
-    plotNetHide: '收起',
-    plotNetLoad: '正在生成剧情网…',
-    plotNetError: '剧情网加载失败。',
-    plotNetEmpty: '先多玩几拍，网会从你经历的内容长出来。',
-    plotNetSpine: '时间脊骨',
-    plotNetTensions: '未解张力',
+    plotNet: '局面地图',
+    plotNetShow: '打开局面地图',
+    plotNetHide: '关闭',
+    plotNetLoad: '正在读场…',
+    plotNetError: '地图加载失败。',
+    plotNetEmpty: '先多玩几拍，地图会从你经历的内容长出来。',
+    plotNetPast: '已经历',
+    plotNetNow: '当前局面',
+    plotNetFog: '未知未来',
+    plotNetKnown: '你已知道',
+    plotNetShifting: '正在变化',
     plotNetCast: '谁开过口',
-    plotNetFacts: '房间事实',
-    plotNetCosts: '已付代价',
-    plotNetHint: '只来自本局：大纲脊骨、同场共现、以及每个人嘴上该知道的事。',
+    plotNetNoPast: '这就是线头开始的地方。',
+    plotNetNoFog: '还没有未解压力，下一拍会写出迷雾。',
+    plotNetHint: '过去是图，现在是门，未来是雾。只来自本局。',
     pressureDossier: '关系压力',
     pressureTrust: '信任',
     pressureStyle: '施压方式',
@@ -735,6 +741,8 @@ function App() {
   const [timelineRailOpen, setTimelineRailOpen] = useState(true)
   /** GIF on stage can be muted so paper text stays primary. */
   const [storyGifHidden, setStoryGifHidden] = useState(false)
+  /** Situation map is opt-in only - never auto-pop on complete. */
+  const [plotMapOpen, setPlotMapOpen] = useState(false)
 
   // Auth state (useAuth called above for quota tier)
   const [cloudPrivacy, setCloudPrivacy] = useState<{
@@ -1776,26 +1784,17 @@ function App() {
                     <button type="button" onClick={handleBranchStory}>{t.branchStory}</button>
                     <button type="button" onClick={handleReplayBeat}>{t.replayBeat}</button>
                     <button type="button" onClick={story.reset}>{t.startAgain}</button>
+                    {story.sessionId && (
+                      <button
+                        type="button"
+                        className="story-complete__map"
+                        onClick={() => setPlotMapOpen(true)}
+                      >
+                        {t.plotNetShow}
+                      </button>
+                    )}
                   </div>
                   <p className="story-complete__hint">{t.storyCompleteHint}</p>
-                  <PlotGraphPanel
-                    sessionId={story.sessionId}
-                    open
-                    labels={{
-                      plotNet: t.plotNet,
-                      plotNetShow: t.plotNetShow,
-                      plotNetHide: t.plotNetHide,
-                      plotNetLoad: t.plotNetLoad,
-                      plotNetError: t.plotNetError,
-                      plotNetEmpty: t.plotNetEmpty,
-                      plotNetSpine: t.plotNetSpine,
-                      plotNetTensions: t.plotNetTensions,
-                      plotNetCast: t.plotNetCast,
-                      plotNetFacts: t.plotNetFacts,
-                      plotNetCosts: t.plotNetCosts,
-                      plotNetHint: t.plotNetHint,
-                    }}
-                  />
                 </div>
               )}
 
@@ -1887,6 +1886,29 @@ function App() {
           </div>
         </section>
       )}
+
+      <PlotGraphPanel
+        sessionId={story.sessionId}
+        open={plotMapOpen}
+        onClose={() => setPlotMapOpen(false)}
+        labels={{
+          plotNet: t.plotNet,
+          plotNetShow: t.plotNetShow,
+          plotNetHide: t.plotNetHide,
+          plotNetLoad: t.plotNetLoad,
+          plotNetError: t.plotNetError,
+          plotNetEmpty: t.plotNetEmpty,
+          plotNetPast: t.plotNetPast,
+          plotNetNow: t.plotNetNow,
+          plotNetFog: t.plotNetFog,
+          plotNetKnown: t.plotNetKnown,
+          plotNetShifting: t.plotNetShifting,
+          plotNetCast: t.plotNetCast,
+          plotNetNoPast: t.plotNetNoPast,
+          plotNetNoFog: t.plotNetNoFog,
+          plotNetHint: t.plotNetHint,
+        }}
+      />
     </main>
     </>
   )
