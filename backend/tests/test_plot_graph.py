@@ -99,3 +99,32 @@ def test_characters_from_messages_counts_speaks():
     chars = characters_from_messages(msgs)
     jesse = next(c for c in chars if "Jesse" in c["label"])
     assert jesse["speak_count"] == 2
+
+
+def test_build_plot_graph_zh_uses_text_zh_and_cast_names():
+    board = new_session_board(session_id="sess-zh", era="s3_mid")
+    msgs = [
+        SimpleNamespace(character_name="Walter White", beat_id="0", content="x"),
+        SimpleNamespace(character_name="Jesse Pinkman", beat_id="0", content="y"),
+    ]
+    graph = build_plot_graph(
+        session_id="sess-zh",
+        title="t",
+        task_prompt="任务",
+        outline="1. 实验室争执\n2. 屋顶沉默",
+        messages=msgs,
+        board=board,
+        language="zh",
+    )
+    facts = [n for n in graph["nodes"] if n["kind"] == "fact"]
+    assert facts, "expected fact nodes"
+    assert any("古斯" in f["label"] or "合伙" in f["label"] or "制毒" in f["label"] for f in facts), facts[:2]
+    # no long English seed leakage on first facts when zh available
+    assert not any(f["label"].startswith("The cook partnership") for f in facts)
+    chars = [n for n in graph["nodes"] if n["kind"] == "character"]
+    labels = {c["label"] for c in chars}
+    assert "沃尔特" in labels
+    assert "杰西" in labels
+    tens = [e for e in graph["edges"] if e["kind"] == "tension"]
+    assert tens
+    assert any("半吊子" in (e.get("label") or "") or "忠诚" in (e.get("label") or "") for e in tens), tens[:2]

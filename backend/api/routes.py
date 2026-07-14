@@ -947,6 +947,7 @@ class PlotGraphResponse(BaseModel):
 @router.get("/session/{session_id}/plot-graph", response_model=PlotGraphResponse)
 async def get_session_plot_graph(
     session_id: str,
+    language: str = Query(default="en"),
     db: AsyncSession = Depends(get_db),
 ):
     """Return this session's personal plot graph (story net).
@@ -998,6 +999,7 @@ async def get_session_plot_graph(
         outline=session.plot_outline,
         messages=messages,
         board=board,
+        language=language,
     )
     return PlotGraphResponse(**graph)
 
