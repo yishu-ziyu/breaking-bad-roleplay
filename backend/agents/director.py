@@ -1862,6 +1862,7 @@ class DirectorAgent:
         llm_provider: str = context.get("llmProvider", "stepfun")
         provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
         participants_backend = crew_participants_from_message(character_id, user_message)
+        backend_primary = participants_backend[0]
         participants_frontend = [
             BACKEND_TO_FRONTEND_ID.get(name, name.lower().split()[0])
             for name in participants_backend
