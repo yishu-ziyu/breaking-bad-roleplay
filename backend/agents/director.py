@@ -16,6 +16,8 @@ from agents.characters import (
     HankSchrader,
 )
 from agents import mckee_story
+from agents.plan_service import PlanService
+from agents.beat_runtime import BeatRuntime
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 from sqlalchemy import select
@@ -385,6 +387,10 @@ class DirectorAgent:
             model_route,
         )
         self.enable_dossier_updates = enable_dossier_updates
+        # DEC-0004 seams: typed plan + single-beat runtime
+        self.plan_service = PlanService()
+        self.runtime = BeatRuntime(self)
+
     async def process(
         self,
         task: str,
@@ -412,7 +418,7 @@ class DirectorAgent:
         yield AgentEvent(
             type="status", data={"message": _status_message("analysing", language)}
         )
-        # ---- Step 1: generate the outline -----------------------------------
+        # ---- Step 1: generate the outline → typed Plan (DEC-0004) --------
         outline_text = await self._generate_outline(task, language=language)
         if outline_text is None:
             yield AgentEvent(
@@ -420,8 +426,9 @@ class DirectorAgent:
                 data={"message": _status_message("outline_failed", language)},
             )
             return
-        scenes = self._parse_outline(outline_text)
-        yield self._outline_event(outline_text, scenes=scenes)
+        plan = PlanService.parse(outline_text)
+        scenes = plan.scene_lines()
+        yield self._outline_event(outline_text, scenes=scenes, plan=plan)
         if not scenes:
             yield AgentEvent(
                 type="error",
@@ -434,7 +441,7 @@ class DirectorAgent:
                 "message": _status_message("outlined", language, n=len(scenes))
             },
         )
-        # ---- Step 2: render each beat (beat-by-beat with pause) ----------
+        # ---- Step 2: render each beat via BeatRuntime --------------------
         previous_scene = ""
         previous_scene_desc = ""
         idx = 0
@@ -442,16 +449,10 @@ class DirectorAgent:
         while idx < len(scenes):
             scene_desc = scenes[idx]
             current_scene = self._short_scene_name(scene_desc)
-            async for event in self._generate_beat(
-                task=task,
-                outline=outline_text,
+            async for event in self.runtime.run_beat(
+                plan=plan,
                 beat_index=idx,
-                context={
-                    "previous_scene": previous_scene,
-                    "previous_scene_desc": previous_scene_desc,
-                    "current_scene": current_scene,
-                },
-                scene_desc=scene_desc,
+                task=task,
                 db=db,
                 session_factory=session_factory,
                 session_id=session_id,
@@ -486,8 +487,11 @@ class DirectorAgent:
                             )
                         else:
                             outline_text = new_outline
-                            scenes = self._parse_outline(outline_text)
-                            yield self._outline_event(outline_text, scenes=scenes)
+                            plan = PlanService.parse(outline_text)
+                            scenes = plan.scene_lines()
+                            yield self._outline_event(
+                                outline_text, scenes=scenes, plan=plan
+                            )
                             idx = 0
                             previous_scene = ""
                             previous_scene_desc = ""
@@ -553,14 +557,19 @@ class DirectorAgent:
                                 data={"message": "Chapter continuation failed — keeping current outline."},
                             )
                         else:
-                            next_scenes = self._parse_outline(next_outline)
-                            payload = mckee_story.outline_event_payload(
-                                next_outline, scenes=next_scenes
-                            )
+                            next_plan = PlanService.parse(next_outline)
+                            next_scenes = next_plan.scene_lines()
+                            payload = PlanService.outline_event_data(next_plan)
                             payload["appended"] = True
                             payload["chapter"] = 2
                             yield AgentEvent(type="outline", data=payload)
                             scenes = scenes + next_scenes
+                            outline_text = (outline_text or "") + "\n" + next_outline
+                            plan = PlanService.parse_from_scenes(
+                                scenes,
+                                raw_outline=outline_text,
+                                spine=plan.spine or next_plan.spine,
+                            )
                             # Re-enter the beat loop starting at the first
                             # newly appended scene so the next iteration
                             # renders beat 1 of chapter 2 (not the next
@@ -599,10 +608,9 @@ class DirectorAgent:
                                 data={"message": "Branch generation failed — keeping current outline."},
                             )
                         else:
-                            branch_scenes = self._parse_outline(branch_outline)
-                            payload = mckee_story.outline_event_payload(
-                                branch_outline, scenes=branch_scenes
-                            )
+                            branch_plan = PlanService.parse(branch_outline)
+                            branch_scenes = branch_plan.scene_lines()
+                            payload = PlanService.outline_event_data(branch_plan)
                             payload["branched"] = True
                             payload["from_beat_id"] = from_beat_id
                             yield AgentEvent(type="outline", data=payload)
@@ -613,6 +621,14 @@ class DirectorAgent:
                             # body content but same beat position.
                             prefix = scenes[: beat_idx + 1]
                             scenes = prefix + branch_scenes
+                            outline_text = "\n".join(
+                                f"{i + 1}. {s}" for i, s in enumerate(scenes)
+                            )
+                            plan = PlanService.parse_from_scenes(
+                                scenes,
+                                raw_outline=outline_text,
+                                spine=plan.spine or branch_plan.spine,
+                            )
                             previous_scene = ""
                             previous_scene_desc = ""
                             idx = beat_idx
@@ -633,6 +649,11 @@ class DirectorAgent:
                         # emitting ``complete``.
                         if replay_idx == len(scenes) - 1:
                             scenes.append(scenes[replay_idx])
+                            plan = PlanService.parse_from_scenes(
+                                scenes,
+                                raw_outline=outline_text,
+                                spine=plan.spine,
+                            )
                         previous_scene = ""
                         previous_scene_desc = ""
                         idx = max(0, replay_idx - 1)
@@ -705,7 +726,8 @@ class DirectorAgent:
                 )
                 return
 
-            scenes = self._parse_outline(outline_text)
+            plan = PlanService.parse(outline_text)
+            scenes = plan.scene_lines()
             async with session_factory() as session:
                 result = await session.execute(
                     select(SessionModel).where(SessionModel.id == session_id)
@@ -718,7 +740,7 @@ class DirectorAgent:
                 await session.commit()
 
             beat_index = 0
-            yield self._outline_event(outline_text, scenes=scenes)
+            yield self._outline_event(outline_text, scenes=scenes, plan=plan)
             yield AgentEvent(
                 type="status",
                 data={
@@ -726,7 +748,8 @@ class DirectorAgent:
                 },
             )
         else:
-            scenes = self._parse_outline(outline_text)
+            plan = PlanService.parse(outline_text)
+            scenes = plan.scene_lines()
 
         if not scenes:
             yield AgentEvent(
@@ -750,27 +773,15 @@ class DirectorAgent:
             )
             return
 
-        scene_desc = scenes[beat_index]
-        current_scene = self._short_scene_name(scene_desc)
-        previous_scene = (
-            self._short_scene_name(scenes[beat_index - 1]) if beat_index > 0 else ""
-        )
-        previous_scene_desc = scenes[beat_index - 1] if beat_index > 0 else ""
         active_character_id = FRONTEND_TO_BACKEND_ID.get(
             active_character_raw, active_character_raw
         )
         ready_event: AgentEvent | None = None
 
-        async for event in self._generate_beat(
-            task=task,
-            outline=outline_text,
+        async for event in self.runtime.run_beat(
+            plan=plan,
             beat_index=beat_index,
-            context={
-                "previous_scene": previous_scene,
-                "previous_scene_desc": previous_scene_desc,
-                "current_scene": current_scene,
-            },
-            scene_desc=scene_desc,
+            task=task,
             session_factory=session_factory,
             session_id=session_id,
             active_character_id=active_character_id,
@@ -996,57 +1007,24 @@ class DirectorAgent:
         outline_text: str,
         *,
         scenes: list[str] | None = None,
+        plan: Any = None,
     ) -> AgentEvent:
-        """Emit outline SSE with McKee spine meta + soft structure warnings."""
-        scene_list = (
-            scenes
-            if scenes is not None
-            else DirectorAgent._parse_outline(outline_text)
-        )
+        """Emit outline SSE with McKee meta + first-class story_plan (DEC-0004)."""
+        if plan is None:
+            plan = PlanService.parse(outline_text)
+            if scenes is not None and plan.scene_lines() != scenes:
+                plan = PlanService.parse_from_scenes(
+                    scenes, raw_outline=outline_text, spine=plan.spine
+                )
         return AgentEvent(
             type="outline",
-            data=mckee_story.outline_event_payload(
-                outline_text, scenes=scene_list
-            ),
+            data=PlanService.outline_event_data(plan),
         )
 
     @staticmethod
     def _parse_outline(text: str) -> list[str]:
-        """Parse an LLM-generated outline into a list of scene descriptions.
-        Handles McKee meta headers, plain-text numbered lists, and JSON arrays.
-        """
-        # Drop McKee spine meta so PROTAGONIST/SPINE lines never become beats.
-        text = mckee_story.filter_playable_outline_lines(text)
-        # B1 fix: if the text is a JSON array, extract readable descriptions first
-        stripped = text.strip()
-        if stripped.startswith(('[', '{')):
-            extracted = DirectorAgent._extract_text_from_json_outline(stripped)
-            if extracted != stripped:
-                text = extracted
-        scenes: list[str] = []
-        current: list[str] = []
-        list_item_re = re.compile(r"^[\s]*(\d+[\.\)]\s+|[-\*]\s+)")
-        for raw_line in text.splitlines():
-            stripped_line = raw_line.strip()
-            if not stripped_line:
-                continue
-            if list_item_re.match(stripped_line):
-                if current:
-                    scenes.append(" ".join(current).strip())
-                    current = []
-                content = list_item_re.sub("", stripped_line).strip()
-                current.append(content)
-            elif current:
-                # Continuation of a multi-line beat; skip stray meta mid-outline.
-                if mckee_story.is_meta_outline_line(stripped_line):
-                    continue
-                current.append(stripped_line)
-        if current:
-            scenes.append(" ".join(current).strip())
-        if scenes:
-            return scenes
-        stripped = text.strip()
-        return [stripped] if stripped else []
+        """Parse outline prose into playable scene lines (PlanService seam)."""
+        return PlanService.parse(text).scene_lines()
     # ------------------------------------------------------------------
     # Beat generation
     # ------------------------------------------------------------------

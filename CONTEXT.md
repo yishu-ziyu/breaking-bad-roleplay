@@ -32,6 +32,17 @@ Shared product language. Update when hard decisions land.
 - Outline SSE extras: `mckee_spine`, `mckee_warnings`, `mckee_beat_count`.
 - Craft source: `…/source_pdf2skill/故事/*` (McKee *Story*).
 
+## Agent architecture (DEC-0004)
+
+- Category: **vertical narrative / interactive drama Agent** (theater: Director + cast), not general task Agent.
+- Layers: Intent → Plan → World → Cast → Runtime → Experience.
+- **As-built (orchestration cut):**
+  - Plan: `backend/agents/plan_service.py` - `StoryPlan` / `BeatPlan` (spine + role/value/gap/risk); SSE `outline.story_plan`.
+  - Runtime: `backend/agents/beat_runtime.py` - single-beat run from typed plan; Director calls PlanService + BeatRuntime.
+  - Cast/tools/HITL unchanged at character interface.
+- Still rough: World free-text deltas; Crew often one multi-cast LLM call; no plan editor UI yet (deferred).
+- ADR: [docs/decisions/DEC-0004-narrative-agent-architecture.md](docs/decisions/DEC-0004-narrative-agent-architecture.md).
+
 ## Modes
 
 - **Direct:** one character chat with relation anchor.
