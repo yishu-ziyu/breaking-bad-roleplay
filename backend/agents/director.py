@@ -46,7 +46,10 @@ LANG_DIRECTIVE = {
         "Mike/Mike Ehrmantraut → 麦克（禁止「米克」）；\n"
         "Walter/Walter White → 沃尔特；Jesse/Jesse Pinkman → 杰西；\n"
         "Skyler/Skyler White → 斯凯勒；Saul/Saul Goodman → 索尔；\n"
-        "Gus/Gus Fring → 古斯；Hank → 汉克；Marie → 玛丽。\n"
+        "Gus/Gus Fring → 古斯；Hank/Hank Schrader → 汉克；Marie → 玛丽；\n"
+        "Todd/Todd Alquist → 托德（禁止「托霍」）；\n"
+        "Jack Welker → 杰克·维尔克（禁止「杰克·托霍」）；\n"
+        "Tuco/Tuco Salamanca → 图科；Gale → 盖尔；Gomez → 戈麦兹；Lydia → 莉迪亚。\n"
         "emotion_state 仍用英文标签之一："
         "calm, tense, angry, fearful, manipulative, guilty, resigned, desperate"
         "（界面会本地化展示；不要写中文 emotion）。\n"
@@ -127,9 +130,17 @@ _ZH_NAME_FIXES: tuple[tuple[str, str], ...] = (
     ("Skyler White", "斯凯勒"),
     ("Saul Goodman", "索尔"),
     ("Gus Fring", "古斯"),
+    ("Hank Schrader", "汉克"),
+    ("Todd Alquist", "托德"),
+    ("Jack Welker", "杰克·维尔克"),
+    ("Tuco Salamanca", "图科"),
+    ("Gale Boetticher", "盖尔"),
+    ("Steven Gomez", "戈麦兹"),
     # Bad / nonstandard transliterations → standard
+    ("杰克·托霍", "杰克·维尔克"),
     ("米克·厄曼特劳特", "麦克"),
     ("米克·埃尔曼特劳特", "麦克"),
+    ("托霍", "托德"),  # LLM mangling of Todd
     ("米克", "麦克"),
     ("麦克尔", "麦克"),
     ("沃尔特怀特", "沃尔特"),
@@ -141,9 +152,13 @@ _ZH_NAME_FIXES: tuple[tuple[str, str], ...] = (
     ("Skyler", "斯凯勒"),
     ("Saul", "索尔"),
     ("Gus", "古斯"),
-    ("Hank Schrader", "汉克"),
     ("Hank", "汉克"),
     ("Marie", "玛丽"),
+    ("Todd", "托德"),
+    ("Tuco", "图科"),
+    ("Gale", "盖尔"),
+    ("Gomez", "戈麦兹"),
+    ("Lydia", "莉迪亚"),
 )
 
 
@@ -1286,7 +1301,9 @@ class DirectorAgent:
                         speak_lang_note = (
                             "台词 content 必须用简体中文。不要用英文对白。"
                             "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
-                            "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯。"
+                            "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯、"
+                            "Hank→汉克、Todd→托德（禁托霍）、Jack Welker→杰克·维尔克"
+                            "（禁杰克·托霍）、Tuco→图科。"
                             if _norm_lang(language) == "zh"
                             else "Dialogue content must be English."
                         )
@@ -1455,7 +1472,9 @@ class DirectorAgent:
                     "Keep character voice and pressure. Output ONLY the Chinese translation, "
                     "no quotes, no English. "
                     "Name glossary (mandatory): Mike→麦克 (never 米克), Walter→沃尔特, "
-                    "Jesse→杰西, Skyler→斯凯勒, Saul→索尔, Gus→古斯, Hank→汉克, Marie→玛丽."
+                    "Jesse→杰西, Skyler→斯凯勒, Saul→索尔, Gus→古斯, Hank→汉克, Marie→玛丽, "
+                    "Todd→托德 (never 托霍), Jack Welker→杰克·维尔克 (never 杰克·托霍), "
+                    "Tuco→图科, Gale→盖尔, Gomez→戈麦兹, Lydia→莉迪亚."
                 ),
             },
             {"role": "user", "content": text},
