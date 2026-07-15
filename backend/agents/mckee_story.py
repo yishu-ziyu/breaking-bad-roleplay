@@ -169,10 +169,13 @@ _ROLE_CONFLICT_FOCUS: dict[str, str] = {
 
 _META_KEY_RE = re.compile(
     r"^(PROTAGONIST|SPINE|VALUE_PAIR|VALUE|MAJOR_QUESTION|MAJOR QUESTION|"
-    r"CONTROLLING_IDEA|CONTROLLING IDEA|OPPOSITION|CONSCIOUS_DESIRE|"
-    r"UNCONSCIOUS_DESIRE|INCITING)\s*[:：]\s*(.+)$",
+    r"DRAMATIC_QUESTION|DRAMATIC QUESTION|CONTROLLING_IDEA|CONTROLLING IDEA|"
+    r"OPPOSITION|CONSCIOUS_DESIRE|UNCONSCIOUS_DESIRE|INCITING)\s*[:：]\s*(.+)$",
     re.IGNORECASE,
 )
+
+# Beat-local value turns look like "value: safety→unease" and must stay playable.
+_VALUE_TURN_BODY_RE = re.compile(r"→|->|=>")
 
 
 def extract_beat_role(scene_desc: str | None) -> str | None:
@@ -244,40 +247,46 @@ def extract_value_end_polarity(scene_desc: str | None) -> int | None:
 
 
 def is_meta_outline_line(line: str) -> bool:
-    """True for McKee header lines that are not playable beats."""
+    """True for McKee header lines that are not playable beats.
+
+    Only KEY: value spine rows (via ``_META_KEY_RE``) and exact section
+    headers count as meta. Bare prefixes such as VALUE/CONSCIOUS without a
+    colon must not match, and beat-local ``value: A→B`` turns stay playable.
+    """
     s = line.strip()
     if not s:
         return True
     if re.match(r"^[\s]*(\d+[\.\)]\s+|[-\*]\s+)", s):
         return False
-    if _META_KEY_RE.match(s):
+    m = _META_KEY_RE.match(s)
+    if m:
+        key = re.sub(r"\s+", "_", m.group(1).strip().upper())
+        # "value: safety→unease" is a beat field, not spine VALUE_PAIR.
+        if key == "VALUE" and _VALUE_TURN_BODY_RE.search(m.group(2)):
+            return False
         return True
     upper = s.upper()
-    meta_prefixes = (
-        "PROTAGONIST:",
-        "SPINE:",
-        "VALUE",
-        "CONTROLLING",
-        "OPPOSITION",
-        "CONSCIOUS",
-        "UNCONSCIOUS",
-        "INCITING:",
-        "MAJOR QUESTION",
-        "MAJOR_QUESTION",
-        "DRAMATIC QUESTION",
+    if upper in {
+        "# MCKEE SPINE",
+        "# BEATS",
+        "BEATS",
+        "SPINE",
+        "OUTLINE",
+        "MCKEE SPINE",
         "MCKEE",
-        "# ",
-        "## ",
-    )
-    if any(upper.startswith(p) for p in meta_prefixes):
+    }:
         return True
-    if upper in {"# MCKEE SPINE", "# BEATS", "BEATS", "SPINE", "OUTLINE"}:
+    if upper.startswith(("# ", "## ", "### ")):
         return True
     return False
 
 
 def filter_playable_outline_lines(text: str) -> str:
-    """Drop McKee meta headers so classic numbered parsers only see beats."""
+    """Drop McKee meta headers so classic numbered parsers only see beats.
+
+    Returns an empty string when every line is meta so callers can treat
+    spine-only responses as no playable beats (no silent full-text fallback).
+    """
     if not text:
         return text
     kept: list[str] = []
@@ -285,7 +294,7 @@ def filter_playable_outline_lines(text: str) -> str:
         if is_meta_outline_line(raw):
             continue
         kept.append(raw)
-    return "\n".join(kept).strip() or text.strip()
+    return "\n".join(kept).strip()
 
 
 def parse_spine_meta(outline_text: str | None) -> dict[str, str]:

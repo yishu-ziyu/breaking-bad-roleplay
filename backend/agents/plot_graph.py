@@ -29,11 +29,20 @@ def _slug(text: str) -> str:
 
 
 def parse_outline_beats(outline: str | None) -> list[dict[str, Any]]:
-    """Turn numbered outline lines into ordered beat spine nodes."""
+    """Turn numbered outline lines into ordered beat spine nodes.
+
+    McKee spine meta (PROTAGONIST/SPINE/...) is stripped first so plot graphs
+    only materialize playable beats.
+    """
     if not outline:
         return []
+    from agents.mckee_story import filter_playable_outline_lines
+
+    playable = filter_playable_outline_lines(outline)
+    if not playable:
+        return []
     beats: list[dict[str, Any]] = []
-    for raw in outline.splitlines():
+    for raw in playable.splitlines():
         line = raw.strip()
         if not line:
             continue
