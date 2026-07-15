@@ -23,13 +23,14 @@ Shared product language. Update when hard decisions land.
 - **Out of scope (Hank loop):** Marie as playable; real DEA how-to; full GIF catalog.
 - **GIF rule:** first-frame visual audit required (no emotion-tag-only random Giphy).
 
-## Story engine (McKee v1 — DEC-0003)
+## Story engine (McKee v2 — DEC-0003)
 
 - Module: `backend/agents/mckee_story.py`.
-- Outline: McKee spine meta + 5-7 tagged beats (`setup` → `inciting` → `progressive*` → `crisis` → `climax` → optional `resolution`).
-- Each beat must state **value turn** and **gap** (expectation vs result).
-- Per-beat planner injects role rules; SSE schema unchanged (`mckee_role` optional on beat events).
-- Source discipline: Robert McKee *Story* (local skill extract).
+- Spine: PROTAGONIST / SPINE / CONSCIOUS_DESIRE / UNCONSCIOUS_DESIRE / VALUE_PAIR / OPPOSITION / MAJOR_QUESTION / CONTROLLING_IDEA.
+- Beats: 5-7 tagged (`setup`→`inciting`→`progressive*`→`crisis`→`climax`→`resolution`) with **value** + **gap** + **risk**.
+- Per-beat: role rules, gap cycle, hinge, inside-out, polarity bias, three conflict layers.
+- Outline SSE extras: `mckee_spine`, `mckee_warnings`, `mckee_beat_count`.
+- Craft source: `…/source_pdf2skill/故事/*` (McKee *Story*).
 
 ## Modes
 

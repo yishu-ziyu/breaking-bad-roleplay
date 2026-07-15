@@ -1,9 +1,27 @@
-"""McKee Story engine unit tests (outline parse + role inference + prompts)."""
+"""McKee Story engine unit tests (v1 structure + v2 craft disciplines)."""
 
 from __future__ import annotations
 
 from agents import mckee_story
-from agents.director import DirectorAgent
+from agents.director import DIRECTOR_SYSTEM_PROMPT, DirectorAgent
+
+
+FULL_OUTLINE = """
+PROTAGONIST: Hank Schrader
+SPINE: Hank must uncover the truth without destroying his family
+CONSCIOUS_DESIRE: catch whoever is behind the blue meth
+UNCONSCIOUS_DESIRE: keep the good cop / good brother-in-law identity
+VALUE_PAIR: loyalty / betrayal
+OPPOSITION: Walter White, family expectation, DEA pressure
+MAJOR_QUESTION: Can Hank hold the truth between love and duty?
+CONTROLLING_IDEA: Truth rips the family open because loyalty covered a greater lie
+1. [setup] Schrader backyard — value: safety→unease — gap: banter meets evasion — risk: low
+2. [inciting] DEA office — value: order→imbalance — gap: lead hits family — risk: mid
+3. [progressive] White living room — value: trust→suspicion — gap: soft probe fails — risk: high
+4. [crisis] Evidence room — value: duty vs family — gap: either choice irreversible — risk: extreme
+5. [climax] Desert road — value: facade→break — gap: inevitable yet surprising — risk: ultimate
+6. [resolution] Kitchen — value: aftershock→cold settle — gap: new balance locked — risk: residue
+"""
 
 
 def test_extract_and_infer_roles():
@@ -20,25 +38,47 @@ def test_extract_and_infer_roles():
 
 
 def test_filter_meta_lines_keeps_numbered_beats():
-    raw = """
-PROTAGONIST: Hank Schrader
-SPINE: restore balance after a lead points home
-VALUE_PAIR: loyalty / betrayal
-MAJOR_QUESTION: Can Hank hold the truth?
-1. [setup] Backyard — value: safety→unease — gap: banter meets evasion
-2. [inciting] DEA office — value: order→chaos — gap: lead hits family
-3. [progressive] Living room — value: trust→doubt — gap: soft probe fails
-4. [crisis] Evidence room — value: duty vs family — gap: no clean exit
-5. [climax] Desert road — value: facade→break — gap: must confront
-6. [resolution] Kitchen — value: aftershock — gap: new balance locked
-"""
-    scenes = DirectorAgent._parse_outline(raw)
+    scenes = DirectorAgent._parse_outline(FULL_OUTLINE)
     assert len(scenes) == 6
     assert all("PROTAGONIST" not in s for s in scenes)
+    assert all("CONTROLLING_IDEA" not in s for s in scenes)
     assert scenes[0].startswith("[setup]")
     assert scenes[1].startswith("[inciting]")
     assert scenes[4].startswith("[climax]")
     assert "gap:" in scenes[0]
+    assert "risk:" in scenes[2]
+
+
+def test_parse_spine_meta_v2_fields():
+    spine = mckee_story.parse_spine_meta(FULL_OUTLINE)
+    assert spine["protagonist"] == "Hank Schrader"
+    assert "truth" in spine["spine"].lower() or "uncover" in spine["spine"].lower()
+    assert spine["conscious_desire"]
+    assert spine["unconscious_desire"]
+    assert spine["opposition"]
+    assert spine["controlling_idea"]
+    assert "because" in spine["controlling_idea"].lower()
+    assert spine["major_question"]
+
+
+def test_value_polarity_and_alternation_heuristic():
+    assert mckee_story.extract_value_end_polarity(
+        "value: safety→unease"
+    ) == -1
+    assert mckee_story.extract_value_end_polarity(
+        "value: chaos→order"
+    ) == 1
+    assert mckee_story.extract_value_end_polarity(
+        "value: trust→duty vs family"
+    ) == -1
+
+
+def test_validate_outline_structure_ok_and_warn():
+    scenes = DirectorAgent._parse_outline(FULL_OUTLINE)
+    assert mckee_story.validate_outline_structure(scenes) == []
+    weak = ["kitchen chat", "office chat"]
+    warns = mckee_story.validate_outline_structure(weak)
+    assert any("beats" in w or "tags" in w or "value" in w for w in warns)
 
 
 def test_legacy_outline_still_parses():
@@ -48,33 +88,55 @@ def test_legacy_outline_still_parses():
     assert "RV" in scenes[0]
 
 
-def test_outline_prompt_requires_mckee_fields():
+def test_outline_prompt_requires_v2_disciplines():
     en = mckee_story.build_outline_user_prompt(
         "Hank digs into Heisenberg", "en", active_character="Hank Schrader"
     )
-    assert "McKee" in en or "mckee" in en.lower() or "value" in en.lower()
+    assert "CONTROLLING_IDEA" in en
+    assert "CONSCIOUS_DESIRE" in en
+    assert "OPPOSITION" in en
+    assert "diminishing" in en.lower() or "polarity" in en.lower() or "alternate" in en.lower()
     assert "[setup" in en
     assert "gap" in en.lower()
-    assert "Hank Schrader" in en
     zh = mckee_story.build_outline_user_prompt("汉克查案", "zh")
-    assert "激励" in zh or "麦基" in zh or "价值" in zh
-    assert "[inciting]" in zh or "inciting" in zh
+    assert "主控" in zh or "CONTROLLING" in zh
+    assert "鸿沟" in zh or "gap" in zh
 
 
-def test_beat_addon_mentions_value_turn_and_gap():
+def test_beat_addon_v2_includes_hinge_polarity_inside_out():
     addon = mckee_story.build_beat_planning_addon(
-        "[progressive] lab",
+        "[progressive] lab — value: trust→suspicion — gap: x — risk: high",
         beat_index=2,
         total_beats=6,
         language="en",
+        previous_scene_desc="[inciting] office — value: order→imbalance — gap: lead",
+        outline_text=FULL_OUTLINE,
     )
     assert "progressive" in addon.lower()
-    assert "value" in addon.lower()
     assert "gap" in addon.lower()
+    assert "hinge" in addon.lower() or "third element" in addon.lower()
+    assert "inside-out" in addon.lower() or "If I were" in addon
+    assert "CONTROLLING_IDEA" in addon or "controlling" in addon.lower()
+    assert "dilemma" in addon.lower() or "crisis" in addon.lower() or "climax" in addon.lower()
+
+
+def test_outline_event_payload_shapes():
+    scenes = DirectorAgent._parse_outline(FULL_OUTLINE)
+    payload = mckee_story.outline_event_payload(FULL_OUTLINE, scenes=scenes)
+    assert "content" in payload
+    assert payload["mckee_spine"]["protagonist"] == "Hank Schrader"
+    assert payload["mckee_beat_count"] == 6
+    assert "mckee_warnings" not in payload  # clean outline
 
 
 def test_system_addon_present_on_director_prompt():
-    from agents.director import DIRECTOR_SYSTEM_PROMPT
-
     assert "MCKEE STORY ENGINE" in DIRECTOR_SYSTEM_PROMPT
-    assert "inciting" in DIRECTOR_SYSTEM_PROMPT
+    assert "CONTROLLING_IDEA" in DIRECTOR_SYSTEM_PROMPT
+    assert "inside-out" in DIRECTOR_SYSTEM_PROMPT.lower() or "If I were" in DIRECTOR_SYSTEM_PROMPT
+
+
+def test_director_outline_event_helper():
+    evt = DirectorAgent._outline_event(FULL_OUTLINE)
+    assert evt.type == "outline"
+    assert evt.data["mckee_spine"]["controlling_idea"]
+    assert evt.data["mckee_beat_count"] == 6
