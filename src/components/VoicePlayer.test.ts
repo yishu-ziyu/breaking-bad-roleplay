@@ -99,7 +99,7 @@ describe('VoicePlayer (speechSynthesis)', () => {
   })
 
   it('TC-VOICE-PROFILE-1: applies VOICE_PROFILES pitch/rate for each character', () => {
-    const characters = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus'] as const
+    const characters = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank'] as const
     for (const characterId of characters) {
       let spoken: { pitch?: number; rate?: number } | null = null
       const synth = {

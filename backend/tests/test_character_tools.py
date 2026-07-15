@@ -17,6 +17,7 @@ from agents.characters import (
     GusFring,
     JessePinkman,
     SkylerWhite,
+    HankSchrader,
 )
 from agents.tools import ToolResult
 
@@ -33,8 +34,16 @@ def _facade() -> ProviderFacade:
     )
 
 
-async def test_all_six_characters_have_tools():
-    for cls in (WalterWhite, SaulGoodman, MikeEhrmantraut, GusFring, JessePinkman, SkylerWhite):
+async def test_all_playable_characters_have_tools():
+    for cls in (
+        WalterWhite,
+        SaulGoodman,
+        MikeEhrmantraut,
+        GusFring,
+        JessePinkman,
+        SkylerWhite,
+        HankSchrader,
+    ):
         c = cls(_facade())
         assert len(c.tools) >= 1, f"{cls.__name__} should declare at least one tool"
 
@@ -72,6 +81,34 @@ async def test_jesse_tool_executes():
         "cook_yield_estimator", {"batch_size_oz": 10, "purity_target_percent": 99}
     )
     assert "PHARM-GRADE" in res.content
+
+
+async def test_hank_tool_executes():
+    c = HankSchrader(_facade())
+    res = await c._tool_registry.execute("case_pressure_reader", {"subject": "jesse pinkman"})
+    assert "HOT" in res.content or "pressure=" in res.content
+
+
+async def test_hank_superlab_not_shadowed_by_lab_substring():
+    c = HankSchrader(_facade())
+    res = await c._tool_registry.execute("case_pressure_reader", {"subject": "superlab access?"})
+    assert "UNKNOWN" in res.content
+    res2 = await c._tool_registry.execute("case_pressure_reader", {"subject": "label maker"})
+    assert "HOT" not in res2.content
+
+
+async def test_hank_white_not_false_positive_for_non_walter():
+    """Bare 'white' (van/powder) must not map to Walter family-blind-spot heat."""
+    c = HankSchrader(_facade())
+    for subject in ("white van", "white powder", "white noise"):
+        res = await c._tool_registry.execute(
+            "case_pressure_reader", {"subject": subject}
+        )
+        assert "family blind spot" not in res.content, subject
+    walt = await c._tool_registry.execute(
+        "case_pressure_reader", {"subject": "walter white"}
+    )
+    assert "family blind spot" in walt.content or "WARM" in walt.content
 
 
 async def test_skyler_tool_executes():

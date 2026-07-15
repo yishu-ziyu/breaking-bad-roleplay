@@ -8,8 +8,8 @@
 - Story stream 使用 `text/event-stream`。
 - 后端对外错误会脱敏；原始异常只写入 server log。
 - Story session id 是 UUID 字符串。
-- 角色短 id：`walter`、`jesse`、`skyler`、`saul`、`mike`、`gus`。
-- 后端完整角色名：`Walter White`、`Jesse Pinkman`、`Skyler White`、`Saul Goodman`、`Mike Ehrmantraut`、`Gus Fring`。
+- 角色短 id：`walter`、`jesse`、`skyler`、`saul`、`mike`、`gus`、`hank`。
+- 后端完整角色名：`Walter White`、`Jesse Pinkman`、`Skyler White`、`Saul Goodman`、`Mike Ehrmantraut`、`Gus Fring`、`Hank Schrader`。
 
 ## GET `/api/health`
 
@@ -106,13 +106,13 @@ data: {"type":"agent_speak","data":{"character_id":"Walter White","content":"...
 | Event | `data` shape | 说明 |
 |---|---|---|
 | `status` | `{ "message": string, ... }` | Director 状态、等待用户、停止等 |
-| `outline` | `{ "content": string }` | Story outline |
-| `scene_change` | `{ "from_scene": string, "to_scene": string, "description": string }` | 场景变化 |
+| `outline` | `{ "content": string, "mckee_spine"?: object, "mckee_warnings"?: string[], "mckee_beat_count"?: number }` | Story outline；核心 event type 不变，McKee 字段为可选 extras（DEC-0003） |
+| `scene_change` | `{ "from_scene": string, "to_scene": string, "description": string, "mckee_role"?: string }` | 场景变化；可选 McKee 节拍角色标签 |
 | `agent_act` | `{ "character_id": string, "action": string, "target": string|null }` | 角色动作 |
 | `agent_think` | `{ "character_id": string, "thought_content": string }` | 角色内心 |
 | `agent_speak` | `{ "character_id": string, "content": string, "emotion_state": string, "gif_search_query": string }` | 角色台词 |
 | `world_state_delta` | `{ "deltas": Array<object>, "model_route"?: string }` | 世界/关系状态变化 |
-| `beat_ready` | `{ "beat_id": string, "beat_summary": string }` | 当前 beat 结束，等待用户决策 |
+| `beat_ready` | `{ "beat_id": string, "beat_summary": string, "mckee_role"?: string }` | 当前 beat 结束，等待用户决策 |
 | `complete` | `{ "message": string }` | 全部 beat 结束 |
 | `error` | `{ "message": string }` | 脱敏错误 |
 
