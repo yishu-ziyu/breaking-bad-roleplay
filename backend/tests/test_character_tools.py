@@ -89,6 +89,14 @@ async def test_hank_tool_executes():
     assert "HOT" in res.content or "pressure=" in res.content
 
 
+async def test_hank_superlab_not_shadowed_by_lab_substring():
+    c = HankSchrader(_facade())
+    res = await c._tool_registry.execute("case_pressure_reader", {"subject": "superlab access?"})
+    assert "UNKNOWN" in res.content
+    res2 = await c._tool_registry.execute("case_pressure_reader", {"subject": "label maker"})
+    assert "HOT" not in res2.content
+
+
 async def test_skyler_tool_executes():
     c = SkylerWhite(_facade())
     res = await c._tool_registry.execute(

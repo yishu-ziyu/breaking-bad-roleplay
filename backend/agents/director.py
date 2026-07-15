@@ -315,6 +315,30 @@ CHARACTER_AGENTS: dict[str, Any] = {
     "Gus Fring": GusFring,
     "Hank Schrader": HankSchrader,
 }
+
+# Crew mention → cast (word boundaries; no bare "dea").
+_CREW_MENTION_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"\bsaul\b", "Saul Goodman"),
+    (r"\bmike\b", "Mike Ehrmantraut"),
+    (r"\bgus\b", "Gus Fring"),
+    (r"\bskyler\b", "Skyler White"),
+    (r"\bjesse\b", "Jesse Pinkman"),
+    (r"\bhank\b", "Hank Schrader"),
+    (r"\bschrader\b", "Hank Schrader"),
+)
+
+
+def crew_participants_from_message(character_id: str, user_message: str, *, cap: int = 3) -> list[str]:
+    """Return backend character names for a crew turn (primary first, max cap)."""
+    backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
+    participants: list[str] = [backend_primary]
+    text_lower = (user_message or "").lower()
+    for pattern, backend_name in _CREW_MENTION_PATTERNS:
+        if re.search(pattern, text_lower) and backend_name not in participants:
+            participants.append(backend_name)
+    return participants[:cap]
+
+
 class DirectorAgent:
     """
     Orchestrates a Breaking Bad roleplay session as an async event stream.
@@ -1837,26 +1861,7 @@ class DirectorAgent:
         """Crew mode: generate a multi-character debate turn."""
         llm_provider: str = context.get("llmProvider", "stepfun")
         provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
-        # Determine participants — start with the active character, then add
-        # characters that are contextually relevant.
-        backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
-        participants_backend: list[str] = [backend_primary]
-        text_lower = user_message.lower()
-        # Word-ish matches only (avoid "deal"/"already" pulling Hank via "dea").
-        for pattern, backend_name in [
-            (r"\bsaul\b", "Saul Goodman"),
-            (r"\bmike\b", "Mike Ehrmantraut"),
-            (r"\bgus\b", "Gus Fring"),
-            (r"\bskyler\b", "Skyler White"),
-            (r"\bjesse\b", "Jesse Pinkman"),
-            (r"\bhank\b", "Hank Schrader"),
-            (r"\bschrader\b", "Hank Schrader"),
-            (r"\bdea\b", "Hank Schrader"),
-        ]:
-            if re.search(pattern, text_lower) and backend_name not in participants_backend:
-                participants_backend.append(backend_name)
-        # Cap at 3 participants
-        participants_backend = participants_backend[:3]
+        participants_backend = crew_participants_from_message(character_id, user_message)
         participants_frontend = [
             BACKEND_TO_FRONTEND_ID.get(name, name.lower().split()[0])
             for name in participants_backend
