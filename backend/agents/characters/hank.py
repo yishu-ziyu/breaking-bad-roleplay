@@ -1,3 +1,5 @@
+import re
+
 from agents.characters.base import BaseCharacter
 from agents.provider import ProviderFacade
 from agents.tools import Tool, ToolResult, ToolExecutor
@@ -20,23 +22,22 @@ CASE_PRESSURE_READER = Tool(
     },
 )
 
-_PRESSURE = {
-    "walter": "WARM — family blind spot; something does not sit right",
-    "white": "WARM — family blind spot; something does not sit right",
-    "jesse": "HOT — street noise, weak alibis, keep pressure on",
-    "pinkman": "HOT — street noise, weak alibis, keep pressure on",
-    "lab": "HOT — chemistry residue and bad timing",
-    "superlab": "UNKNOWN — do not invent access you do not have",
-    "car wash": "WARM — money smells cleaner than it should",
-    "saul": "WARM — lawyer jokes usually hide a client",
-}
+# Longer / more specific patterns first. Word-ish matches only.
+_PRESSURE: list[tuple[str, str]] = [
+    (r"\bsuperlab\b", "UNKNOWN — do not invent access you do not have"),
+    (r"\bwalter\b|\bwhite\b", "WARM — family blind spot; something does not sit right"),
+    (r"\bjesse\b|\bpinkman\b", "HOT — street noise, weak alibis, keep pressure on"),
+    (r"\blab\b", "HOT — chemistry residue and bad timing"),
+    (r"\bcar wash\b|\bcarwash\b", "WARM — money smells cleaner than it should"),
+    (r"\bsaul\b", "WARM — lawyer jokes usually hide a client"),
+]
 
 
 async def _run_case_pressure(arguments: dict) -> ToolResult:
     subject = str(arguments.get("subject", "")).strip().lower()
     note = "no file heat — watch body language and stories that shift"
-    for key, value in _PRESSURE.items():
-        if key in subject:
+    for pattern, value in _PRESSURE:
+        if re.search(pattern, subject):
             note = value
             break
     return ToolResult(content=f"subject={subject or 'unknown'} pressure={note}")
