@@ -1842,17 +1842,18 @@ class DirectorAgent:
         backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
         participants_backend: list[str] = [backend_primary]
         text_lower = user_message.lower()
-        for keyword, backend_name in [
-            ("saul", "Saul Goodman"),
-            ("mike", "Mike Ehrmantraut"),
-            ("gus", "Gus Fring"),
-            ("skyler", "Skyler White"),
-            ("jesse", "Jesse Pinkman"),
-            ("hank", "Hank Schrader"),
-            ("schrader", "Hank Schrader"),
-            ("dea", "Hank Schrader"),
+        # Word-ish matches only (avoid "deal"/"already" pulling Hank via "dea").
+        for pattern, backend_name in [
+            (r"\bsaul\b", "Saul Goodman"),
+            (r"\bmike\b", "Mike Ehrmantraut"),
+            (r"\bgus\b", "Gus Fring"),
+            (r"\bskyler\b", "Skyler White"),
+            (r"\bjesse\b", "Jesse Pinkman"),
+            (r"\bhank\b", "Hank Schrader"),
+            (r"\bschrader\b", "Hank Schrader"),
+            (r"\bdea\b", "Hank Schrader"),
         ]:
-            if keyword in text_lower and backend_name not in participants_backend:
+            if re.search(pattern, text_lower) and backend_name not in participants_backend:
                 participants_backend.append(backend_name)
         # Cap at 3 participants
         participants_backend = participants_backend[:3]
