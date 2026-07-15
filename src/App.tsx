@@ -104,14 +104,42 @@ function getEventTitle(evt: StoryEvent, lang: Language): string {
 }
 
 function formatStoryPlanPreview(outline: string, lang: Language): string {
-  const beats = outline
+  const lines = outline
     .split('\n')
     .map(line => line.trim())
-    .filter(line => /^\d+[.)]\s+/.test(line))
+    .filter(Boolean)
+  const beats = lines.filter(line => /^\d+[.)]\s+/.test(line))
   const count = Math.max(beats.length, 1)
-  return lang === 'zh'
-    ? `已规划 ${count} 个剧情节拍。具体走向会随游玩逐步揭示。`
-    : `${count} story beats planned. The details will reveal as you play.`
+  const spine = lines
+    .find(line => /^SPINE\s*[:：]/i.test(line))
+    ?.replace(/^SPINE\s*[:：]\s*/i, '')
+    .trim()
+  const idea = lines
+    .find(line => /^CONTROLLING_IDEA\s*[:：]/i.test(line))
+    ?.replace(/^CONTROLLING_IDEA\s*[:：]\s*/i, '')
+    .trim()
+  if (lang === 'zh') {
+    const base = `已规划 ${count} 个剧情节拍（麦基结构）`
+    if (spine) {
+      const short = spine.length > 42 ? `${spine.slice(0, 42)}…` : spine
+      return `${base}。脊椎：${short}`
+    }
+    if (idea) {
+      const short = idea.length > 42 ? `${idea.slice(0, 42)}…` : idea
+      return `${base}。主控：${short}`
+    }
+    return `${base}。具体走向会随游玩逐步揭示。`
+  }
+  const base = `${count} McKee-structured beats planned`
+  if (spine) {
+    const short = spine.length > 48 ? `${spine.slice(0, 48)}…` : spine
+    return `${base}. Spine: ${short}`
+  }
+  if (idea) {
+    const short = idea.length > 48 ? `${idea.slice(0, 48)}…` : idea
+    return `${base}. Controlling idea: ${short}`
+  }
+  return `${base}. Details reveal as you play.`
 }
 
 function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
