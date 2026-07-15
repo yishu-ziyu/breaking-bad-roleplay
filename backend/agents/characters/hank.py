@@ -23,19 +23,20 @@ CASE_PRESSURE_READER = Tool(
 )
 
 # Longer / more specific patterns first. Word-ish matches only.
+# Never match bare "white" (false-positives: white van / powder / noise).
 _PRESSURE: list[tuple[str, str]] = [
-    (r"\bsuperlab\b", "UNKNOWN — do not invent access you do not have"),
-    (r"\bwalter\b|\bwhite\b", "WARM — family blind spot; something does not sit right"),
-    (r"\bjesse\b|\bpinkman\b", "HOT — street noise, weak alibis, keep pressure on"),
-    (r"\blab\b", "HOT — chemistry residue and bad timing"),
-    (r"\bcar wash\b|\bcarwash\b", "WARM — money smells cleaner than it should"),
-    (r"\bsaul\b", "WARM — lawyer jokes usually hide a client"),
+    (r"\bsuperlab\b", "UNKNOWN - do not invent access you do not have"),
+    (r"\bwalter(?:\s+white)?\b", "WARM - family blind spot; something does not sit right"),
+    (r"\bjesse\b|\bpinkman\b", "HOT - street noise, weak alibis, keep pressure on"),
+    (r"\blab\b", "HOT - chemistry residue and bad timing"),
+    (r"\bcar wash\b|\bcarwash\b", "WARM - money smells cleaner than it should"),
+    (r"\bsaul\b", "WARM - lawyer jokes usually hide a client"),
 ]
 
 
 async def _run_case_pressure(arguments: dict) -> ToolResult:
     subject = str(arguments.get("subject", "")).strip().lower()
-    note = "no file heat — watch body language and stories that shift"
+    note = "no file heat - watch body language and stories that shift"
     for pattern, value in _PRESSURE:
         if re.search(pattern, subject):
             note = value
