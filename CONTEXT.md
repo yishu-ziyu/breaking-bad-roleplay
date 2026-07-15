@@ -20,12 +20,16 @@ Shared product language. Update when hard decisions land.
 - **Relations:** `family member`, `DEA partner`, `suspect under watch`, `neighbor`, `friend of the family`.
 - **Voice:** Loud loyalty — jokes, minerals/beer life texture, protective of family, investigative pressure on suspects, vulnerability under the tough shell. Not a cool generic cop.
 - **Assets:** Minimal GIFs (4–8), silhouette/portrait fallback; **no** cloned TTS (browser/default fallback).
-- **Out of scope (this loop):** Marie as playable; McKee Story engine rewrite (next loop); real DEA how-to; full GIF catalog.
+- **Out of scope (Hank loop):** Marie as playable; real DEA how-to; full GIF catalog.
+- **GIF rule:** first-frame visual audit required (no emotion-tag-only random Giphy).
 
-## Story engine
+## Story engine (McKee v1 — DEC-0003)
 
-- Current director orchestrates beats with existing event schema.
-- **Next loop:** McKee *Story* informed beat/structure redesign (book available on machine). Do not block Hank on that rewrite.
+- Module: `backend/agents/mckee_story.py`.
+- Outline: McKee spine meta + 5-7 tagged beats (`setup` → `inciting` → `progressive*` → `crisis` → `climax` → optional `resolution`).
+- Each beat must state **value turn** and **gap** (expectation vs result).
+- Per-beat planner injects role rules; SSE schema unchanged (`mckee_role` optional on beat events).
+- Source discipline: Robert McKee *Story* (local skill extract).
 
 ## Modes
 

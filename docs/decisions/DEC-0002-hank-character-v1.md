@@ -15,13 +15,13 @@ Cast was six playable characters. Players need a DEA / family-pressure axis that
 3. Relation anchors (5): family member, DEA partner, suspect under watch, neighbor, friend of the family.
 4. Voice axis: **loud loyalty** (not generic cool cop).
 5. Assets: minimal curated GIFs + TTS fallback (no clone required for merge).
-6. **Serial roadmap:** Loop N = Hank full registration on **current** director; Loop N+1 = McKee beat/director redesign.
+6. **Serial roadmap:** Loop N = Hank full registration on **current** director; Loop N+1 = McKee beat/director redesign (**done** — see DEC-0003).
 
 ## Consequences
 
 - Touch frontend `CharacterId` surfaces, `roleProfiles` / `roleAssets`, App cast list, voice helpers, backend character agent, director maps, continuity aliases, tests.
 - GIF pool must pass visual role check before production claim (OPS_RUNBOOK).
-- Marie, clone TTS, and McKee engine are explicitly deferred.
+- Marie and clone TTS remain deferred; McKee engine shipped in DEC-0003.
 
 ## Alternatives rejected
 
