@@ -1037,7 +1037,10 @@ class DirectorAgent:
                 current.append(stripped_line)
         if current:
             scenes.append(" ".join(current).strip())
-        return scenes if scenes else [text.strip()]
+        if scenes:
+            return scenes
+        stripped = text.strip()
+        return [stripped] if stripped else []
     # ------------------------------------------------------------------
     # Beat generation
     # ------------------------------------------------------------------

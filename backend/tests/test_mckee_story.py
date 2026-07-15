@@ -150,3 +150,49 @@ def test_director_outline_event_helper():
     assert evt.type == "outline"
     assert evt.data["mckee_spine"]["controlling_idea"]
     assert evt.data["mckee_beat_count"] == 6
+
+
+def test_value_turn_continuation_not_meta():
+    """Beat-local value: A→B lines stay playable; bare prose is not meta."""
+    assert mckee_story.is_meta_outline_line("value: safety→unease") is False
+    assert mckee_story.is_meta_outline_line("VALUE: trust→suspicion") is False
+    assert mckee_story.is_meta_outline_line("value: order->imbalance") is False
+    assert mckee_story.is_meta_outline_line("VALUE_PAIR: loyalty / betrayal") is True
+    assert mckee_story.is_meta_outline_line("CONSCIOUS_DESIRE: catch the cook") is True
+    # Bare VALUE/CONSCIOUS without KEY: value form must not overmatch.
+    assert mckee_story.is_meta_outline_line("VALUE shifts as pressure mounts") is False
+    assert mckee_story.is_meta_outline_line("CONSCIOUS choice under fire") is False
+    assert mckee_story.is_meta_outline_line("OPPOSITION hardens") is False
+
+    multi = """
+1. [setup] backyard BBQ
+value: safety→unease
+gap: banter meets evasion
+2. [inciting] DEA office
+value: order→imbalance
+"""
+    filtered = mckee_story.filter_playable_outline_lines(multi)
+    assert "value: safety→unease" in filtered
+    assert "value: order→imbalance" in filtered
+    scenes = DirectorAgent._parse_outline(multi)
+    assert len(scenes) == 2
+    assert "value: safety→unease" in scenes[0]
+    assert "value: order→imbalance" in scenes[1]
+
+
+def test_meta_only_outline_returns_empty_not_fallback():
+    """Spine-only responses must not resurrect as a single fake beat."""
+    meta_only = """
+PROTAGONIST: Hank Schrader
+SPINE: uncover the truth without destroying his family
+CONSCIOUS_DESIRE: catch whoever is behind the blue meth
+UNCONSCIOUS_DESIRE: keep the good cop identity
+VALUE_PAIR: loyalty / betrayal
+OPPOSITION: Walter White
+MAJOR_QUESTION: Can Hank hold the truth?
+CONTROLLING_IDEA: Truth rips the family open because loyalty covered a greater lie
+# BEATS
+"""
+    assert mckee_story.filter_playable_outline_lines(meta_only) == ""
+    scenes = DirectorAgent._parse_outline(meta_only)
+    assert scenes == []
