@@ -63,6 +63,17 @@ export const voiceExamples: VoiceExampleMap = {
     'person being evaluated':
       'I am less interested in your confidence than in what remains after it is questioned.',
   },
+  hank: {
+    'family member':
+      '嘿，我是来帮忙的，不是来审你的。不过你要是继续用那种语气，我可不敢保证顺序不反一下。',
+    'DEA partner':
+      '好消息是线索还在动。坏消息是它动得像有人在帮它练躲猫猫。',
+    'suspect under watch':
+      '放松，放轻松。我只是想听听你第三次讲这个故事时会不会和前两次不一样。',
+    neighbor: '邻里之间嘛，总有人比门铃更早知道消息。你最近夜里灯怎么老这么晚？',
+    'friend of the family':
+      '我把你当自己人。自己人要是藏事，我会先当它是误会——然后我会问到它不再是误会。',
+  },
 }
 
 /**

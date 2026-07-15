@@ -7,9 +7,10 @@
 - Loop 5: Character consistency eval system (+21 tests, 4-dimension rubric)
 - Loop 6: GIF relevance audit + skipGif escape hatch (+5 tests)
 - Loop 7: Crew mode per-character prompt injection + DEC-0001 native function calling (+27 tests)
-- 当前测试: 后端 169 passed, E2E 24 passed, 前端 55 passed, Build clean
+- Loop N (in flight): playable Hank (`hank` / 汉克) — Direct+Crew+Story; DEC-0002; McKee Story engine deferred to next loop
+- 当前测试: 后端 character suite green for Hank; full suite re-run before ship
 - 线上服务: https://bb.yishuziyu.cn
-- 下一轮: Loop 8 PM Intake，确定下一个最高杠杆的改进方向
+- 下一轮: McKee《故事》节拍/导演重构（在 Hank 合入后）
 
 ## 项目特有运维（必读）
 
