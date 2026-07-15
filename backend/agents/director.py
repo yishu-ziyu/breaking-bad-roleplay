@@ -15,6 +15,7 @@ from agents.characters import (
     GusFring,
     HankSchrader,
 )
+from agents import mckee_story
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 from sqlalchemy import select
@@ -317,7 +318,7 @@ RULES:
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
   "Saul Goodman", "Mike Ehrmantraut", "Gus Fring", or "Hank Schrader" — no variations.
 - recommended_model must be "stepfun/step-3.7-flash" on every event.
-"""
+""" + mckee_story.mckee_system_addon()
 # ---------------------------------------------------------------------------
 # Director agent
 # ---------------------------------------------------------------------------
@@ -674,7 +675,17 @@ class DirectorAgent:
                 type="status",
                 data={"message": _status_message("analysing", language)},
             )
-            outline_text = await self._generate_outline(task, language=language)
+            active_for_spine = None
+            if active_character_raw:
+                active_for_spine = FRONTEND_TO_BACKEND_ID.get(
+                    str(active_character_raw).strip().lower(),
+                    active_character_raw,
+                )
+            outline_text = await self._generate_outline(
+                task,
+                language=language,
+                active_character=active_for_spine,
+            )
             if outline_text is None:
                 yield AgentEvent(
                     type="error",
@@ -788,35 +799,23 @@ class DirectorAgent:
     # ------------------------------------------------------------------
     # Outline generation
     # ------------------------------------------------------------------
-    async def _generate_outline(self, task: str, language: str = "en") -> str | None:
-        """Call the LLM to produce a numbered Breaking Bad scene outline."""
+    async def _generate_outline(
+        self,
+        task: str,
+        language: str = "en",
+        *,
+        active_character: str | None = None,
+    ) -> str | None:
+        """Call the LLM to produce a McKee-structured Breaking Bad outline."""
         lang_directive = _language_directive(language)
-        if language.startswith("zh"):
-            outline_example = (
-                "示例：\n"
-                "1. 沙漠房车 — 沃尔特与杰西熬制产品\n"
-                "2. 怀特家厨房 — 斯凯勒质问沃尔特\n"
-                "3. DEA 办公室 — 汉克发现新线索"
-            )
-        else:
-            outline_example = (
-                "Example:\n"
-                "1. RV in the desert — Walt and Jesse cook meth\n"
-                "2. White family kitchen — Skyler confronts Walt\n"
-                "3. DEA office — Hank finds a new lead"
-            )
+        user_body = mckee_story.build_outline_user_prompt(
+            task, language, active_character=active_character
+        )
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
-                "content": (
-                    f"{lang_directive}\n\n"
-                    f"Task: {task}\n\n"
-                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
-                    "Do NOT output JSON, code fences, or any structured format. "
-                    "Each line should start with a number like '1. Scene title — description'. "
-                    f"{outline_example}"
-                ),
+                "content": f"{lang_directive}\n\n{user_body}",
             },
         ]
         try:
@@ -913,24 +912,18 @@ class DirectorAgent:
         onto the existing list — beats are never re-numbered.
         """
         lang_directive = _language_directive(language)
-        goal_suffix = f"\nNew chapter focus: {branch_goal}" if branch_goal else ""
+        user_body = mckee_story.build_followup_user_prompt(
+            base_task,
+            prior_outline,
+            existing_scenes,
+            language,
+            branch_goal=branch_goal,
+        )
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
-                "content": (
-                    f"{lang_directive}\n\n"
-                    f"Original task: {base_task}\n\n"
-                    f"Existing outline (chapter 1):\n{prior_outline}\n\n"
-                    f"Existing beats so far:\n"
-                    + "\n".join(f"{i + 1}. {s}" for i, s in enumerate(existing_scenes))
-                    + f"\n\nGenerate a NEW chapter (chapter 2) that continues "
-                    f"directly from where chapter 1 ends.{goal_suffix}\n"
-                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
-                    "Do NOT output JSON, code fences, or any structured format. "
-                    "Each line should start with a number like '1. Scene title — description'. "
-                    "Numbering should restart at 1 for the new chapter."
-                ),
+                "content": f"{lang_directive}\n\n{user_body}",
             },
         ]
         try:
@@ -958,23 +951,19 @@ class DirectorAgent:
         list (continuing the prior outline's tone, not duplicating beats).
         """
         lang_directive = _language_directive(language)
-        prior_beat = scenes[branch_beat_index] if 0 <= branch_beat_index < len(scenes) else ""
-        goal_suffix = f"\nBranching focus: {branch_goal}" if branch_goal else ""
+        user_body = mckee_story.build_branch_user_prompt(
+            base_task,
+            prior_outline,
+            branch_beat_index,
+            scenes,
+            language,
+            branch_goal=branch_goal,
+        )
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
-                "content": (
-                    f"{lang_directive}\n\n"
-                    f"Original task: {base_task}\n\n"
-                    f"Existing outline:\n{prior_outline}\n\n"
-                    f"Branching from beat {branch_beat_index + 1}: {prior_beat}\n"
-                    f"Everything before beat {branch_beat_index + 1} is preserved. "
-                    f"Generate ONLY the beats that follow.{goal_suffix}\n"
-                    "IMPORTANT: Output a PLAIN TEXT numbered list of scenes. "
-                    "Do NOT output JSON, code fences, or any structured format. "
-                    "Each line should start with a number like '1. Scene title — description'."
-                ),
+                "content": f"{lang_directive}\n\n{user_body}",
             },
         ]
         try:
@@ -988,8 +977,10 @@ class DirectorAgent:
     @staticmethod
     def _parse_outline(text: str) -> list[str]:
         """Parse an LLM-generated outline into a list of scene descriptions.
-        Handles both plain-text numbered lists and JSON arrays (B1 fallback).
+        Handles McKee meta headers, plain-text numbered lists, and JSON arrays.
         """
+        # Drop McKee spine meta so PROTAGONIST/SPINE lines never become beats.
+        text = mckee_story.filter_playable_outline_lines(text)
         # B1 fix: if the text is a JSON array, extract readable descriptions first
         stripped = text.strip()
         if stripped.startswith(('[', '{')):
@@ -1010,6 +1001,9 @@ class DirectorAgent:
                 content = list_item_re.sub("", stripped_line).strip()
                 current.append(content)
             elif current:
+                # Continuation of a multi-line beat; skip stray meta mid-outline.
+                if mckee_story.is_meta_outline_line(stripped_line):
+                    continue
                 current.append(stripped_line)
         if current:
             scenes.append(" ".join(current).strip())
@@ -1070,9 +1064,14 @@ class DirectorAgent:
         """
         if scene_desc is None:
             scene_desc = self._parse_outline(outline)[beat_index]
+        parsed_scenes = self._parse_outline(outline) if outline else [scene_desc]
+        total_beats = max(len(parsed_scenes), beat_index + 1)
         current_scene = self._short_scene_name(scene_desc)
         previous_scene = context.get("previous_scene", "")
         characters_in_scene: list[str] = list(CHARACTER_AGENTS.keys())
+        mckee_role = mckee_story.resolve_beat_role(
+            scene_desc, beat_index, total_beats
+        )
         # Emit scene transition if location changed
         if current_scene and current_scene != previous_scene:
             scene_desc_text = (
@@ -1086,6 +1085,7 @@ class DirectorAgent:
                     "from_scene": previous_scene or "unknown",
                     "to_scene": current_scene,
                     "description": scene_desc_text,
+                    "mckee_role": mckee_role,
                 },
             )
         # Ask Director LLM to plan this beat's events.
@@ -1096,7 +1096,7 @@ class DirectorAgent:
             f"{lang_directive}\n\n"
             f"Task: {task}\n\n"
             f"Outline:\n{outline}\n\n"
-            f"Current scene (beat {beat_index + 1}): {scene_desc}\n\n"
+            f"Current scene (beat {beat_index + 1}/{total_beats}): {scene_desc}\n\n"
         )
         if active_character_id:
             beat_prompt += (
@@ -1106,6 +1106,12 @@ class DirectorAgent:
                 f"Other characters may speak afterwards, but the opening voice must be "
                 f"{active_character_id}.\n\n"
             )
+        beat_prompt += mckee_story.build_beat_planning_addon(
+            scene_desc,
+            beat_index=beat_index,
+            total_beats=total_beats,
+            language=language,
+        )
         beat_prompt += (
             "Generate the events for this beat as a JSON array. "
             "Keep the beat concise: include at most two agent_speak events total. "
@@ -1456,7 +1462,9 @@ class DirectorAgent:
                     "Continuity board save failed for beat %s", beat_index + 1
                 )
         # Signal beat completion
-        yield self._beat_ready_event(beat_index, scene_desc)
+        yield self._beat_ready_event(
+            beat_index, scene_desc, mckee_role=mckee_role
+        )
 
     async def _translate_one_field_to_zh(
         self, text: str, *, model_route: str
@@ -1714,11 +1722,19 @@ class DirectorAgent:
             await session.rollback()
             return None
     @staticmethod
-    def _beat_ready_event(beat_index: int, summary: str) -> AgentEvent:
-        return AgentEvent(
-            type="beat_ready",
-            data={"beat_id": f"beat_{beat_index + 1}", "beat_summary": summary},
-        )
+    def _beat_ready_event(
+        beat_index: int,
+        summary: str,
+        *,
+        mckee_role: str | None = None,
+    ) -> AgentEvent:
+        data: dict[str, Any] = {
+            "beat_id": f"beat_{beat_index + 1}",
+            "beat_summary": summary,
+        }
+        if mckee_role:
+            data["mckee_role"] = mckee_role
+        return AgentEvent(type="beat_ready", data=data)
     @staticmethod
     def _parse_beat_events(text: str) -> list[dict[str, Any]]:
         """Parse the LLM response as a JSON array of event objects.
