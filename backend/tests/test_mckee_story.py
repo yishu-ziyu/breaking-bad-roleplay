@@ -196,3 +196,31 @@ CONTROLLING_IDEA: Truth rips the family open because loyalty covered a greater l
     assert mckee_story.filter_playable_outline_lines(meta_only) == ""
     scenes = DirectorAgent._parse_outline(meta_only)
     assert scenes == []
+
+
+async def test_process_meta_only_outline_yields_no_beats_error():
+    """Main Story process() must error on empty playable scenes, not complete."""
+    from unittest.mock import AsyncMock
+
+    from agents.director import DirectorAgent
+
+    meta_only = (
+        "PROTAGONIST: Hank Schrader\n"
+        "SPINE: uncover the truth without destroying his family\n"
+        "VALUE_PAIR: loyalty / betrayal\n"
+        "CONTROLLING_IDEA: Truth rips the family open because loyalty covered a greater lie\n"
+    )
+    provider = AsyncMock()
+    director = DirectorAgent(provider=provider)
+    director._generate_outline = AsyncMock(return_value=meta_only)
+
+    events = []
+    async for ev in director.process(task="Hank digs into Heisenberg"):
+        events.append(ev)
+
+    types = [e.type for e in events]
+    assert "error" in types
+    assert "complete" not in types
+    err = next(e for e in events if e.type == "error")
+    msg = str(err.data.get("message", "")).lower()
+    assert "playable" in msg or "可玩" in msg or "no" in msg
