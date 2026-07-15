@@ -12,6 +12,7 @@ backend/
     routes.py              # REST + SSE routes
   agents/
     director.py            # Story Director、direct chat、crew chat
+    mckee_story.py         # McKee Story outline/beat planning (DEC-0003)
     provider.py            # MiniMax / StepFun / CLIProxy facade
     memory.py              # session/world dossier 更新
     characters/
@@ -22,6 +23,7 @@ backend/
       saul.py              # SaulGoodman prompt
       mike.py              # MikeEhrmantraut prompt
       gus.py               # GusFring prompt
+      hank.py              # HankSchrader prompt
   db/
     session.py             # Async engine/session factory/get_db
     models.py              # SQLAlchemy ORM models
@@ -142,9 +144,10 @@ _session_queues: dict[str, dict] = {}
 | 方法 | 作用 |
 |---|---|
 | `process(task, session_factory, session_id, action_queue, db)` | Story 主 async generator；生成 outline，逐 beat 产生 SSE events，并在 beat 间等待 action |
-| `_generate_outline(task)` | 调 LLM 生成 plain-text numbered outline |
+| `_generate_outline(task)` | 调 LLM 生成 McKee 大纲（脊柱 meta + 5-7 playable beats；见 `mckee_story`） |
 | `_extract_text_from_json_outline(raw)` | LLM 误返回 JSON 时转换成可读 outline |
-| `_parse_outline(text)` | 将 numbered list / JSON fallback 转成 scene list |
+| `_parse_outline(text)` | 过滤 meta 行后，将 numbered list / JSON fallback 转成 playable scene list |
+| `_outline_event(...)` | 通过 `mckee_story.outline_event_payload` 发出 outline SSE（可选 spine/warnings） |
 | `_short_scene_name(scene_desc)` | 从 scene 描述中提取场景名 |
 | `_generate_beat(...)` | 单个 beat 编排、事件解析、角色 sub-agent 调用、持久化和 `beat_ready` |
 | `_prepare_beat_events(events)` | 去掉重复 scene_change、限制 speak 数、过滤空 world deltas |
@@ -222,6 +225,7 @@ complete
 | [saul.py](../../backend/agents/characters/saul.py) | `SaulGoodman` | 快速法律风险 framing、喜剧服务于逃生计算 |
 | [mike.py](../../backend/agents/characters/mike.py) | `MikeEhrmantraut` | 简短、专业、保护性、低情绪表达 |
 | [gus.py](../../backend/agents/characters/gus.py) | `GusFring` | 礼貌、控制、商业标准式威胁 |
+| [hank.py](../../backend/agents/characters/hank.py) | `HankSchrader` | 大声忠诚、家庭保护、调查压力；虚构 `case_pressure_reader` |
 
 ## ProviderFacade：[backend/agents/provider.py](../../backend/agents/provider.py)
 

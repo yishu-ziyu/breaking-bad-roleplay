@@ -260,7 +260,7 @@ RLS 只隔离普通用户，不能阻止持有 service role / 数据库管理员
 核心类型：
 
 ```ts
-export type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
+export type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank'
 
 export type RelationshipState = {
   trust: number
@@ -344,6 +344,7 @@ export interface StoryEvent {
 | `saul` | `Saul Goodman` |
 | `mike` | `Mike Ehrmantraut` |
 | `gus` | `Gus Fring` |
+| `hank` | `Hank Schrader` |
 
 转换定义在 [backend/agents/director.py](../../backend/agents/director.py)：
 

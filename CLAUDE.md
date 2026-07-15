@@ -8,7 +8,7 @@
 - Loop 6: GIF relevance audit + skipGif escape hatch (+5 tests)
 - Loop 7: Crew mode per-character prompt injection + DEC-0001 native function calling (+27 tests)
 - Loop N: playable Hank (`hank` / 汉克) — Direct+Crew+Story; DEC-0002
-- Loop N+1: McKee Story engine v1 — DEC-0003; `backend/agents/mckee_story.py` wired into director outline/beat
+- Loop N+1: McKee Story engine v2 — DEC-0003; `backend/agents/mckee_story.py` wired into director outline/beat
 - 当前测试: Hank + McKee unit suites; full suite re-run before ship
 - 线上服务: https://bb.yishuziyu.cn
 - 下一轮: McKee 质量门禁（价值翻转验收）/ Marie 可玩 / 克隆 TTS（按优先级）
@@ -94,8 +94,8 @@ PM Intake -> Research -> Definition -> Dev -> QA -> Review -> E2E -> Market -> S
 这是一个《绝命毒师》主题的 AI 角色扮演对话原型，不是普通聊天机器人。
 
 核心体验：选角色 -> 建立关系锚点 -> 对话 / 剧情演绎
-角色：Walter, Jesse, Skyler, Saul, Mike, Gus
-模式：Direct Chat（一对一）、Crew（多人辩论）、Story（SSE 剧情流）
+角色：Walter, Jesse, Skyler, Saul, Mike, Gus, Hank（见 CONTEXT.md / DEC-0002）
+模式：Direct Chat（一对一）、Crew（多人辩论）、Story（SSE 剧情流；大纲规划见 DEC-0003 McKee）
 
 安全边界：禁止生成现实世界犯罪操作指导（制毒、暴力、洗钱等），戏剧张力保留，虚构语境内允许。
 
@@ -124,6 +124,7 @@ PM Intake -> Research -> Definition -> Dev -> QA -> Review -> E2E -> Market -> S
 - `backend/main.py` — FastAPI 入口
 - `backend/api/routes.py` — API 路由
 - `backend/agents/director.py` — Director 剧情引擎
+- `backend/agents/mckee_story.py` — McKee Story 大纲/节拍规划（DEC-0003）
 - `backend/agents/provider.py` — LLM provider 适配 + fallback
 - `backend/agents/memory.py` — 记忆管理
 - `backend/agents/characters/` — 7 个角色 prompt（含 hank / 汉克）

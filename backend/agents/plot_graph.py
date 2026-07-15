@@ -9,7 +9,6 @@ Research takeaway (what good plot nets do):
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
@@ -18,7 +17,6 @@ from agents.continuity_board import (
     BOARD_SUBJECT_ID,
     board_from_json,
     default_era_id,
-    new_session_board,
     normalize_character_id,
 )
 
