@@ -1,4 +1,4 @@
-export type RoleAssetCharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
+export type RoleAssetCharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank'
 
 export type RoleGifTag =
   | 'default'
@@ -362,6 +362,69 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
         url: 'https://media.giphy.com/media/xUA7bgLCTSGnh1Qxe8/giphy.gif',
         tags: ['confrontation', 'tense', 'glare'],
         usageNotes: 'Use when Gus gives a short command or makes displeasure feel unavoidable.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+    ],
+  },
+  hank: {
+    characterId: 'hank',
+    displayName: 'Hank',
+    usageNotes: 'Small pool for loud loyalty, DEA pressure, family ribbing, and hard stares.',
+    safetyNotes: 'Never use for real investigative instruction; keep selection fictional and tonal.',
+    copyrightNotes: platformCopyrightNote,
+    gifPools: [
+      {
+        id: 'hank-loud-default',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',
+        tags: ['default', 'tense'],
+        usageNotes: 'Fallback Hank energy: talkative pressure, office swagger, or forced lightness.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-hard-stare',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif',
+        tags: ['glare', 'confrontation', 'tense'],
+        usageNotes: 'Suspect under watch, badge pride hit, or jokes drying up.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-forced-laugh',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',
+        tags: ['default', 'restraint'],
+        usageNotes: 'Family ribbing, cookout surface warmth, or covering worry with a laugh.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-investigative-heat',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/l2SpZYu7VnXLqeqqI/giphy.gif',
+        tags: ['tense', 'confrontation', 'glare'],
+        usageNotes: 'DEA partner shop talk heating up or case pressure stacking.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-family-worry',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/3o7TKMt1VVNkHV2PaE/giphy.gif',
+        tags: ['tense', 'default', 'restraint'],
+        usageNotes: 'Protective family beats; vulnerability under the tough shell.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-confrontation',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
+        tags: ['confrontation', 'angry', 'tense'],
+        usageNotes: 'Direct challenge, badge pride, or personal pressure after a hit to ego.',
         safetyNotes: fictionalRoleSafetyNote,
         copyrightNotes: platformCopyrightNote,
       },

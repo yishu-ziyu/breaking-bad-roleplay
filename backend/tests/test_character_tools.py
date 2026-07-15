@@ -17,6 +17,7 @@ from agents.characters import (
     GusFring,
     JessePinkman,
     SkylerWhite,
+    HankSchrader,
 )
 from agents.tools import ToolResult
 
@@ -33,8 +34,16 @@ def _facade() -> ProviderFacade:
     )
 
 
-async def test_all_six_characters_have_tools():
-    for cls in (WalterWhite, SaulGoodman, MikeEhrmantraut, GusFring, JessePinkman, SkylerWhite):
+async def test_all_playable_characters_have_tools():
+    for cls in (
+        WalterWhite,
+        SaulGoodman,
+        MikeEhrmantraut,
+        GusFring,
+        JessePinkman,
+        SkylerWhite,
+        HankSchrader,
+    ):
         c = cls(_facade())
         assert len(c.tools) >= 1, f"{cls.__name__} should declare at least one tool"
 
@@ -72,6 +81,12 @@ async def test_jesse_tool_executes():
         "cook_yield_estimator", {"batch_size_oz": 10, "purity_target_percent": 99}
     )
     assert "PHARM-GRADE" in res.content
+
+
+async def test_hank_tool_executes():
+    c = HankSchrader(_facade())
+    res = await c._tool_registry.execute("case_pressure_reader", {"subject": "jesse pinkman"})
+    assert "HOT" in res.content or "pressure=" in res.content
 
 
 async def test_skyler_tool_executes():

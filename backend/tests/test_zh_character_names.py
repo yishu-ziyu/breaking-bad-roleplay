@@ -18,6 +18,7 @@ def test_english_mike_in_chinese_line_becomes_mai_ke():
 
 def test_full_name_and_bad_variants():
     assert normalize_zh_character_names("Mike Ehrmantraut 点头") == "麦克 点头"
+    assert normalize_zh_character_names("Hank Schrader 皱眉") == "汉克 皱眉"
     assert normalize_zh_character_names("米克·厄曼特劳特走了") == "麦克走了"
 
 
