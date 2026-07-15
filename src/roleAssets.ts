@@ -386,7 +386,7 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
       {
         id: 'hank-hard-stare',
         source: 'giphy',
-        url: 'https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif',
+        url: 'https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif',
         tags: ['glare', 'confrontation', 'tense'],
         usageNotes: 'Suspect under watch, badge pride hit, or jokes drying up.',
         safetyNotes: fictionalRoleSafetyNote,
@@ -404,7 +404,7 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
       {
         id: 'hank-investigative-heat',
         source: 'giphy',
-        url: 'https://media.giphy.com/media/l2SpZYu7VnXLqeqqI/giphy.gif',
+        url: 'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif',
         tags: ['tense', 'confrontation', 'glare'],
         usageNotes: 'DEA partner shop talk heating up or case pressure stacking.',
         safetyNotes: fictionalRoleSafetyNote,
@@ -425,6 +425,15 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
         url: 'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
         tags: ['confrontation', 'angry', 'tense'],
         usageNotes: 'Direct challenge, badge pride, or personal pressure after a hit to ego.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-office-swagger',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/l3V0j3ytFyGHqiV7W/giphy.gif',
+        tags: ['default', 'tense', 'deal'],
+        usageNotes: 'Office swagger, DEA partner banter, or loud confidence before the questions stick.',
         safetyNotes: fictionalRoleSafetyNote,
         copyrightNotes: platformCopyrightNote,
       },

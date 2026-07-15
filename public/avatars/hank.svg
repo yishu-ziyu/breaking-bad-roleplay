@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <clipPath id="hankClip">
+      <circle cx="100" cy="100" r="100"/>
+    </clipPath>
+  </defs>
+  <circle cx="100" cy="100" r="100" fill="#6a4a32"/>
+  <g clip-path="url(#hankClip)" fill="#f0a36b">
+    <!-- Jacket / polo bulk -->
+    <path d="M 28 200 L 28 165 Q 34 142 64 136 L 88 132 L 100 150 L 112 132 L 136 136 Q 166 142 172 165 L 172 200 Z"/>
+    <!-- Neck -->
+    <rect x="88" y="112" width="24" height="22"/>
+    <!-- Head (broader) -->
+    <ellipse cx="100" cy="82" rx="34" ry="36"/>
+    <!-- Short crop / receding hair -->
+    <path d="M 68 72 Q 70 48 100 44 Q 130 48 132 72 L 128 68 Q 100 52 72 68 Z"/>
+    <!-- Mustache -->
+    <path d="M 82 98 Q 100 108 118 98 Q 100 104 82 98 Z"/>
+  </g>
+</svg>
