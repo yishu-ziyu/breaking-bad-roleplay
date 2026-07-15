@@ -422,6 +422,12 @@ class DirectorAgent:
             return
         scenes = self._parse_outline(outline_text)
         yield self._outline_event(outline_text, scenes=scenes)
+        if not scenes:
+            yield AgentEvent(
+                type="error",
+                data={"message": _status_message("no_beats", language)},
+            )
+            return
         yield AgentEvent(
             type="status",
             data={
