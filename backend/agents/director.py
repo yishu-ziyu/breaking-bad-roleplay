@@ -420,8 +420,8 @@ class DirectorAgent:
                 data={"message": _status_message("outline_failed", language)},
             )
             return
-        yield AgentEvent(type="outline", data={"content": outline_text})
         scenes = self._parse_outline(outline_text)
+        yield self._outline_event(outline_text, scenes=scenes)
         yield AgentEvent(
             type="status",
             data={
@@ -430,6 +430,7 @@ class DirectorAgent:
         )
         # ---- Step 2: render each beat (beat-by-beat with pause) ----------
         previous_scene = ""
+        previous_scene_desc = ""
         idx = 0
         active_character_id: str | None = None  # backend full-name form, e.g. "Jesse Pinkman"
         while idx < len(scenes):
@@ -439,7 +440,11 @@ class DirectorAgent:
                 task=task,
                 outline=outline_text,
                 beat_index=idx,
-                context={"previous_scene": previous_scene, "current_scene": current_scene},
+                context={
+                    "previous_scene": previous_scene,
+                    "previous_scene_desc": previous_scene_desc,
+                    "current_scene": current_scene,
+                },
                 scene_desc=scene_desc,
                 db=db,
                 session_factory=session_factory,
@@ -476,9 +481,10 @@ class DirectorAgent:
                         else:
                             outline_text = new_outline
                             scenes = self._parse_outline(outline_text)
-                            yield AgentEvent(type="outline", data={"content": outline_text})
+                            yield self._outline_event(outline_text, scenes=scenes)
                             idx = 0
                             previous_scene = ""
+                            previous_scene_desc = ""
                             continue  # skip trailing idx+=1 / previous_scene overwrite
                     elif act_type == "switch_perspective":
                         # Resolve target from signal first (routes.py:151 pushes
@@ -542,14 +548,12 @@ class DirectorAgent:
                             )
                         else:
                             next_scenes = self._parse_outline(next_outline)
-                            yield AgentEvent(
-                                type="outline",
-                                data={
-                                    "content": next_outline,
-                                    "appended": True,
-                                    "chapter": 2,
-                                },
+                            payload = mckee_story.outline_event_payload(
+                                next_outline, scenes=next_scenes
                             )
+                            payload["appended"] = True
+                            payload["chapter"] = 2
+                            yield AgentEvent(type="outline", data=payload)
                             scenes = scenes + next_scenes
                             # Re-enter the beat loop starting at the first
                             # newly appended scene so the next iteration
@@ -557,6 +561,7 @@ class DirectorAgent:
                             # unrendered beat of chapter 1).
                             idx = len(scenes) - len(next_scenes) - 1
                             previous_scene = current_scene
+                            previous_scene_desc = scene_desc
                             continue
                     elif act_type == "branch":
                         # Replace everything from a chosen beat onward. Beats
@@ -589,14 +594,12 @@ class DirectorAgent:
                             )
                         else:
                             branch_scenes = self._parse_outline(branch_outline)
-                            yield AgentEvent(
-                                type="outline",
-                                data={
-                                    "content": branch_outline,
-                                    "branched": True,
-                                    "from_beat_id": from_beat_id,
-                                },
+                            payload = mckee_story.outline_event_payload(
+                                branch_outline, scenes=branch_scenes
                             )
+                            payload["branched"] = True
+                            payload["from_beat_id"] = from_beat_id
+                            yield AgentEvent(type="outline", data=payload)
                             # Keep scenes[0..beat_idx] (inclusive) from the
                             # original outline, then append the freshly
                             # generated scenes. The next iteration of the
@@ -605,6 +608,7 @@ class DirectorAgent:
                             prefix = scenes[: beat_idx + 1]
                             scenes = prefix + branch_scenes
                             previous_scene = ""
+                            previous_scene_desc = ""
                             idx = beat_idx
                             continue  # skip trailing idx+=1 / previous_scene overwrite
                     elif act_type == "replay":
@@ -624,6 +628,7 @@ class DirectorAgent:
                         if replay_idx == len(scenes) - 1:
                             scenes.append(scenes[replay_idx])
                         previous_scene = ""
+                        previous_scene_desc = ""
                         idx = max(0, replay_idx - 1)
                         continue  # skip trailing idx+=1 / previous_scene overwrite
                     # "continue": fall through to next beat
@@ -634,6 +639,7 @@ class DirectorAgent:
                     )
             idx += 1
             previous_scene = current_scene
+            previous_scene_desc = scene_desc
         yield AgentEvent(
             type="complete",
             data={"message": _status_message("complete", language)},
@@ -706,7 +712,7 @@ class DirectorAgent:
                 await session.commit()
 
             beat_index = 0
-            yield AgentEvent(type="outline", data={"content": outline_text})
+            yield self._outline_event(outline_text, scenes=scenes)
             yield AgentEvent(
                 type="status",
                 data={
@@ -743,6 +749,7 @@ class DirectorAgent:
         previous_scene = (
             self._short_scene_name(scenes[beat_index - 1]) if beat_index > 0 else ""
         )
+        previous_scene_desc = scenes[beat_index - 1] if beat_index > 0 else ""
         active_character_id = FRONTEND_TO_BACKEND_ID.get(
             active_character_raw, active_character_raw
         )
@@ -752,7 +759,11 @@ class DirectorAgent:
             task=task,
             outline=outline_text,
             beat_index=beat_index,
-            context={"previous_scene": previous_scene, "current_scene": current_scene},
+            context={
+                "previous_scene": previous_scene,
+                "previous_scene_desc": previous_scene_desc,
+                "current_scene": current_scene,
+            },
             scene_desc=scene_desc,
             session_factory=session_factory,
             session_id=session_id,
@@ -975,6 +986,25 @@ class DirectorAgent:
             logger.exception("Branch outline LLM call failed")
             return None
     @staticmethod
+    def _outline_event(
+        outline_text: str,
+        *,
+        scenes: list[str] | None = None,
+    ) -> AgentEvent:
+        """Emit outline SSE with McKee spine meta + soft structure warnings."""
+        scene_list = (
+            scenes
+            if scenes is not None
+            else DirectorAgent._parse_outline(outline_text)
+        )
+        return AgentEvent(
+            type="outline",
+            data=mckee_story.outline_event_payload(
+                outline_text, scenes=scene_list
+            ),
+        )
+
+    @staticmethod
     def _parse_outline(text: str) -> list[str]:
         """Parse an LLM-generated outline into a list of scene descriptions.
         Handles McKee meta headers, plain-text numbered lists, and JSON arrays.
@@ -1111,6 +1141,8 @@ class DirectorAgent:
             beat_index=beat_index,
             total_beats=total_beats,
             language=language,
+            previous_scene_desc=context.get("previous_scene_desc") or None,
+            outline_text=outline,
         )
         beat_prompt += (
             "Generate the events for this beat as a JSON array. "
