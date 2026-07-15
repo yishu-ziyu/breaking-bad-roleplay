@@ -38,7 +38,7 @@ type ChatMode = 'direct' | 'crew'
 type Language = 'en' | 'zh'
 type View = 'chat' | 'story'
 
-type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
+type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank'
 
 const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Walter White': 'walter', 'Walter': 'walter',
@@ -47,6 +47,7 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Saul Goodman': 'saul', 'Saul': 'saul',
   'Mike Ehrmantraut': 'mike', 'Mike': 'mike',
   'Gus Fring': 'gus', 'Gus': 'gus',
+  'Hank Schrader': 'hank', 'Hank': 'hank',
 }
 
 const STORY_CARD_EVENT_TYPES = new Set(['scene_change', 'agent_speak', 'agent_think', 'agent_act'])
@@ -294,6 +295,23 @@ const characters: Character[] = [
     oneLiner: { en: 'A restaurant owner with absolute control. Every gesture is calculated, every silence is a threat.', zh: '拥有绝对控制权的餐厅老板。每个动作都经过计算，每段沉默都是威胁。' },
     relationOptions: ['employee', 'supplier', 'rival', 'guest', 'person being evaluated'],
     opener: { en: 'Please, take a seat. A calm conversation prevents unfortunate misunderstandings.', zh: '请坐。冷静的谈话可以避免一些不幸的误会。' },
+  }, {
+    id: 'hank', name: 'Hank', color: '#f0a36b',
+    oneLiner: {
+      en: 'A loud DEA agent with a soft spot for family. Jokes first, then the questions that stick.',
+      zh: '吵闹的 DEA 探员，对家人护短。先开玩笑，再问到你改口。',
+    },
+    relationOptions: [
+      'family member',
+      'DEA partner',
+      'suspect under watch',
+      'neighbor',
+      'friend of the family',
+    ],
+    opener: {
+      en: 'Hey, relax. I am not here to ruin your day. I am just here to notice if your story keeps changing.',
+      zh: '嘿，放松。我不是来毁你一天的，我只是来看看你的故事会不会改口。',
+    },
   },
 ]
 
@@ -327,6 +345,9 @@ const relationLabels: Record<string, Record<Language, string>> = {
   rival: { en: 'rival', zh: '对手' },
   guest: { en: 'guest', zh: '客人' },
   'person being evaluated': { en: '被评估的人', zh: '被评估的人' },
+  'DEA partner': { en: 'DEA partner', zh: 'DEA 搭档' },
+  'suspect under watch': { en: 'suspect under watch', zh: '被盯上的人' },
+  'friend of the family': { en: 'friend of the family', zh: '家人的朋友' },
 }
 
 const uiText: Record<Language, Record<string, string>> = {

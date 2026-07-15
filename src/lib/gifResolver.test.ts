@@ -104,7 +104,7 @@ describe('gifResolver', () => {
   })
 
   it('all GIF URLs are well-formed (start with https://)', () => {
-    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank']
     for (const char of characters) {
       const pool = roleAssets[char].gifPools
       for (const gif of pool) {
@@ -117,7 +117,7 @@ describe('gifResolver', () => {
   })
 
   it('every character has at least one default-tagged GIF', () => {
-    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank']
     for (const char of characters) {
       const pool = roleAssets[char].gifPools
       const hasDefault = pool.some(g => g.tags.includes('default'))
@@ -126,7 +126,7 @@ describe('gifResolver', () => {
   })
 
   it('no duplicate URLs within a character pool', () => {
-    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus']
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank']
     for (const char of characters) {
       const pool = roleAssets[char].gifPools
       const urls = pool.map(g => g.url)

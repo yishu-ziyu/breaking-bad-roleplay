@@ -33,6 +33,8 @@ CHARACTER_ID_ALIASES: dict[str, str] = {
     "mike ehrmantraut": "mike",
     "gus": "gus",
     "gus fring": "gus",
+    "hank": "hank",
+    "hank schrader": "hank",
 }
 
 

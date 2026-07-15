@@ -79,6 +79,7 @@ _CHAR_LABEL_ZH: dict[str, str] = {
     "gus": "古斯",
     "gus fring": "古斯",
     "hank": "汉克",
+    "hank schrader": "汉克",
     "marie": "玛丽",
 }
 

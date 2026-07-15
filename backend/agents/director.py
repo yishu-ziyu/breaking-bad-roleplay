@@ -13,6 +13,7 @@ from agents.characters import (
     SaulGoodman,
     MikeEhrmantraut,
     GusFring,
+    HankSchrader,
 )
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
@@ -140,6 +141,7 @@ _ZH_NAME_FIXES: tuple[tuple[str, str], ...] = (
     ("Skyler", "斯凯勒"),
     ("Saul", "索尔"),
     ("Gus", "古斯"),
+    ("Hank Schrader", "汉克"),
     ("Hank", "汉克"),
     ("Marie", "玛丽"),
 )
@@ -212,6 +214,7 @@ FRONTEND_TO_BACKEND_ID: dict[str, str] = {
     "saul": "Saul Goodman",
     "mike": "Mike Ehrmantraut",
     "gus": "Gus Fring",
+    "hank": "Hank Schrader",
 }
 BACKEND_TO_FRONTEND_ID: dict[str, str] = {v: k for k, v in FRONTEND_TO_BACKEND_ID.items()}
 # ---------------------------------------------------------------------------
@@ -224,7 +227,7 @@ responding to a user message.
 EMIT A SINGLE JSON ARRAY — one object per character turn in order:
 [
   {
-    "character_id": "Walter White" | "Jesse Pinkman" | "Skyler White" | "Saul Goodman" | "Mike Ehrmantraut" | "Gus Fring",
+    "character_id": "Walter White" | "Jesse Pinkman" | "Skyler White" | "Saul Goodman" | "Mike Ehrmantraut" | "Gus Fring" | "Hank Schrader",
     "content": "<spoken dialogue — in character, 2-6 sentences>",
     "emotion_state": "<calm|tense|angry|fearful|manipulative|guilty|resigned|desperate>",
     "gif_search_query": "<English visual emotion search phrase>",
@@ -247,7 +250,7 @@ RULES:
 DIRECTOR_SYSTEM_PROMPT = """\
 You are the **Director** of a Breaking Bad interactive roleplay.
 Known characters: Walter White, Jesse Pinkman, Skyler White, Saul Goodman,
-Mike Ehrmantraut, Gus Fring.
+Mike Ehrmantraut, Gus Fring, Hank Schrader.
 Your job is NOT to write prose.  Your job is to orchestrate character agents
 and emit structured events for the client.  For every narrative beat you must:
 BEAT PLANNING
@@ -297,7 +300,7 @@ RULES:
 - scene_change is only emitted when the narrative location actually shifts.
 - world_state_delta must always appear as the last event in a beat.
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
-  "Saul Goodman", "Mike Ehrmantraut", or "Gus Fring" — no variations.
+  "Saul Goodman", "Mike Ehrmantraut", "Gus Fring", or "Hank Schrader" — no variations.
 - recommended_model must be "stepfun/step-3.7-flash" on every event.
 """
 # ---------------------------------------------------------------------------
@@ -310,6 +313,7 @@ CHARACTER_AGENTS: dict[str, Any] = {
     "Saul Goodman": SaulGoodman,
     "Mike Ehrmantraut": MikeEhrmantraut,
     "Gus Fring": GusFring,
+    "Hank Schrader": HankSchrader,
 }
 class DirectorAgent:
     """
@@ -1844,6 +1848,9 @@ class DirectorAgent:
             ("gus", "Gus Fring"),
             ("skyler", "Skyler White"),
             ("jesse", "Jesse Pinkman"),
+            ("hank", "Hank Schrader"),
+            ("schrader", "Hank Schrader"),
+            ("dea", "Hank Schrader"),
         ]:
             if keyword in text_lower and backend_name not in participants_backend:
                 participants_backend.append(backend_name)
