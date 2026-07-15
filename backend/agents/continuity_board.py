@@ -12,7 +12,6 @@ Era seed JSON lives under materials/breaking-bad/continuity/eras/.
 from __future__ import annotations
 
 import json
-import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,8 @@ CHARACTER_ID_ALIASES: dict[str, str] = {
     "mike ehrmantraut": "mike",
     "gus": "gus",
     "gus fring": "gus",
+    "hank": "hank",
+    "hank schrader": "hank",
 }
 
 

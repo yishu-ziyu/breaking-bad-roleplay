@@ -187,6 +187,8 @@ curl -sS http://127.0.0.1:8080/ | grep -oE 'assets/index-[^"]+\.css'
 
 ### Role GIFs (`src/roleAssets.ts`)
 
+- **2026-07-15 footgun:** Hank v1 pool used random Giphy IDs tagged by emotion only. First-frame audit showed Moone Boy / Forrest Gump / dead assets - not Dean Norris. Tags ≠ face. Always download first frame and confirm the actor before shipping.
+
 - Whitelist only. Never random Giphy search at runtime for production pools.
 - After adding/changing a GIF ID: download first frame, **visually** confirm it is the character (no meme stickers / wrong show).
 - Mike incident: `M0XoCjRUkhSYE` looked like Mike but was a SpongeBob "perfection" meme overlay. Visual audit is mandatory.

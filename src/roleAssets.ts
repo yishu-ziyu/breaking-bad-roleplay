@@ -1,4 +1,4 @@
-export type RoleAssetCharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus'
+export type RoleAssetCharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank'
 
 export type RoleGifTag =
   | 'default'
@@ -362,6 +362,89 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
         url: 'https://media.giphy.com/media/xUA7bgLCTSGnh1Qxe8/giphy.gif',
         tags: ['confrontation', 'tense', 'glare'],
         usageNotes: 'Use when Gus gives a short command or makes displeasure feel unavoidable.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+    ],
+  },
+  hank: {
+    characterId: 'hank',
+    displayName: 'Hank',
+    usageNotes:
+      'Visually audited Dean Norris / Hank pool only. Prefer glare/tense for case pressure; default for loud loyalty and office talk; restraint for dry smug energy.',
+    safetyNotes: 'Never use for real investigative instruction; keep selection fictional and tonal.',
+    copyrightNotes: platformCopyrightNote,
+    gifPools: [
+      // First-frame audited 2026-07-15: each URL is Dean Norris as Hank (not Walter/random TV).
+      {
+        id: 'hank-investigative-read',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/UvtKiyeWYEhRC/giphy.gif',
+        tags: ['default', 'tense', 'glare'],
+        usageNotes: 'Looks up from a file - case pressure, realization, or investigative heat.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-hard-closeup',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/wlvuqFDPCwBOrAx77M/giphy.gif',
+        tags: ['glare', 'confrontation', 'tense'],
+        usageNotes: 'Hard close-up stare when jokes dry up or a suspect is under watch.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-realize-book',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/kbCOCUKMuwe9fM8bBL/giphy.gif',
+        tags: ['tense', 'glare', 'default'],
+        usageNotes: 'Reading / realizing - leaves of grass moment energy, or badge pride hit.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-office-talk',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/iDC1eZnTKSBwSgc4rq/giphy.gif',
+        tags: ['default', 'tense'],
+        usageNotes: 'DEA office talk, partner banter, or badge-forward swagger.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-hell-yeah',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/iowmvjVUnDFGU/giphy.gif',
+        tags: ['default'],
+        usageNotes: 'Loud loyalty, cookout surface energy, or forced swagger covering worry.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-asac-stare',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/l41YdZ0z4LL2pAh9u/giphy.gif',
+        tags: ['confrontation', 'glare', 'tense'],
+        usageNotes: 'Direct challenge, ASAC pride, or personal pressure after a hit to ego.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-dry-office',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/L0ZAYwHRYJawDqNtoE/giphy.gif',
+        tags: ['restraint', 'default'],
+        usageNotes: 'Dry office restraint, skeptical half-smile, or understated pressure.',
+        safetyNotes: fictionalRoleSafetyNote,
+        copyrightNotes: platformCopyrightNote,
+      },
+      {
+        id: 'hank-smug-delight',
+        source: 'giphy',
+        url: 'https://media.giphy.com/media/dX2WPe4QmYOuY3S97S/giphy.gif',
+        tags: ['restraint', 'default', 'family'],
+        usageNotes: 'Smug delight, family ribbing surface, or covering worry with a grin.',
         safetyNotes: fictionalRoleSafetyNote,
         copyrightNotes: platformCopyrightNote,
       },

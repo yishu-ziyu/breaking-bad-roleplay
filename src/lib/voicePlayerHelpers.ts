@@ -26,6 +26,7 @@ export const VOICE_PROFILES: Record<CharacterId, { pitch: number; rate: number }
   saul:   { pitch: 1.0,  rate: 1.1 },  // 语速偏快、推销感
   mike:   { pitch: 0.75, rate: 0.85 }, // 低沉、缓慢、老练
   gus:    { pitch: 0.8,  rate: 0.8 },  // 极低沉、极慢、压迫感
+  hank:   { pitch: 1.05, rate: 1.12 }, // 外放、略快、吵闹忠诚
 }
 
 /**

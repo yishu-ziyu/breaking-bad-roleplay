@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agents.continuity_board import new_session_board
 from agents.director import DirectorAgent
 from agents.provider import ProviderFacade
 

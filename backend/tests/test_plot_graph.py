@@ -22,6 +22,31 @@ def test_parse_outline_beats_numbered():
     assert "Superlab" in beats[0]["label"]
 
 
+def test_parse_outline_beats_strips_mckee_meta():
+    """McKee spine headers must not become plot-graph beat nodes."""
+    outline = """
+PROTAGONIST: Hank Schrader
+SPINE: uncover the truth without destroying his family
+VALUE_PAIR: loyalty / betrayal
+CONSCIOUS_DESIRE: catch the cook
+# BEATS
+1. [setup] Schrader backyard — value: safety→unease
+2. [inciting] DEA office — value: order→imbalance
+3. [climax] Desert road — value: facade→break
+"""
+    beats = parse_outline_beats(outline)
+    assert len(beats) == 3
+    labels = " ".join(b["label"] for b in beats)
+    assert "PROTAGONIST" not in labels
+    assert "SPINE" not in labels
+    assert "VALUE_PAIR" not in labels
+    assert "CONSCIOUS" not in labels
+    assert "backyard" in beats[0]["label"]
+
+    meta_only = "PROTAGONIST: Hank\nSPINE: dig\nVALUE_PAIR: a / b"
+    assert parse_outline_beats(meta_only) == []
+
+
 def test_co_presence_links_speakers_in_same_beat():
     msgs = [
         SimpleNamespace(character_name="Walter White", beat_id="b1"),
