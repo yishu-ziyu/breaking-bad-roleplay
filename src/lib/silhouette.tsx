@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
 
+// PNG portraits when present; others (e.g. hank) load /avatars/<id>.svg directly.
 const portraitAvatarIds = new Set<CharacterId>(['walter', 'jesse', 'skyler', 'saul', 'gus', 'mike'])
 
 interface SilhouetteProps {
