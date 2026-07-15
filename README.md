@@ -4,7 +4,7 @@ Breaking Bad-inspired AI roleplay chat prototype for the hackathon workspace.
 
 ## What It Does
 
-- Lets the user choose Walter, Jesse, Skyler, Saul, Mike, or Gus.
+- Lets the user choose Walter, Jesse, Skyler, Saul, Mike, Gus, or Hank.
 - Forces a relationship anchor such as `Walter's former student`, `Saul's client`, or `Gus's employee` before chatting.
 - Supports English / Simplified Chinese switching for UI copy, relationship labels, prompt language control, and demo replies.
 - Supports private pressure scenes and lightweight crew scenes.

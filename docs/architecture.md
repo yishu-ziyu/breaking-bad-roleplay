@@ -71,7 +71,9 @@ ABQ Roleplay Lab 是一个《绝命毒师》世界观的 AI 角色扮演产品�
 
 执行模式：Plan-then-Emerge 混合。先生成大纲提供方向，每个 beat 演完后根据角色即兴反应动态决定下一 beat。
 
-### 2.3 角色 Sub-agent（6 个）
+### 2.3 角色 Sub-agent（7 个）
+
+可玩名单与关系锚点的权威表见 [CONTEXT.md](../CONTEXT.md) / [DEC-0002](./decisions/DEC-0002-hank-character-v1.md)。
 
 | 角色 | 核心特质 | 工具能力 |
 |------|----------|----------|
@@ -81,6 +83,7 @@ ABQ Roleplay Lab 是一个《绝命毒师》世界观的 AI 角色扮演产品�
 | Saul Goodman | 油滑、避险、话术 | 法律风险评估 |
 | Mike Ehrmantraut | 冷静、专业、原则 | 安全态势读取 |
 | Gus Fring | 精确、隐藏、长期主义 | 合规性评估 |
+| Hank Schrader | 大声忠诚、家庭保护、调查压力 | 虚构案情压力读取 (`case_pressure_reader`) |
 
 每个 Sub-agent 拥有：
 - 独立的 voice profile（语气、用词习惯、标志性表达）
@@ -244,7 +247,7 @@ Provider Facade 接收统一调用 → 根据路由规则转换协议 → 转发
 Session Start
   │
   ├─ 加载世界状态（跨 session 的 dossiers + character_states）
-  ├─ 初始化 6 个角色 Sub-agent（注入 voice profile + 工具 + 世界状态）
+  ├─ 初始化 7 个角色 Sub-agent（注入 voice profile + 工具 + 世界状态）
   ├─ 加载玩家任务
   │
   ▼
