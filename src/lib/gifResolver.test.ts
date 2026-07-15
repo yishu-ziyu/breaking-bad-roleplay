@@ -135,6 +135,26 @@ describe('gifResolver', () => {
     }
   })
 
+  it('hank pool rejects known wrong-face Giphy IDs from the unaudited v1 set', () => {
+    // 2026-07-15 first-frame audit: these were Moone Boy / Forrest Gump / dead / non-Hank.
+    const banned = [
+      'l0HlBO7eyXzSZkJri',
+      'xT9IgG50Fb7Mi0prBC',
+      '5GoVLqeAOo6PK',
+      '3oEjI6SIIHBdRxXI40',
+      '3o7TKMt1VVNkHV2PaE',
+      '26BRuo6sLetdllPAQ',
+      'l3V0j3ytFyGHqiV7W',
+    ]
+    const urls = roleAssets.hank.gifPools.map((g) => g.url).join(' ')
+    for (const id of banned) {
+      assert.ok(!urls.includes(id), `hank pool still contains banned GIF id ${id}`)
+    }
+    assert.ok(roleAssets.hank.gifPools.length >= 6, 'hank needs a rotation-sized pool')
+    // Spot-check one audited Dean Norris id
+    assert.ok(urls.includes('UvtKiyeWYEhRC'), 'hank pool missing audited investigative-read id')
+  })
+
   it('skipGif option returns null instead of falling back to random', () => {
     resetGifResolverState()
     // Even with a known emotion/query, skipGif should return null
