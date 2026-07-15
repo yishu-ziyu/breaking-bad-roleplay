@@ -79,6 +79,16 @@ def test_validate_outline_structure_ok_and_warn():
     weak = ["kitchen chat", "office chat"]
     warns = mckee_story.validate_outline_structure(weak)
     assert any("beats" in w or "tags" in w or "value" in w for w in warns)
+    # Tagged value/gap but no risk → soft risk warning
+    no_risk = [
+        "[setup] kitchen — value: a→b — gap: x",
+        "[inciting] office — value: c→d — gap: y",
+        "[progressive] yard — value: e→f — gap: z",
+        "[crisis] lab — value: g→h — gap: w",
+        "[climax] road — value: i→j — gap: v",
+    ]
+    risk_warns = mckee_story.validate_outline_structure(no_risk)
+    assert any("risk" in w for w in risk_warns)
 
 
 def test_legacy_outline_still_parses():
