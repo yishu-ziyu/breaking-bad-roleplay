@@ -97,6 +97,20 @@ async def test_hank_superlab_not_shadowed_by_lab_substring():
     assert "HOT" not in res2.content
 
 
+async def test_hank_white_not_false_positive_for_non_walter():
+    """Bare 'white' (van/powder) must not map to Walter family-blind-spot heat."""
+    c = HankSchrader(_facade())
+    for subject in ("white van", "white powder", "white noise"):
+        res = await c._tool_registry.execute(
+            "case_pressure_reader", {"subject": subject}
+        )
+        assert "family blind spot" not in res.content, subject
+    walt = await c._tool_registry.execute(
+        "case_pressure_reader", {"subject": "walter white"}
+    )
+    assert "family blind spot" in walt.content or "WARM" in walt.content
+
+
 async def test_skyler_tool_executes():
     c = SkylerWhite(_facade())
     res = await c._tool_registry.execute(
