@@ -4,7 +4,7 @@
 
 本项目是一个《Breaking Bad》风格的 AI 角色扮演原型，正式名称建议使用 **ABQ Roleplay Lab**。它不是单一聊天 Demo，而是一个 React 前端 + FastAPI 后端 + PostgreSQL 记忆层的互动叙事系统：
 
-- Chat 视图：用户选择 Walter、Jesse、Skyler、Saul、Mike、Gus，与角色进行 direct chat 或 crew debate。
+- Chat 视图：用户选择 Walter、Jesse、Skyler、Saul、Mike、Gus、Hank，与角色进行 direct chat 或 crew debate。
 - Story 视图：用户给出剧情任务，后端 Director Agent 生成 outline，并通过 SSE 逐 beat 推送 `scene_change`、`agent_think`、`agent_speak`、`world_state_delta`、`beat_ready` 等事件。
 - 记忆层：普通聊天有前端 localStorage/Supabase 持久化；Story 模式有后端 SQLAlchemy/Alembic 的 session、message、dossier 持久化。
 - LLM 层：后端统一经 `ProviderFacade` 调用 MiniMax、StepFun 或本地 CLIProxy。
@@ -35,7 +35,8 @@
 | [backend/api/routes.py](../../backend/api/routes.py) | `/api/*` 路由：health、session、SSE、chat |
 | [backend/agents/director.py](../../backend/agents/director.py) | Story Director 与 direct/crew chat 编排核心 |
 | [backend/agents/provider.py](../../backend/agents/provider.py) | MiniMax / StepFun / CLIProxy 统一调用层 |
-| [backend/agents/characters/](../../backend/agents/characters) | 六个角色 Agent 的 system prompt 与结构化输出解析 |
+| [backend/agents/characters/](../../backend/agents/characters) | 七个角色 Agent 的 system prompt 与结构化输出解析（含 hank） |
+| [backend/agents/mckee_story.py](../../backend/agents/mckee_story.py) | McKee Story 大纲脊柱 / 节拍规划（DEC-0003；接入 director） |
 | [backend/agents/memory.py](../../backend/agents/memory.py) | session/world 双层 dossier 更新 |
 | [backend/db/models.py](../../backend/db/models.py) | 后端 Story 持久化 ORM 模型 |
 | [backend/alembic/](../../backend/alembic) | 后端 PostgreSQL schema migration |

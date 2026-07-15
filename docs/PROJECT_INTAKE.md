@@ -10,7 +10,7 @@ Breaking Bad 世界观的 AI 角色扮演产品。玩家选择角色 + 关系锚
 1. 选择角色 → 选关系锚点 → 开始聊天
 2. 布置自然语言任务 → Director 自主演绎 → 每 beat 等玩家决策
 
-6 个角色：Walter White, Jesse Pinkman, Skyler White, Saul Goodman, Mike Ehrmantraut, Gus Fring
+7 个可玩角色：Walter White, Jesse Pinkman, Skyler White, Saul Goodman, Mike Ehrmantraut, Gus Fring, Hank Schrader（权威表见 [CONTEXT.md](../CONTEXT.md)）
 
 ## 架构
 

@@ -18,6 +18,7 @@ def test_english_mike_in_chinese_line_becomes_mai_ke():
 
 def test_full_name_and_bad_variants():
     assert normalize_zh_character_names("Mike Ehrmantraut 点头") == "麦克 点头"
+    assert normalize_zh_character_names("Hank Schrader 皱眉") == "汉克 皱眉"
     assert normalize_zh_character_names("米克·厄曼特劳特走了") == "麦克走了"
 
 
@@ -25,6 +26,17 @@ def test_other_cast_names():
     line = "Walter 看着 Jesse，Saul 在旁边，Gus 没说话，Skyler 在家。"
     out = normalize_zh_character_names(line)
     assert out == "沃尔特 看着 杰西，索尔 在旁边，古斯 没说话，斯凯勒 在家。"
+
+
+def test_supporting_cast_never_mangled_to_tuo_huo():
+    """LLM often invents 托霍 for Todd and 杰克·托霍 for Jack Welker."""
+    assert "托霍" not in normalize_zh_character_names("汉克与托霍之间的信任关系")
+    assert normalize_zh_character_names("汉克与托霍之间的信任关系") == "汉克与托德之间的信任关系"
+    assert normalize_zh_character_names("杰克·托霍出现了") == "杰克·维尔克出现了"
+    assert normalize_zh_character_names("Todd Alquist 站在旁边") == "托德 站在旁边"
+    assert normalize_zh_character_names("Jack Welker 带人来了") == "杰克·维尔克 带人来了"
+    assert normalize_zh_character_names("Tuco 很暴躁") == "图科 很暴躁"
+    assert normalize_zh_character_names("Gale 在实验室") == "盖尔 在实验室"
 
 
 def test_events_normalize_speak_and_nested_delta():
@@ -66,3 +78,7 @@ def test_lang_directive_mentions_mike_glossary():
     assert "麦克" in zh
     assert "米克" in zh  # forbidden form is named
     assert "禁止" in zh
+    assert "托德" in zh
+    assert "托霍" in zh  # forbidden form is named
+    assert "杰克·维尔克" in zh
+    assert "图科" in zh

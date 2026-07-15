@@ -45,7 +45,7 @@ src/
 | `ChatMode` | `direct` / `crew` |
 | `Language` | `en` / `zh` |
 | `View` | `chat` / `story` |
-| `CharacterId` | `walter` / `jesse` / `skyler` / `saul` / `mike` / `gus` |
+| `CharacterId` | `walter` / `jesse` / `skyler` / `saul` / `mike` / `gus` / `hank` |
 | `ChatMessage` | `{ id, sender, text, emotion, gifQuery, gifUrl, thinking, toolExecuted, toolLog }` |
 
 ### 主要状态
@@ -68,7 +68,7 @@ src/
 
 - 品牌和 tagline。
 - `AuthSection`。
-- 六个角色按钮。
+- 七个角色按钮（含 Hank；见 CONTEXT.md）。
 - 语言切换。
 - Chat/Story 视图切换。
 - 当前角色的关系锚点选择。
