@@ -335,19 +335,10 @@ def validate_outline_structure(scenes: list[str]) -> list[str]:
     if tagged < max(1, len(scenes) // 2):
         warnings.append("most beats lack [role] tags")
     role_set = {r for r in roles if r}
-    for need in ("inciting", "climax"):
-        if need not in role_set and need not in {
-            infer_beat_role(i, len(scenes)) for i in range(len(scenes))
-        }:
-            # if untagged, infer may still supply; only warn when neither
-            pass
-    if "inciting" not in role_set and not any(
-        infer_beat_role(i, len(scenes)) == "inciting" for i in range(len(scenes))
-    ):
+    inferred = {infer_beat_role(i, len(scenes)) for i in range(len(scenes))}
+    if "inciting" not in role_set and "inciting" not in inferred:
         warnings.append("missing inciting beat")
-    if "climax" not in role_set and not any(
-        infer_beat_role(i, len(scenes)) == "climax" for i in range(len(scenes))
-    ):
+    if "climax" not in role_set and "climax" not in inferred:
         warnings.append("missing climax beat")
     missing_value = sum(1 for s in scenes if "value" not in s.lower())
     if missing_value > len(scenes) // 2:
@@ -355,6 +346,9 @@ def validate_outline_structure(scenes: list[str]) -> list[str]:
     missing_gap = sum(1 for s in scenes if "gap" not in s.lower())
     if missing_gap > len(scenes) // 2:
         warnings.append("many beats missing gap:")
+    missing_risk = sum(1 for s in scenes if "risk" not in s.lower())
+    if missing_risk > len(scenes) // 2:
+        warnings.append("many beats missing risk:")
     # polarity alternation soft check
     poles = [extract_value_end_polarity(s) for s in scenes]
     known = [(i, p) for i, p in enumerate(poles) if p is not None]

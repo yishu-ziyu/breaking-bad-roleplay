@@ -126,7 +126,7 @@ PM Intake -> Research -> Definition -> Dev -> QA -> Review -> E2E -> Market -> S
 - `backend/agents/director.py` — Director 剧情引擎
 - `backend/agents/provider.py` — LLM provider 适配 + fallback
 - `backend/agents/memory.py` — 记忆管理
-- `backend/agents/characters/` — 6 个角色 prompt
+- `backend/agents/characters/` — 7 个角色 prompt（含 hank / 汉克）
 - `backend/db/` + `backend/alembic/` — 数据库和迁移
 
 ## 代码风格
