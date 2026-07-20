@@ -38,6 +38,29 @@ def test_expired_session_returns_none():
     assert store.get(session.id) is None
 
 
+def test_get_slides_ttl_and_public_view():
+    from agents.connection_sessions import session_public_view
+
+    store = ConnectionSessionStore(ttl_seconds=60)
+    session = store.bind(
+        provider_id="openai",
+        model_id="gpt-4o-mini",
+        llm_key="sk-abcdef1234",
+        base_url="https://api.openai.com/v1",
+    )
+    first_exp = session.expires_at
+    loaded = store.get(session.id)
+    assert loaded is not None
+    assert loaded.expires_at >= first_exp
+    view = session_public_view(loaded)
+    assert view["connectionSessionId"] == session.id
+    assert view["providerId"] == "openai"
+    assert view["modelId"] == "gpt-4o-mini"
+    assert view["hasLlmKey"] is True
+    assert view["hint"].startswith("…")
+    assert "sk-abcdef" not in view["hint"]
+
+
 def test_credential_context_scoped():
     assert get_credential_override() is None
     ov = CredentialOverride(provider_id="minimax", llm_key="secret")
