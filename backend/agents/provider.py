@@ -177,9 +177,16 @@ class ProviderFacade:
         if provider == "stepfun":
             try:
                 return await self._call_stepfun(messages, model)
-            except httpx.HTTPStatusError:
+            except httpx.HTTPStatusError as exc:
                 if not self.effective_minimax_llm_key():
                     raise
+                # Platform StepFun quota/outage: fall back to MiniMax.
+                # Log status so ops can see route drift vs UI chip.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "stepfun route failed HTTP %s; falling back to minimax/MiniMax-M3",
+                    getattr(exc.response, "status_code", "?"),
+                )
                 return await self._call_minimax(messages, "MiniMax-M3", max_tokens)
         if provider == "cliproxy":
             return await self._call_cli_proxy(messages, model, max_tokens)
