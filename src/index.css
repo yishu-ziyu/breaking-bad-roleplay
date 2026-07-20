@@ -19,6 +19,44 @@ body {
 button,
 select,
 input,
-summary {
-  font: inherit;
+textarea,
+summary,
+[role='button'],
+[role='menu'],
+[role='menuitem'] {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background-color: rgba(176, 145, 98, 0.32);
+  color: #211c15;
+}
+
+/* Soft parchment scrollbars in reading regions */
+.chat-stream::-webkit-scrollbar,
+.story-scene-card__paper::-webkit-scrollbar,
+.story-outline-confirm::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.chat-stream::-webkit-scrollbar-track,
+.story-scene-card__paper::-webkit-scrollbar-track,
+.story-outline-confirm::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-stream::-webkit-scrollbar-thumb,
+.story-scene-card__paper::-webkit-scrollbar-thumb,
+.story-outline-confirm::-webkit-scrollbar-thumb {
+  background-color: rgba(104, 86, 62, 0.24);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.chat-stream::-webkit-scrollbar-thumb:hover,
+.story-scene-card__paper::-webkit-scrollbar-thumb:hover,
+.story-outline-confirm::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(104, 86, 62, 0.38);
 }
