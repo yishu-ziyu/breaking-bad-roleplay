@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   bindConnection,
+  fetchBindSession,
   fetchCatalog,
   getBindSessionId,
   loadVault,
@@ -43,6 +44,7 @@ export type ConnectionView = {
   connectionSessionId: string | null
   platform: Record<'minimax' | 'stepfun', boolean>
   canStart: boolean
+  hasSavedLlmKey: boolean
 }
 
 export function useConnection() {
@@ -77,16 +79,37 @@ export function useConnection() {
       )) {
         v.active.modelId = 'step-3.7-flash'
       }
-      // Platform mode can only stay on the two demo providers.
+      // Platform mode: only coerce invalid ids. Keep user's MiniMax/StepFun pick.
       if (v.active.mode === 'platform') {
         if (!PLATFORM_PROVIDER_IDS.includes(v.active.providerId)) {
           v.active.providerId = (catalog?.defaults?.providerId as ProviderId) || 'stepfun'
           v.active.modelId = catalog?.defaults?.modelId || 'step-3.7-flash'
-        } else if (catalog?.defaults) {
-          v.active.providerId = catalog.defaults.providerId as ProviderId
-          v.active.modelId = catalog.defaults.modelId
         }
       }
+
+      // Drop stale bind tokens left from a previous process/TTL.
+      const existingSid = getBindSessionId()
+      if (v.active.mode === 'platform') {
+        if (existingSid) {
+          await unbindConnection(existingSid)
+          if (!cancelled) setSessionId(null)
+        }
+      } else if (existingSid) {
+        const alive = await fetchBindSession(existingSid)
+        if (!alive) {
+          setBindSessionId(null)
+          if (!cancelled) setSessionId(null)
+        } else if (
+          alive.providerId
+          && alive.providerId !== v.active.providerId
+        ) {
+          await unbindConnection(existingSid)
+          if (!cancelled) setSessionId(null)
+        } else if (!cancelled) {
+          setSessionId(alive.connectionSessionId)
+        }
+      }
+
       setVault(v)
     })()
     return () => { cancelled = true }
@@ -107,6 +130,7 @@ export function useConnection() {
   const brand = getProviderBrand(active.providerId)
   const llmSlot = llmSlotFor(active.providerId)
   const meta = vault?.meta[llmSlot]
+  const hasSavedLlmKey = Boolean(vault?.slots[llmSlot])
   const status: ConnectionStatus = useMemo(() => {
     if (active.mode === 'platform') {
       const pid = active.providerId
@@ -115,14 +139,19 @@ export function useConnection() {
       }
       return 'empty'
     }
-    return meta?.lastStatus || (vault?.slots[llmSlot] ? 'saved' : 'empty')
-  }, [active.mode, active.providerId, platform, meta, vault, llmSlot])
+    if (connectionSessionId && (meta?.lastStatus === 'valid' || hasSavedLlmKey)) {
+      return meta?.lastStatus === 'invalid' || meta?.lastStatus === 'quota' || meta?.lastStatus === 'unreachable'
+        ? meta.lastStatus
+        : (meta?.lastStatus || 'valid')
+    }
+    return meta?.lastStatus || (hasSavedLlmKey ? 'saved' : 'empty')
+  }, [active.mode, active.providerId, platform, meta, hasSavedLlmKey, connectionSessionId])
 
   const canStart =
     active.mode === 'platform'
       ? (active.providerId === 'minimax' || active.providerId === 'stepfun')
         && Boolean(platform[active.providerId])
-      : status === 'valid' || status === 'saved'
+      : hasSavedLlmKey && status !== 'invalid' && status !== 'quota' && status !== 'unreachable'
 
   const view: ConnectionView = {
     mode: active.mode,
@@ -136,6 +165,7 @@ export function useConnection() {
     connectionSessionId,
     platform,
     canStart,
+    hasSavedLlmKey,
   }
 
   const setActive = useCallback(async (patch: Partial<VaultActive>) => {
@@ -170,6 +200,26 @@ export function useConnection() {
     await persist({ ...vault, slots, meta: metaMap })
   }, [vault, persist])
 
+  const markSlotStatus = useCallback(async (
+    slot: string,
+    statusAfter: ConnectionStatus,
+  ) => {
+    if (!vault) return
+    const prev = vault.meta[slot]
+    if (!prev && !vault.slots[slot]) return
+    await persist({
+      ...vault,
+      meta: {
+        ...vault.meta,
+        [slot]: {
+          hint: prev?.hint || '…',
+          lastCheckedAt: new Date().toISOString(),
+          lastStatus: statusAfter,
+        },
+      },
+    })
+  }, [vault, persist])
+
   const testAndSave = useCallback(async (opts: {
     providerId: ProviderId
     purpose: 'llm' | 'tts'
@@ -177,42 +227,81 @@ export function useConnection() {
     baseUrl?: string
     region?: MiniMaxRegion
     modelId?: string
+    /** When true (default), only write key material on ok. Status always updates when a key was tested. */
+    persistKey?: boolean
   }) => {
     setBusy(true)
     setMessage(null)
     try {
       const result = await testConnection(opts)
       setMessage(result.message)
+      const persistKey = opts.persistKey !== false
       if (opts.purpose === 'llm' && opts.apiKey) {
-        await saveSlot(llmSlotFor(opts.providerId), opts.apiKey, result.status)
+        const slot = llmSlotFor(opts.providerId)
+        if (result.ok && persistKey) {
+          await saveSlot(slot, opts.apiKey, result.status)
+        } else if (!result.ok && vault?.slots[slot]) {
+          // Keep previous good key; only stamp failure status on existing slot.
+          await markSlotStatus(slot, result.status)
+        }
       }
-      if (opts.purpose === 'tts' && opts.apiKey && ttsSlotFor(opts.providerId)) {
-        await saveSlot(ttsSlotFor(opts.providerId)!, opts.apiKey, result.status)
+      if (opts.purpose === 'tts' && opts.apiKey) {
+        const ttsSlot = ttsSlotFor(opts.providerId)
+        if (ttsSlot) {
+          if (result.ok && persistKey) {
+            await saveSlot(ttsSlot, opts.apiKey, result.status)
+          } else if (!result.ok && vault?.slots[ttsSlot]) {
+            await markSlotStatus(ttsSlot, result.status)
+          }
+        }
       }
-      if (opts.baseUrl && baseUrlSlotFor(opts.providerId)) {
+      if (result.ok && opts.baseUrl && baseUrlSlotFor(opts.providerId)) {
         await saveSlot(baseUrlSlotFor(opts.providerId)!, opts.baseUrl, result.status)
       }
       return result
     } finally {
       setBusy(false)
     }
-  }, [saveSlot])
+  }, [saveSlot, markSlotStatus, vault])
 
-  const ensureBound = useCallback(async (): Promise<string | null> => {
+  const ensureBound = useCallback(async (opts?: {
+    /** Fresh keys from the sheet - vault React state may lag one tick after save. */
+    llmKey?: string
+    ttsKey?: string
+    baseUrl?: string
+    providerId?: ProviderId
+    modelId?: string
+    region?: MiniMaxRegion
+    mode?: ConnectionMode
+    force?: boolean
+  }): Promise<string | null> => {
     if (!vault) return connectionSessionId
-    if (vault.active.mode === 'platform') {
+    const mode = opts?.mode ?? vault.active.mode
+    if (mode === 'platform') {
       if (connectionSessionId) {
         await unbindConnection(connectionSessionId)
         setSessionId(null)
       }
       return null
     }
-    const pid = vault.active.providerId
+    const pid = opts?.providerId ?? vault.active.providerId
+    const modelId = opts?.modelId ?? vault.active.modelId
+    const region = opts?.region ?? vault.active.region
     const brandNow = getProviderBrand(pid)
-    const llmKey = vault.slots[llmSlotFor(pid)]
-    const ttsKey = ttsSlotFor(pid) ? vault.slots[ttsSlotFor(pid)!] : undefined
+    const llmKey = (opts?.llmKey?.trim() || vault.slots[llmSlotFor(pid)] || '').trim()
+    const ttsKey = (
+      opts?.ttsKey?.trim()
+      || (ttsSlotFor(pid) ? vault.slots[ttsSlotFor(pid)!] : undefined)
+      || ''
+    ).trim() || undefined
     const baseFromSlot = baseUrlSlotFor(pid) ? vault.slots[baseUrlSlotFor(pid)!] : undefined
-    const baseUrl = vault.active.baseUrl || baseFromSlot || brandNow.defaultBaseUrl
+    const baseUrl = (
+      opts?.baseUrl
+      || vault.active.baseUrl
+      || baseFromSlot
+      || brandNow.defaultBaseUrl
+      || ''
+    ).trim() || undefined
     if (!llmKey) {
       setMessage('Missing API key')
       return null
@@ -221,13 +310,33 @@ export function useConnection() {
       setMessage('Missing base URL')
       return null
     }
+
+    // Reuse live session when provider + model still match (unless forced rebind).
+    if (!opts?.force && connectionSessionId) {
+      const alive = await fetchBindSession(connectionSessionId)
+      if (
+        alive
+        && alive.providerId === pid
+        && (!modelId || !alive.modelId || alive.modelId === modelId)
+      ) {
+        setSessionId(alive.connectionSessionId)
+        setBindSessionId(alive.connectionSessionId)
+        return alive.connectionSessionId
+      }
+      await unbindConnection(connectionSessionId)
+      setSessionId(null)
+    } else if (opts?.force && connectionSessionId) {
+      await unbindConnection(connectionSessionId)
+      setSessionId(null)
+    }
+
     const bound = await bindConnection({
       providerId: pid,
-      modelId: vault.active.modelId,
+      modelId,
       llmKey,
       ttsKey,
       baseUrl,
-      region: vault.active.region,
+      region,
     })
     if (!bound) {
       setMessage('Bind failed')
@@ -235,8 +344,9 @@ export function useConnection() {
     }
     setSessionId(bound.connectionSessionId)
     setBindSessionId(bound.connectionSessionId)
+    await markSlotStatus(llmSlotFor(pid), 'valid')
     return bound.connectionSessionId
-  }, [vault, connectionSessionId])
+  }, [vault, connectionSessionId, markSlotStatus])
 
   const clearProviderKeys = useCallback(async (providerId: ProviderId) => {
     if (!vault) return

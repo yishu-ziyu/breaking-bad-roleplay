@@ -234,6 +234,37 @@ export async function testConnection(body: {
   }
 }
 
+export type BindSessionView = {
+  connectionSessionId: string
+  providerId?: string
+  modelId?: string
+  region?: string | null
+  hint: string
+  hasLlmKey?: boolean
+  expiresAt?: string
+}
+
+export async function fetchBindSession(sessionId: string | null): Promise<BindSessionView | null> {
+  if (!sessionId) return null
+  try {
+    const res = await fetch(`/api/connections/bind/${encodeURIComponent(sessionId)}`)
+    if (!res.ok) return null
+    const data = await res.json() as BindSessionView
+    if (!data.connectionSessionId) return null
+    return {
+      connectionSessionId: data.connectionSessionId,
+      providerId: data.providerId,
+      modelId: data.modelId,
+      region: data.region,
+      hint: data.hint || '',
+      hasLlmKey: data.hasLlmKey,
+      expiresAt: data.expiresAt,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function bindConnection(body: {
   providerId: ProviderId
   modelId?: string
@@ -241,21 +272,23 @@ export async function bindConnection(body: {
   ttsKey?: string
   baseUrl?: string
   region?: MiniMaxRegion
-}): Promise<{ connectionSessionId: string; hint: string } | null> {
+}): Promise<BindSessionView | null> {
   const res = await fetch('/api/connections/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) return null
-  const data = await res.json() as {
-    connectionSessionId: string
-    hint?: string
-  }
+  const data = await res.json() as BindSessionView
   setBindSessionId(data.connectionSessionId)
   return {
     connectionSessionId: data.connectionSessionId,
+    providerId: data.providerId,
+    modelId: data.modelId,
+    region: data.region,
     hint: data.hint || '',
+    hasLlmKey: data.hasLlmKey,
+    expiresAt: data.expiresAt,
   }
 }
 
