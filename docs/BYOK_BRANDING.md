@@ -219,11 +219,15 @@ Response:
 }
 ```
 
-### 5.4 `DELETE /api/connections/bind/{id}`
+### 5.4 `GET /api/connections/bind/{id}`
+
+Probe whether a RAM session is still alive. Sliding TTL on hit. Used by the client to reuse a bind across refreshes without re-pasting keys.
+
+### 5.5 `DELETE /api/connections/bind/{id}`
 
 Revoke early.
 
-### 5.5 Existing endpoints accept bind
+### 5.6 Existing endpoints accept bind
 
 | Endpoint | How |
 |----------|-----|
