@@ -947,10 +947,8 @@ class DirectorAgent:
         return raw
     @staticmethod
     def _short_scene_name(scene_desc: str) -> str:
-        """Extract the short scene name from a full scene description.
-        Handles both em-dash (U+2014) and en-dash (U+2013) separators."""
-        name = re.split(r"[–—]", scene_desc)[0]
-        return name.split(":")[0].strip()
+        """Player-facing location label (no McKee value/gap/risk scaffolding)."""
+        return mckee_story.player_facing_scene_label(scene_desc)
 
     async def _generate_outline_followup(
         self,
@@ -1149,13 +1147,14 @@ class DirectorAgent:
         mckee_role = mckee_story.resolve_beat_role(
             scene_desc, beat_index, total_beats
         )
-        # Emit scene transition if location changed
+        # Emit scene transition if location changed.
+        # Player stage must never show McKee craft lines (value/gap/risk).
         if current_scene and current_scene != previous_scene:
-            scene_desc_text = (
-                f"切换至：{scene_desc}"
-                if language.startswith("zh")
-                else f"Transitioning to: {scene_desc}"
-            )
+            blurb = mckee_story.player_facing_scene_blurb(scene_desc)
+            if language.startswith("zh"):
+                scene_desc_text = blurb or f"切换至：{current_scene}"
+            else:
+                scene_desc_text = blurb or f"Transitioning to: {current_scene}"
             yield AgentEvent(
                 type="scene_change",
                 data={

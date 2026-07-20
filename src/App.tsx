@@ -142,12 +142,23 @@ function formatStoryPlanPreview(outline: string, lang: Language): string {
   return `${base}. Details reveal as you play.`
 }
 
+/** Hide McKee craft scaffolding if a legacy event still embeds it. */
+function playerFacingSceneText(raw: string): string {
+  let s = raw
+    .replace(/^Transitioning to:\s*/i, '')
+    .replace(/^切换至[：:]\s*/, '')
+    .replace(/^\d+[.)、]\s*/, '')
+    .replace(/\[(?:setup|inciting|progressive|crisis|climax|resolution)\]\s*/gi, '')
+    .trim()
+  // Cut at value/gap/risk craft fields (em/en dash or hyphen variants).
+  s = s.split(/\s*[—–\-]\s*(?:value|gap|risk)\s*[:：]/i)[0]?.trim() ?? s
+  return s.replace(/\s+/g, ' ').replace(/^[\s\-—–]+|[\s\-—–]+$/g, '')
+}
+
 function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
   switch (evt.type) {
     case 'scene_change':
-      return ((evt.data.description as string) ?? '')
-        .replace(/^Transitioning to:\s*/i, '')
-        .replace(/^切换至[：:]\s*/, '')
+      return playerFacingSceneText((evt.data.description as string) ?? '')
     case 'agent_speak':
       return (evt.data.content as string) ?? ''
     case 'agent_think':
@@ -1376,7 +1387,8 @@ function App() {
     const latest = findLastStoryEvent(story.events, evt => evt.type === 'scene_change')
     if (!latest) return t.storyLocationFallback
     const destination = typeof latest.data.to_scene === 'string' ? latest.data.to_scene : ''
-    return (destination || getStoryEventSummary(latest, language)).slice(0, 64)
+    const cleaned = playerFacingSceneText(destination || getStoryEventSummary(latest, language))
+    return (cleaned || t.storyLocationFallback).slice(0, 40)
   }, [language, story, t.storyLocationFallback])
   const storyBeatLabel = language === 'zh'
     ? `节点 ${Math.max(story.beatIndex, 1)}`
