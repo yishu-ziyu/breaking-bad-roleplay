@@ -36,11 +36,65 @@ _ROLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Craft fields that belong in the outline / director, never on the player stage.
+_CRAFT_FIELD_CUT_RE = re.compile(
+    r"\s*[—–\-]\s*(?:value|gap|risk|VALUE|GAP|RISK)\s*[:：]",
+    re.IGNORECASE,
+)
+_LEAD_NUMBER_RE = re.compile(r"^\d+[.)、]\s*")
+_ROLE_TAG_RE = re.compile(
+    r"\[(?:setup|inciting|progressive|crisis|climax|resolution)\]\s*",
+    re.IGNORECASE,
+)
+
 # Ending charge of a value turn: value: A→B  (B's polarity if we can guess)
 _VALUE_TURN_RE = re.compile(
     r"value\s*:\s*([^—\-\n]+?)(?:→|->|=>|→)([^—\-\n]+)",
     re.IGNORECASE,
 )
+
+
+def player_facing_scene_label(scene_desc: str | None, *, max_len: int = 40) -> str:
+    """Location-only label for HUD / to_scene (no McKee craft tags).
+
+    Input example:
+      ``[progressive] 怀特家餐厅 — 沃尔特: 启用索尔的毒计 — value: … — risk: 高``
+    Output:
+      ``怀特家餐厅``
+    """
+    s = (scene_desc or "").strip()
+    if not s:
+        return ""
+    s = _LEAD_NUMBER_RE.sub("", s)
+    s = _ROLE_TAG_RE.sub("", s)
+    s = _CRAFT_FIELD_CUT_RE.split(s, maxsplit=1)[0].strip()
+    # First em/en-dash segment is the place name in McKee outline lines.
+    loc = re.split(r"\s*[—–]\s*", s, maxsplit=1)[0].strip()
+    loc = re.sub(r"\s+", " ", loc).strip(" -—–")
+    if not loc:
+        loc = s
+    if len(loc) > max_len:
+        return loc[: max_len - 1] + "…"
+    return loc
+
+
+def player_facing_scene_blurb(scene_desc: str | None, *, max_len: int = 72) -> str:
+    """Player-readable scene blurb without value/gap/risk engineering fields.
+
+    Keeps place + dramatic hook; drops craft scaffolding.
+    """
+    s = (scene_desc or "").strip()
+    if not s:
+        return ""
+    s = _LEAD_NUMBER_RE.sub("", s)
+    s = _ROLE_TAG_RE.sub("", s)
+    s = _CRAFT_FIELD_CUT_RE.split(s, maxsplit=1)[0].strip()
+    s = re.sub(r"\s+", " ", s).strip(" -—–")
+    if not s:
+        return player_facing_scene_label(scene_desc, max_len=max_len)
+    if len(s) > max_len:
+        return s[: max_len - 1] + "…"
+    return s
 
 # Heuristic negative-leaning tokens (EN + ZH) for polarity alternation.
 _NEG_TOKENS = (
