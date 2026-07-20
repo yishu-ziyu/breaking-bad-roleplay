@@ -1034,6 +1034,15 @@ function App() {
         return
       }
       const bindId = await connection.ensureBound()
+      if (connection.view.mode === 'byok' && !bindId) {
+        connection.setSheetOpen(true)
+        setError(
+          language === 'zh'
+            ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
+            : 'Key session is not ready. Re-save your key in Model line.',
+        )
+        return
+      }
       story.setConnectionSessionId(bindId)
       await story.startStory(
         storyTask,
@@ -1069,6 +1078,32 @@ function App() {
     const userText = message.trim()
     if (!userText || isSending) return
 
+    // Bind / open sheet before optimistic UI so a dead BYOK session does not leave a stranded bubble.
+    if (!connection.view.canStart) {
+      connection.setSheetOpen(true)
+      setError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
+      return
+    }
+    setIsSending(true)
+    setError(null)
+    let bindId: string | null = null
+    try {
+      bindId = await connection.ensureBound()
+      if (connection.view.mode === 'byok' && !bindId) {
+        connection.setSheetOpen(true)
+        throw new Error(
+          language === 'zh'
+            ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
+            : 'Key session is not ready. Re-save your key in Model line.',
+        )
+      }
+      story.setConnectionSessionId(bindId)
+    } catch (e) {
+      setIsSending(false)
+      setError(e instanceof Error ? e.message : String(e))
+      return
+    }
+
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       sender: 'user',
@@ -1077,8 +1112,6 @@ function App() {
     const nextHistory = [...messages, userMsg]
     updateMessages(prev => [...prev, userMsg])
     setMessage('')
-    setIsSending(true)
-    setError(null)
 
     // Update memory with user turn
     const updatedAfterUser = charMemory.addTurn(selectedCharId, 'user', userText, currentMemory)
@@ -1098,8 +1131,6 @@ function App() {
     }
 
     try {
-      const bindId = await connection.ensureBound()
-      story.setConnectionSessionId(bindId)
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
