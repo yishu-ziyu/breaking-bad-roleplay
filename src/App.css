@@ -94,9 +94,10 @@
   margin: 0;
   font-size: clamp(40px, 6.2vw, 66px);
   font-family: var(--font-display);
-  font-weight: 900;
-  line-height: 0.95;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.05em;
+  /* Brand lockup stays caps; Chinese display faces still render cleanly */
   text-transform: uppercase;
   color: #f5f4eb;
 }
@@ -124,22 +125,25 @@
 
 .landing-screen__description {
   margin: 0;
-  font-size: 17px;
-  line-height: 1.6;
+  max-width: 42ch;
+  font-family: var(--font-serif);
+  font-size: var(--font-size-reading);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-reading);
+  letter-spacing: var(--letter-spacing-reading);
   color: rgba(245, 244, 235, 0.88);
-  font-style: italic;
 }
 
-/* Gap 2: single character voice line (italic serif contrast) */
+/* Gap 2: single character voice line (display face) */
 .landing-screen__voice {
   margin: 4px 0 0;
   max-width: 28ch;
-  font-family: var(--font-display), Georgia, 'Times New Roman', serif;
+  font-family: var(--font-display);
   font-size: clamp(22px, 2.6vw, 30px);
   font-style: italic;
   font-weight: 500;
-  line-height: 1.35;
-  letter-spacing: 0.01em;
+  line-height: 1.42;
+  letter-spacing: var(--letter-spacing-display);
   color: rgba(247, 206, 70, 0.92);
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.75);
 }
@@ -848,22 +852,20 @@ textarea {
   width: 100%;
   max-height: 55vh;
   overflow-y: auto;
-  padding: 18px 20px;
-  border: 1px solid var(--color-border-on-dark-2);
-  border-radius: 10px;
-  background: var(--color-glass-medium);
-  backdrop-filter: blur(18px);
-  color: var(--color-surface-yellow-soft);
-  font: 500 14px/1.65 var(--font-sans);
-  line-height: 1.7;
+  padding: 20px 22px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.96), rgba(244, 239, 227, 0.94));
+  color: var(--color-text-ink);
+  font-family: var(--font-serif);
+  font-size: var(--font-size-reading);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-reading);
+  letter-spacing: var(--letter-spacing-reading);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.story-outline-confirm::-webkit-scrollbar { width: 4px; }
-.story-outline-confirm::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.12);
-  border-radius: 2px;
+  box-shadow: var(--shadow-soft);
 }
 
 /* Story controls (confirm / discard buttons) */
@@ -1145,15 +1147,15 @@ textarea {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 14px;
-  padding: clamp(22px, 3.5vw, 40px);
+  gap: 16px;
+  padding: clamp(24px, 3.8vw, 44px);
   overflow: auto;
-  /* Speak paper: ~15% softer than pure cream-on-ink */
+  /* Warm parchment reading surface */
   background:
-    radial-gradient(circle at 92% 12%, rgba(23, 32, 14, 0.14), transparent 12rem),
-    linear-gradient(180deg, rgba(236, 230, 206, 0.94), rgba(206, 196, 164, 0.92));
-  color: rgba(36, 42, 28, 0.88);
-  border-bottom: 1px solid rgba(23, 32, 14, 0.2);
+    radial-gradient(circle at 92% 12%, rgba(80, 65, 45, 0.08), transparent 12rem),
+    linear-gradient(180deg, rgba(255, 250, 240, 0.97), rgba(244, 239, 227, 0.95));
+  color: var(--color-text-ink);
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
 /* Think: colder / greyer paper — not warm parchment. */
@@ -1256,27 +1258,35 @@ textarea {
 }
 
 .story-scene-card__quote {
-  max-width: 64ch;
+  max-width: var(--layout-reading-measure);
   margin: 0;
   flex: 0 1 auto;
-  color: rgba(36, 42, 28, 0.86);
-  font: 700 clamp(18px, 2.3vw, 28px)/1.55 var(--font-display);
+  color: var(--color-text-ink);
+  font-family: var(--font-serif);
+  font-size: clamp(17px, 1.9vw, 22px);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-reading);
+  letter-spacing: var(--letter-spacing-reading);
   white-space: pre-wrap;
+  text-rendering: optimizeLegibility;
 }
 
 /* Speak: warm body text, primary reading surface. */
 .story-scene-card__quote.is-speak {
-  color: rgba(36, 42, 28, 0.9);
-  font-weight: 700;
+  color: var(--color-text-ink);
+  font-weight: var(--font-weight-medium);
 }
 
-/* Think: cold italic + dashed left rail — no yellow drama. */
+/* Think: display face + dashed left rail — bookish aside. */
 .story-scene-card__quote.is-thought {
+  font-family: var(--font-display);
   font-style: italic;
   font-weight: 500;
-  color: rgba(44, 52, 60, 0.68);
-  border-left: 2px dashed rgba(60, 72, 84, 0.4);
-  padding-left: 16px;
+  color: #4d4438;
+  border-left: 3px solid rgba(110, 88, 58, 0.38);
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 250, 240, 0.55);
+  padding: 0.55em 0.9em 0.55em 1em;
   max-width: 58ch;
 }
 
@@ -1287,9 +1297,13 @@ textarea {
   max-width: 36ch;
   margin: 12px auto 0;
   text-align: center;
-  font: italic 600 clamp(15px, 1.8vw, 20px)/1.5 var(--font-sans);
-  color: rgba(36, 42, 28, 0.52);
-  letter-spacing: 0.04em;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: clamp(15px, 1.8vw, 18px);
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
 }
 
 .story-scene-card__paper .voice-player {
@@ -1880,8 +1894,9 @@ button.story-event {
   margin: 4px 0 0;
   font-size: 22px;
   font-family: var(--font-display);
-  line-height: 1.1;
-  font-weight: 900;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: var(--letter-spacing-display);
 }
 
 .save-prompt {
@@ -1907,25 +1922,22 @@ button.story-event {
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-right: 4px;
+  gap: 18px;
+  padding-right: 6px;
 }
-
-.chat-stream::-webkit-scrollbar { width: 4px; }
-.chat-stream::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
 .chat-end {
   width: 1px;
   min-height: 1px;
 }
 
-/* Messages */
+/* Messages — warm parchment + serif reading measure */
 .msg {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
-  gap: 10px;
+  gap: 12px;
   align-items: start;
-  max-width: min(820px, 100%);
+  max-width: min(var(--layout-message-max-width), 100%);
   animation: msg-in 0.3s ease both;
 }
 
@@ -1948,8 +1960,8 @@ button.story-event {
   grid-column: 1;
   grid-row: 1;
   background:
-    linear-gradient(180deg, rgba(255, 247, 208, 0.98), rgba(244, 226, 151, 0.94));
-  border-color: rgba(247, 206, 70, 0.5);
+    linear-gradient(180deg, rgba(255, 248, 234, 0.99), rgba(244, 232, 200, 0.96));
+  border-color: var(--color-border-soft-5);
 }
 
 .msg-avatar {
@@ -1965,22 +1977,24 @@ button.story-event {
 }
 
 .avatar-letter {
+  font-family: var(--font-sans);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 800;
   line-height: 1;
   color: var(--color-bb-ink);
 }
 
 .msg-body {
-  padding: 14px;
-  border-radius: 10px;
+  padding: 16px 18px;
+  border-radius: 12px;
   background:
-    linear-gradient(180deg, rgba(255, 254, 246, 0.97), rgba(236, 232, 211, 0.94));
-  border: 1px solid rgba(255, 254, 246, 0.42);
-  box-shadow: 0 18px 38px rgba(4, 10, 16, 0.24);
+    linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(244, 239, 227, 0.96));
+  border: 1px solid var(--color-border-soft);
+  box-shadow: var(--shadow-soft);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   min-width: 0;
+  max-width: 100%;
 }
 
 .msg-meta {
@@ -1988,31 +2002,111 @@ button.story-event {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  font-family: var(--font-sans);
 }
 
 .msg-meta strong {
-  font-size: 12px;
-  font-weight: 900;
-  color: var(--color-bb-charcoal);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: var(--letter-spacing-display);
+  color: var(--color-text-strong);
   overflow-wrap: anywhere;
 }
 
 .msg-meta span {
   font-size: 11px;
-  color: var(--color-text-muted-3);
-  font-weight: 800;
+  color: var(--color-text-muted-2);
+  font-weight: 600;
 }
 
+/* Dialogue body: long-form serif reading */
 .msg-body p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
+  margin: 0.65em 0 0.85em;
+  max-width: var(--layout-reading-measure);
+  font-family: var(--font-serif);
+  font-size: var(--font-size-reading);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-reading);
+  letter-spacing: var(--letter-spacing-reading);
   color: var(--color-text-ink);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.msg-body p:first-of-type {
+  margin-top: 0;
+}
+
+.msg-body p:last-child {
+  margin-bottom: 0;
+}
+
+.msg-body strong,
+.msg-body b {
+  font-weight: 700;
+  color: var(--color-text-strong);
+}
+
+.msg-body em,
+.msg-body i {
+  color: #4f463a;
+}
+
+.msg-body blockquote {
+  font-family: var(--font-display);
+  background-color: rgba(255, 250, 240, 0.62);
+  color: #4d4438;
+  border-left: 3px solid rgba(110, 88, 58, 0.38);
+  border-radius: 0 10px 10px 0;
+  padding: 0.7em 1em;
+  margin: 1em 0;
+  font-size: 1.02em;
+  line-height: var(--line-height-reading);
+}
+
+.msg-body :not(pre) > code {
+  font-family: var(--font-mono);
+  background-color: #e9dfcd;
+  color: #493d2e;
+  border: 1px solid rgba(80, 65, 45, 0.12);
+  border-radius: 5px;
+  padding: 0.12em 0.34em;
+  font-size: 0.88em;
+  font-weight: 500;
+}
+
+.msg-body pre,
+.msg-body pre code {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.7;
+  letter-spacing: 0;
+}
+
+.msg-body pre {
+  background-color: var(--color-surface-code);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+}
+
+.msg-body a {
+  color: var(--color-text-link);
+  text-decoration-color: rgba(49, 95, 85, 0.38);
+  text-underline-offset: 0.18em;
+}
+
+.msg-body a:hover {
+  color: var(--color-text-link-hover);
+  text-decoration-color: currentColor;
 }
 
 .app-shell[lang^='zh'] .chat-header h2 {
-  line-height: 1.25;
+  line-height: 1.35;
+  letter-spacing: var(--letter-spacing-display);
 }
 
 .app-shell[lang^='zh'] .story-setup p,
@@ -2045,7 +2139,7 @@ button.story-event {
   margin: 0;
   font-size: 10px;
   line-height: 1.4;
-  font-family: Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--color-glass-text-soft);
 }
 
@@ -2079,8 +2173,8 @@ button.story-event {
 .msg--char .msg-body {
   grid-column: 2;
   grid-row: 1;
-  border-left: 4px solid var(--char-color, var(--color-bb-yellow));
-  border-radius: 8px 12px 12px 8px;
+  border-left: 3px solid var(--char-color, var(--color-bb-yellow));
+  border-radius: 4px 12px 12px 12px;
 }
 
 /* Typing indicator */
@@ -2138,10 +2232,19 @@ button.story-event {
 }
 
 .composer input {
-  border: 1px solid rgba(255, 254, 246, 0.46);
-  min-height: 44px;
-  background: rgba(255, 254, 246, 0.94);
-  color: var(--color-bb-charcoal);
+  border: 1px solid var(--color-border-soft);
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--color-surface-cream);
+  color: var(--color-text-ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+}
+
+.composer input::placeholder {
+  color: var(--color-text-muted-2);
+  opacity: 0.82;
 }
 
 .composer button {
