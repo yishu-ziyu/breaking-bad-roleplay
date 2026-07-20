@@ -16,6 +16,7 @@ from agents.characters import (
     HankSchrader,
 )
 from agents import mckee_story
+from agents.beat_json import parse_beat_events as extract_beat_events, parse_preview
 from agents.speak_sanitize import sanitize_speak_content
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
@@ -234,6 +235,36 @@ FRONTEND_TO_BACKEND_ID: dict[str, str] = {
     "hank": "Hank Schrader",
 }
 BACKEND_TO_FRONTEND_ID: dict[str, str] = {v: k for k, v in FRONTEND_TO_BACKEND_ID.items()}
+# Also accept display names as keys (switch_perspective / DB resume).
+for _full, _short in list(BACKEND_TO_FRONTEND_ID.items()):
+    FRONTEND_TO_BACKEND_ID.setdefault(_full.lower(), _full)
+    FRONTEND_TO_BACKEND_ID.setdefault(_full, _full)
+
+
+def resolve_backend_character_id(raw: str | None) -> str | None:
+    """Map frontend id, display name, or free text → canonical backend name."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    if s in FRONTEND_TO_BACKEND_ID:
+        return FRONTEND_TO_BACKEND_ID[s]
+    low = s.lower()
+    if low in FRONTEND_TO_BACKEND_ID:
+        return FRONTEND_TO_BACKEND_ID[low]
+    # Exact backend full name
+    if s in CHARACTER_AGENTS:
+        return s
+    for full in CHARACTER_AGENTS:
+        if full.lower() == low:
+            return full
+    # First-token match: "walter white" / "Walter"
+    token = low.split()[0]
+    if token in FRONTEND_TO_BACKEND_ID:
+        return FRONTEND_TO_BACKEND_ID[token]
+    logger.warning("resolve_backend_character_id: unknown id %r", raw)
+    return s
 # ---------------------------------------------------------------------------
 # Crew-mode chat message handler
 # ---------------------------------------------------------------------------
@@ -538,10 +569,10 @@ class DirectorAgent:
                                     e,
                                 )
                                 target_raw = None
-                        # Map frontend short id -> backend full name (F3 fix).
+                        # Map frontend short id / display name -> backend full name.
                         if target_raw:
-                            active_character_id = FRONTEND_TO_BACKEND_ID.get(
-                                target_raw, target_raw
+                            active_character_id = resolve_backend_character_id(
+                                str(target_raw)
                             )
                         # Fall through to idx += 1 (same as old `pass`).
                     elif act_type == "continue_chapter":
@@ -699,9 +730,8 @@ class DirectorAgent:
             )
             active_for_spine = None
             if active_character_raw:
-                active_for_spine = FRONTEND_TO_BACKEND_ID.get(
-                    str(active_character_raw).strip().lower(),
-                    active_character_raw,
+                active_for_spine = resolve_backend_character_id(
+                    str(active_character_raw)
                 )
             outline_text = await self._generate_outline(
                 task,
@@ -766,9 +796,7 @@ class DirectorAgent:
             self._short_scene_name(scenes[beat_index - 1]) if beat_index > 0 else ""
         )
         previous_scene_desc = scenes[beat_index - 1] if beat_index > 0 else ""
-        active_character_id = FRONTEND_TO_BACKEND_ID.get(
-            active_character_raw, active_character_raw
-        )
+        active_character_id = resolve_backend_character_id(active_character_raw)
         ready_event: AgentEvent | None = None
 
         async for event in self._generate_beat(
@@ -1205,15 +1233,59 @@ class DirectorAgent:
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
             return
-        # Parse the LLM response as event array
+        # Parse the LLM response as event array (resilient extractor).
         events = self._parse_beat_events(llm_response)
+        if not events:
+            # One repair pass: models often emit prose + broken JSON after
+            # perspective switches (longer constraints). Ask for JSON-only.
+            logger.warning(
+                "Beat %d parse miss; retrying JSON repair (route=%s preview=%s)",
+                beat_index + 1,
+                self.model_route,
+                parse_preview(llm_response),
+            )
+            repair_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You repair broken story-beat JSON. "
+                        "Output ONLY a JSON array of event objects. No markdown, no prose."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"{lang_directive}\n\n"
+                        "The previous model output could not be parsed as a beat event array.\n"
+                        "Re-emit a valid JSON array for this beat with the same rules:\n"
+                        "- types: scene_change | agent_act | agent_think | agent_speak | world_state_delta\n"
+                        f"- at most two agent_speak; first speak character_id must be "
+                        f"\"{active_character_id}\" if set\n"
+                        "- recommended_model on every event\n"
+                        "- agent_speak.content pure dialogue, no parentheticals\n"
+                        f"- end with world_state_delta\n\n"
+                        f"Scene: {scene_desc}\nTask: {task}\n\n"
+                        f"Broken output to repair:\n{str(llm_response or '')[:6000]}"
+                    ),
+                },
+            ]
+            try:
+                repaired = await self.provider.call_model(
+                    repair_messages, self.model_route, max_tokens=4096
+                )
+                events = self._parse_beat_events(repaired)
+            except Exception:
+                logger.exception("Beat %d JSON repair call failed", beat_index + 1)
+                events = []
         if not events:
             yield AgentEvent(
                 type="error",
                 data={
                     "message": _status_message(
                         "beat_parse_failed", language, route=self.model_route
-                    )
+                    ),
+                    "route": self.model_route,
+                    "preview": parse_preview(llm_response),
                 },
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback).")
@@ -1806,38 +1878,11 @@ class DirectorAgent:
     @staticmethod
     def _parse_beat_events(text: str) -> list[dict[str, Any]]:
         """Parse the LLM response as a JSON array of event objects.
-        Tries in order:
-        1. Fenced JSON (```json [...] ```)
-        2. Raw JSON array ([...]) anywhere in text
-        3. Single JSON object ({...}) wrapped in array
+
+        Delegates to agents.beat_json for balanced-bracket extraction,
+        fence stripping, trailing-comma repair, and wrapper-object shapes.
         """
-        trimmed = text.strip()
-        # Try fenced JSON first
-        fenced = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", trimmed, re.DOTALL)
-        if fenced:
-            try:
-                return json.loads(fenced.group(1))
-            except json.JSONDecodeError:
-                pass
-        # Try raw JSON array
-        start = trimmed.find("[")
-        end = trimmed.rfind("]")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(trimmed[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-        # Try single JSON object — wrap in array
-        obj_start = trimmed.find("{")
-        obj_end = trimmed.rfind("}")
-        if obj_start >= 0 and obj_end > obj_start:
-            try:
-                obj = json.loads(trimmed[obj_start : obj_end + 1])
-                if isinstance(obj, dict):
-                    return [obj]
-            except json.JSONDecodeError:
-                pass
-        return []
+        return extract_beat_events(text)
     # ------------------------------------------------------------------
     # Chat-mode handlers (direct + crew)
     # ------------------------------------------------------------------
