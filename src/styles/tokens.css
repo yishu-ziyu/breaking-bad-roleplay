@@ -33,12 +33,18 @@
 
   /* -----------------------------------------------------------------
      3. Surfaces (表面色)
+        暖米色护眼阅读面 + BB 暗壳；消息/纸页走 parchment，工具壳仍偏暗。
      ----------------------------------------------------------------- */
-  --color-surface-cream: #fffef6;        /* 卡片 / 输入框 */
-  --color-surface-warm: #dad7ce;         /* 控制面板背景 */
-  --color-surface-warm-2: #e2dec9;       /* segmented control bg */
-  --color-surface-warm-3: #d7d2bb;       /* meter track */
-  --color-surface-yellow-soft: #fff7d0;  /* user message bg */
+  --color-surface-cream: #fffaf0;        /* 输入框 / 亮面 */
+  --color-surface-paper: #fff8ea;        /* 对话气泡主面 */
+  --color-surface-paper-2: #f4efe3;      /* 页面 / 次级纸 */
+  --color-surface-paper-3: #ece4d6;      /* 侧栏 / 代码底 */
+  --color-surface-paper-4: #e3d8c6;      /*  tertiary 纸 */
+  --color-surface-code: #eee4d3;         /* 代码块 */
+  --color-surface-warm: #e6dccb;         /* 控制面板背景 */
+  --color-surface-warm-2: #ece4d6;       /* segmented control bg */
+  --color-surface-warm-3: #e3d8c6;       /* meter track */
+  --color-surface-yellow-soft: #fff7d0;  /* on-dark 高亮 / CTA 邻域 */
   --color-surface-dark-1: #1d2612;       /* 渐变深橄榄 */
   --color-surface-dark-2: #1a1223;       /* 渐变深紫 */
   --color-surface-charcoal-soft: rgba(23, 32, 14, 0.06);
@@ -46,25 +52,28 @@
   /* -----------------------------------------------------------------
      4. Text (文本色)
      ----------------------------------------------------------------- */
-  --color-text-ink: #15180d;          /* body text */
-  --color-text-strong: #17200e;       /* heading / strong */
-  --color-text-muted: #5d604c;        /* hint / 弱化 */
-  --color-text-muted-2: #60634e;      /* segment 弱化态 */
-  --color-text-muted-3: #64694d;      /* figcaption / 弱化 */
+  --color-text-ink: #242018;          /* body text — warm brown-black */
+  --color-text-strong: #1f1b15;       /* heading / strong */
+  --color-text-muted: #5f5648;        /* hint / 弱化 */
+  --color-text-muted-2: #7b705f;      /* tertiary */
+  --color-text-muted-3: #7b705f;      /* figcaption / 弱化 */
   --color-text-on-dark: #fff7d0;      /* 在暗背景上 */
+  --color-text-link: #315f55;         /* 正文链接 */
+  --color-text-link-hover: #21483f;
 
   /* -----------------------------------------------------------------
      5. Borders (边框色)
      ----------------------------------------------------------------- */
-  --color-border-soft: rgba(32, 42, 20, 0.13);
-  --color-border-soft-2: rgba(32, 42, 20, 0.14);
-  --color-border-soft-3: rgba(32, 42, 20, 0.15);
-  --color-border-soft-4: rgba(32, 42, 20, 0.16);
-  --color-border-soft-5: rgba(32, 42, 20, 0.18);
+  --color-border-soft: rgba(80, 65, 45, 0.16);
+  --color-border-soft-2: rgba(80, 65, 45, 0.18);
+  --color-border-soft-3: rgba(80, 65, 45, 0.20);
+  --color-border-soft-4: rgba(80, 65, 45, 0.22);
+  --color-border-soft-5: rgba(80, 65, 45, 0.24);
+  --color-border-medium: rgba(80, 65, 45, 0.24);
   --color-border-charcoal-soft: rgba(23, 32, 14, 0.12);
   --color-border-on-dark: rgba(255, 255, 255, 0.24);
   --color-border-on-dark-2: rgba(255, 255, 255, 0.16);
-  --color-border-light-soft: rgba(0, 0, 0, 0.08);
+  --color-border-light-soft: rgba(80, 65, 45, 0.12);
 
   /* -----------------------------------------------------------------
      6. Status (状态色)
@@ -95,27 +104,85 @@
 
   /* -----------------------------------------------------------------
      8. Typography
+        角色分工（对齐暖米色护眼阅读）：
+        - sans：侧栏 / 按钮 / 元信息 / 输入
+        - serif：对话正文 / 长读
+        - display：标题 / 引用 / 角色名牌
+        - mono：代码 / tool dump
+        本机优先 MiSans / 思源宋 / 朱雀仿宋 / 文楷 / Maple Mono；
+        未安装时走 Noto + 系统备援（index.html 注入 web 字体）。
      ----------------------------------------------------------------- */
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: Rockwell, "Courier Prime", "Courier New", var(--font-sans);
-  --font-mono: Menlo, Monaco, Consolas, Courier New, monospace;
+  --font-sans:
+    "MiSans",
+    "HarmonyOS Sans SC",
+    "PingFang SC",
+    "Noto Sans SC",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+
+  --font-serif:
+    "Source Han Serif SC",
+    "Source Han Serif CN",
+    "Noto Serif SC",
+    "Noto Serif CJK SC",
+    "思源宋体",
+    "Songti SC",
+    "STSong",
+    "SimSun",
+    serif;
+
+  --font-display:
+    "Zhuque Fangsong",
+    "朱雀仿宋",
+    "LXGW WenKai Screen",
+    "LXGW WenKai",
+    "霞鹜文楷 屏幕阅读版",
+    "霞鹜文楷",
+    "Noto Serif SC",
+    "Source Han Serif SC",
+    "Songti SC",
+    Georgia,
+    serif;
+
+  --font-mono:
+    "Maple Mono",
+    "JetBrains Mono",
+    "SFMono-Regular",
+    "SF Mono",
+    Menlo,
+    Monaco,
+    Consolas,
+    ui-monospace,
+    monospace;
+
   --font-weight-regular: 400;
   --font-weight-medium: 500;
-  --font-weight-bold: 800;
-  --font-weight-black: 900;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-black: 800;
+
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 13px;
   --font-size-base: 14px;
   --font-size-lg: 15px;
+  --font-size-reading: 17px;   /* 对话正文 */
   --font-size-xl: 25px;
   --font-size-2xl: 28px;
   --font-size-3xl: 34px;
+
   --line-height-tight: 1.08;
   --line-height-snug: 1.2;
   --line-height-normal: 1.35;
   --line-height-relaxed: 1.5;
-  --line-height-cjk: 1.7;
+  --line-height-cjk: 1.82;     /* 中文长读 */
+  --line-height-reading: 1.82;
+  --letter-spacing-reading: 0.012em;
+  --letter-spacing-display: 0.01em;
 
   /* -----------------------------------------------------------------
      9. Spacing
@@ -144,8 +211,10 @@
   /* -----------------------------------------------------------------
      11. Shadow
      ----------------------------------------------------------------- */
-  --shadow-soft: 0 4px 12px rgba(23, 32, 14, 0.15);
-  --shadow-soft-2: 0 6px 16px rgba(23, 32, 14, 0.25);
+  --shadow-soft:
+    0 1px 2px rgba(74, 58, 38, 0.04),
+    0 8px 28px rgba(74, 58, 38, 0.05);
+  --shadow-soft-2: 0 6px 16px rgba(74, 58, 38, 0.12);
   --shadow-card: 0 18px 38px rgba(8, 11, 8, 0.3);
   --shadow-dramatic: 0 24px 64px rgba(0, 0, 0, 0.6);
   --shadow-inset: inset 0 2px 4px rgba(0, 0, 0, 0.04);
@@ -172,7 +241,8 @@
   --layout-pane-padding: 28px;
   --layout-chat-min-height: 720px;
   --layout-chat-padding: 30px;
-  --layout-message-max-width: 760px;
+  --layout-message-max-width: 720px;
+  --layout-reading-measure: 65ch;
   --layout-breakpoint-tablet: 920px;
   --layout-breakpoint-mobile: 560px;
 
