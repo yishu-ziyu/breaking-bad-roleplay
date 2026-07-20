@@ -38,6 +38,13 @@ const copy = {
     placeholderKey: 'Paste key…',
     placeholderBase: 'https://api.example.com/v1',
     platformOnly: 'Platform demo only offers MiniMax and StepFun.',
+    savedKey: 'Saved on this device',
+    leaveBlank: 'Leave blank to keep using the saved key',
+    needKey: 'Paste an API key first (or use a saved one).',
+    bound: 'Connected for this session',
+    bindFailed: 'Could not open a session. Check the key and try again.',
+    testing: 'Testing…',
+    saving: 'Saving…',
   },
   zh: {
     title: '模型线路',
@@ -60,6 +67,13 @@ const copy = {
     placeholderKey: '粘贴密钥…',
     placeholderBase: 'https://api.example.com/v1',
     platformOnly: '平台演示只提供 MiniMax 和 StepFun。',
+    savedKey: '本机已保存',
+    leaveBlank: '留空则继续使用已保存密钥',
+    needKey: '请先粘贴密钥，或使用本机已保存的密钥。',
+    bound: '已绑定本会话',
+    bindFailed: '无法建立会话，请检查密钥后重试。',
+    testing: '测试中…',
+    saving: '保存中…',
   },
 } as const
 
@@ -97,6 +111,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
     view,
     busy,
     message,
+    setMessage,
     setActive,
     testAndSave,
     ensureBound,
@@ -114,6 +129,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
   const [baseUrl, setBaseUrl] = useState(view.baseUrl || '')
   const [region, setRegion] = useState<MiniMaxRegion>(view.region)
   const [modelId, setModelId] = useState(view.modelId)
+  const [action, setAction] = useState<'idle' | 'test' | 'save'>('idle')
 
   const brands = useMemo(() => brandsForMode(mode), [mode])
   const groups = useMemo(() => groupBrands(brands), [brands])
@@ -124,12 +140,16 @@ function ConnectionSheetForm({ conn, language }: Props) {
   const hintBase = baseUrlSlotFor(providerId)
     ? vault?.meta[baseUrlSlotFor(providerId)!]?.hint
     : undefined
+  const savedLlm = Boolean(vault?.slots[llmSlotFor(providerId)])
+  const savedTts = Boolean(ttsSlotFor(providerId) && vault?.slots[ttsSlotFor(providerId)!])
 
   const onSelectProvider = async (id: ProviderId) => {
     setProviderId(id)
     const b = getProviderBrand(id)
     setModelId(b.defaultModel)
     setBaseUrl(b.defaultBaseUrl || '')
+    setLlmKey('')
+    setTtsKey('')
     await setActive({
       providerId: id,
       modelId: b.defaultModel,
@@ -151,8 +171,60 @@ function ConnectionSheetForm({ conn, language }: Props) {
         providerId: safeId,
         modelId: b.defaultModel,
       })
+      // Drop any BYOK RAM session when switching to platform demo.
+      await ensureBound()
     } else {
       await setActive({ mode: 'byok' })
+    }
+  }
+
+  const resolveLlmKey = () => {
+    const typed = llmKey.trim()
+    if (typed) return typed
+    return vault?.slots[llmSlotFor(providerId)] || ''
+  }
+
+  const resolveTtsKey = () => {
+    const typed = ttsKey.trim()
+    if (typed) return typed
+    const slot = ttsSlotFor(providerId)
+    return slot ? (vault?.slots[slot] || '') : ''
+  }
+
+  const onTest = async () => {
+    if (mode !== 'byok') return
+    const key = resolveLlmKey()
+    if (!key) {
+      setMessage(t.needKey)
+      return
+    }
+    setAction('test')
+    try {
+      await setActive({
+        mode: 'byok',
+        providerId,
+        modelId,
+        region: providerId === 'minimax' ? region : undefined,
+        baseUrl: brand.needsBaseUrl || baseUrl ? baseUrl : brand.defaultBaseUrl,
+      })
+      await testAndSave({
+        providerId,
+        purpose: 'llm',
+        apiKey: key,
+        baseUrl: baseUrl || brand.defaultBaseUrl,
+        region: providerId === 'minimax' ? region : undefined,
+        modelId,
+      })
+      if (ttsKey.trim() && providerId === 'minimax') {
+        await testAndSave({
+          providerId,
+          purpose: 'tts',
+          apiKey: ttsKey.trim(),
+          region,
+        })
+      }
+    } finally {
+      setAction('idle')
     }
   }
 
@@ -164,27 +236,71 @@ function ConnectionSheetForm({ conn, language }: Props) {
       region: providerId === 'minimax' ? region : undefined,
       baseUrl: brand.needsBaseUrl || baseUrl ? baseUrl : brand.defaultBaseUrl,
     })
-    if (mode === 'byok') {
+    if (mode !== 'byok') {
+      setSheetOpen(false)
+      return
+    }
+
+    const key = resolveLlmKey()
+    if (!key) {
+      setMessage(t.needKey)
+      return
+    }
+
+    setAction('save')
+    try {
+      // Test only when user pasted a fresh key (avoid burning tokens on every bind).
       if (llmKey.trim()) {
-        await testAndSave({
+        const llmResult = await testAndSave({
           providerId,
           purpose: 'llm',
-          apiKey: llmKey,
+          apiKey: llmKey.trim(),
           baseUrl: baseUrl || brand.defaultBaseUrl,
           region: providerId === 'minimax' ? region : undefined,
           modelId,
         })
+        if (!llmResult.ok) return
       }
       if (ttsKey.trim() && providerId === 'minimax') {
-        await testAndSave({
+        const ttsResult = await testAndSave({
           providerId,
           purpose: 'tts',
-          apiKey: ttsKey,
+          apiKey: ttsKey.trim(),
           region,
         })
+        if (!ttsResult.ok) return
       }
-      await ensureBound()
+
+      const bound = await ensureBound({
+        llmKey: key,
+        ttsKey: resolveTtsKey() || undefined,
+        baseUrl: baseUrl || brand.defaultBaseUrl,
+        providerId,
+        modelId,
+        region: providerId === 'minimax' ? region : undefined,
+        mode: 'byok',
+        force: Boolean(llmKey.trim() || ttsKey.trim()),
+      })
+      if (!bound) {
+        setMessage(t.bindFailed)
+        return
+      }
+      setMessage(t.bound)
+      setLlmKey('')
+      setTtsKey('')
+      setSheetOpen(false)
+    } finally {
+      setAction('idle')
     }
+  }
+
+  const primaryLabel = () => {
+    if (busy || action !== 'idle') {
+      if (action === 'test') return t.testing
+      if (action === 'save') return t.saving
+      return '…'
+    }
+    return mode === 'byok' ? t.saveBind : t.modePlatform
   }
 
   return (
@@ -228,13 +344,18 @@ function ConnectionSheetForm({ conn, language }: Props) {
                   <button
                     key={b.id}
                     type="button"
-                    className={`connection-brand${providerId === b.id ? ' is-active' : ''}`}
+                    className={`connection-brand${providerId === b.id ? ' is-active' : ''}${
+                      vault?.slots[llmSlotFor(b.id)] ? ' has-key' : ''
+                    }`}
                     onClick={() => onSelectProvider(b.id)}
                   >
                     <strong>{b.displayName}</strong>
                     <span>{b.productLine}</span>
                     {b.platformDemo && mode === 'platform' && view.platform[b.id as 'minimax' | 'stepfun'] && (
                       <em className="connection-brand__plat">demo</em>
+                    )}
+                    {mode === 'byok' && vault?.slots[llmSlotFor(b.id)] && (
+                      <em className="connection-brand__saved">key</em>
                     )}
                   </button>
                 ))}
@@ -248,6 +369,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
           <strong data-status={view.status}>
             {statusLabel[view.status]?.[language] || view.status}
             {view.hint ? ` · ${view.hint}` : ''}
+            {view.connectionSessionId && mode === 'byok' ? ` · ${t.bound}` : ''}
           </strong>
         </div>
 
@@ -299,10 +421,16 @@ function ConnectionSheetForm({ conn, language }: Props) {
                   type="password"
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder={brand.keyHintLlm || t.placeholderKey}
+                  placeholder={savedLlm ? t.leaveBlank : (brand.keyHintLlm || t.placeholderKey)}
                   value={llmKey}
                   onChange={e => setLlmKey(e.target.value)}
                 />
+                {savedLlm && !llmKey && (
+                  <small className="connection-sheet__saved-hint">
+                    {t.savedKey}
+                    {hintLlm ? ` ${hintLlm}` : ''}
+                  </small>
+                )}
               </label>
             )}
 
@@ -316,7 +444,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
                   type="password"
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder={brand.keyHintTts || t.placeholderKey}
+                  placeholder={savedTts ? t.leaveBlank : (brand.keyHintTts || t.placeholderKey)}
                   value={ttsKey}
                   onChange={e => setTtsKey(e.target.value)}
                 />
@@ -344,22 +472,32 @@ function ConnectionSheetForm({ conn, language }: Props) {
 
         <footer className="connection-sheet__actions">
           {mode === 'byok' && (
-            <button
-              type="button"
-              className="connection-sheet__ghost"
-              disabled={busy}
-              onClick={() => clearProviderKeys(providerId)}
-            >
-              {t.clear}
-            </button>
+            <>
+              <button
+                type="button"
+                className="connection-sheet__ghost"
+                disabled={busy || action !== 'idle'}
+                onClick={() => clearProviderKeys(providerId)}
+              >
+                {t.clear}
+              </button>
+              <button
+                type="button"
+                className="connection-sheet__secondary"
+                disabled={busy || action !== 'idle'}
+                onClick={onTest}
+              >
+                {action === 'test' ? t.testing : t.test}
+              </button>
+            </>
           )}
           <button
             type="button"
             className="connection-sheet__primary"
-            disabled={busy}
+            disabled={busy || action !== 'idle'}
             onClick={onSaveBind}
           >
-            {busy ? '…' : (mode === 'byok' ? t.saveBind : t.modePlatform)}
+            {primaryLabel()}
           </button>
         </footer>
       </div>
