@@ -16,6 +16,7 @@ from agents.characters import (
     HankSchrader,
 )
 from agents import mckee_story
+from agents.speak_sanitize import sanitize_speak_content
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 from sqlalchemy import select
@@ -244,7 +245,7 @@ EMIT A SINGLE JSON ARRAY — one object per character turn in order:
 [
   {
     "character_id": "Walter White" | "Jesse Pinkman" | "Skyler White" | "Saul Goodman" | "Mike Ehrmantraut" | "Gus Fring" | "Hank Schrader",
-    "content": "<spoken dialogue — in character, 2-6 sentences>",
+    "content": "<spoken dialogue only — in character, 2-6 sentences>",
     "emotion_state": "<calm|tense|angry|fearful|manipulative|guilty|resigned|desperate>",
     "gif_search_query": "<English visual emotion search phrase>",
     "thinking": "<1-3 sentence inner monologue>",
@@ -254,6 +255,8 @@ EMIT A SINGLE JSON ARRAY — one object per character turn in order:
 ]
 RULES:
 - Each object is one character's full response (dialogue + metadata).
+- content is pure spoken words — no parenthetical stage directions or narrator
+  similes (ban "（声音放低，像是…）", "(as if…)", "like a teacher").
 - Include 2-3 turns total (not counting the user's message).
 - Characters should react to each other, not just the user.
 - The first character should be the one closest to the user's relation.
@@ -279,13 +282,19 @@ THINKING
   their inner conflict and motivation.  Breaking Bad tension lives in what
   characters hide.
 SPEAKING
-- Emit agent_speak events with the character's actual dialogue.
+- Emit agent_speak events with the character's actual dialogue ONLY.
+- agent_speak.content is pure spoken words — no parentheticals, no stage
+  directions, no narrator similes (ban: "（声音放低，像是…）", "(as if…)",
+  "like a teacher explaining", "带着…的神情").
+- Delivery and threat come from the line itself (rhythm, pressure, subtext),
+  not from author commentary inside the dialogue.
 - Include the character's current emotion_state and a gif_search_query that
   captures their emotional state visually (e.g. "walter white angry determined",
   "jesse pinkman scared nervous").
 ACTING
 - Emit agent_act events for physical actions: entering, leaving, handing over
-  an object, cooking, driving, etc.
+  an object, cooking, driving, lowering voice volume as action text, etc.
+- Keep agent_act.action short and performable (camera can film it). No metaphors.
 WORLD STATE
 - After the beat is complete, list every fact that changed as a world_state_delta
   event.  Examples: Walt now knows X, the location is now Y, trust between
@@ -318,6 +327,7 @@ RULES:
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
   "Saul Goodman", "Mike Ehrmantraut", "Gus Fring", or "Hank Schrader" — no variations.
 - recommended_model must be "stepfun/step-3.7-flash" on every event.
+- NEVER put stage notes inside agent_speak.content parentheses. Use agent_act.
 """ + mckee_story.mckee_system_addon()
 # ---------------------------------------------------------------------------
 # Director agent
@@ -1347,12 +1357,21 @@ class DirectorAgent:
                     try:
                         speak_lang_note = (
                             "台词 content 必须用简体中文。不要用英文对白。"
+                            "只写角色说出口的话：禁止任何括号舞台指示或旁白评语"
+                            "（禁止「（声音放低，像是…）」「（眼神…）」「仿佛/像是/带着…的神情」）。"
+                            "动作与目光进 agent_act，不进台词。"
                             "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
                             "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯、"
                             "Hank→汉克、Todd→托德（禁托霍）、Jack Welker→杰克·维尔克"
                             "（禁杰克·托霍）、Tuco→图科。"
                             if _norm_lang(language) == "zh"
-                            else "Dialogue content must be English."
+                            else (
+                                "Dialogue content must be English. "
+                                "Spoken words only: no parenthetical stage directions "
+                                "or narrator similes (ban '(voice lowers, as if…)', "
+                                "'(glances…)', 'like a teacher'). "
+                                "Physical action belongs in agent_act, not in dialogue."
+                            )
                         )
                         prior_note = ""
                         if prior_spoken_lines:
@@ -1381,6 +1400,7 @@ class DirectorAgent:
                             )
                         if _norm_lang(language) == "zh":
                             reply = normalize_zh_character_names(reply)
+                        reply = sanitize_speak_content(reply)
                         evt_data = {
                             **evt_data,
                             "content": reply,
@@ -1394,6 +1414,13 @@ class DirectorAgent:
                             "Character sub-agent call failed for %s, using LLM dialogue fallback",
                             evt_data.get("character_id"),
                         )
+            # Always purify speak content (director draft fallback path included).
+            if evt_type == "agent_speak":
+                raw_content = str(evt_data.get("content") or "")
+                cleaned = sanitize_speak_content(raw_content)
+                if _norm_lang(language) == "zh":
+                    cleaned = normalize_zh_character_names(cleaned)
+                evt_data = {**evt_data, "content": cleaned}
             yield AgentEvent(
                 type=evt_type,
                 data=evt_data,
@@ -2090,7 +2117,7 @@ class DirectorAgent:
                 continue
             logs.append({
                 "sender": char_id,  # mapped to frontend id by caller
-                "text": entry.get("content", ""),
+                "text": sanitize_speak_content(entry.get("content", "")),
                 "emotion": entry.get("emotion_state"),
                 "gifQuery": entry.get("gif_search_query"),
                 "thinking": entry.get("thinking"),

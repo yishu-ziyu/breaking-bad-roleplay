@@ -612,8 +612,10 @@ def build_beat_planning_addon(
             "4) 对立面必须有真实火力与局部真理；禁止纸糊反派。\n"
             "5) 禁止静态展示、纯解说、巧合救场。\n"
             "6) agent_speak ≤ 2；agent_think 在 speak 之前。\n"
-            "7) 若本拍是 crisis：必须是真正两难，不是简单选择题。\n"
-            "8) 若本拍是 climax：动作不言自明，回答 MAJOR_QUESTION，体现 CONTROLLING_IDEA。\n"
+            "7) agent_speak.content 只写出口台词，禁止括号舞台指示/旁白比喻"
+            "（如「像是老师讲重点」）；可拍动作写 agent_act。\n"
+            "8) 若本拍是 crisis：必须是真正两难，不是简单选择题。\n"
+            "9) 若本拍是 climax：动作不言自明，回答 MAJOR_QUESTION，体现 CONTROLLING_IDEA。\n"
         )
 
     pol_line = ""
@@ -664,8 +666,10 @@ def build_beat_planning_addon(
         "4) Opposition gets real firepower and partial truth; no paper villains.\n"
         "5) No static exposition; no coincidence rescues.\n"
         "6) At most two agent_speak; agent_think before speak.\n"
-        "7) If crisis: real dilemma, not a multiple-choice quiz.\n"
-        "8) If climax: pure action answers MAJOR_QUESTION and embodies CONTROLLING_IDEA.\n"
+        "7) agent_speak.content is spoken words only — no parenthetical stage notes "
+        "or narrator similes; filmable action goes in agent_act.\n"
+        "8) If crisis: real dilemma, not a multiple-choice quiz.\n"
+        "9) If climax: pure action answers MAJOR_QUESTION and embodies CONTROLLING_IDEA.\n"
     )
 
 
