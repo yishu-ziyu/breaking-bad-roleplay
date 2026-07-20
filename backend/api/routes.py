@@ -431,6 +431,15 @@ async def connections_bind(payload: ConnectionBindRequest):
     return session_public_view(session)
 
 
+@router.get("/connections/bind/{session_id}")
+async def connections_bind_get(session_id: str):
+    """Probe whether a RAM bind session is still alive (sliding TTL on hit)."""
+    session = connection_store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Connection session not found or expired")
+    return session_public_view(session)
+
+
 @router.delete("/connections/bind/{session_id}")
 async def connections_unbind(session_id: str):
     ok = connection_store.revoke(session_id)

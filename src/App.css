@@ -2837,10 +2837,49 @@ button.story-event {
   font-style: normal;
 }
 
+.connection-brand__saved {
+  font: 700 9px/1 var(--font-sans);
+  color: rgba(70, 100, 30, 0.9);
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.connection-brand.has-key {
+  border-color: rgba(142, 169, 63, 0.35);
+}
+
 .connection-brand.is-active {
   border-color: rgba(247, 206, 70, 0.75);
   background: rgba(247, 206, 70, 0.22);
   box-shadow: 0 0 0 1px rgba(247, 206, 70, 0.2);
+}
+
+.connection-sheet__saved-hint {
+  margin-top: 4px;
+  font: 600 11px/1.35 var(--font-sans);
+  color: rgba(70, 100, 30, 0.9);
+}
+
+.connection-sheet__secondary {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(23, 32, 14, 0.18);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--color-bb-ink);
+  font: 800 12px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.connection-sheet__secondary:hover:not(:disabled) {
+  border-color: rgba(247, 206, 70, 0.55);
+  background: rgba(255, 252, 231, 0.95);
+}
+
+.connection-sheet__secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .connection-sheet__status {
