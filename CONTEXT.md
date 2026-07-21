@@ -32,6 +32,24 @@ Shared product language. Update when hard decisions land.
 - Outline SSE extras: `mckee_spine`, `mckee_warnings`, `mckee_beat_count`.
 - Craft source: `…/source_pdf2skill/故事/*` (McKee *Story*).
 
+## Narrative pipeline (DEC-0005 — directional)
+
+**Propose → Validate → Repair → Commit** (neuro-symbolic; LLM proposes, symbols verify).
+
+| Role | Output |
+|------|--------|
+| Director | **Beat Contract** (dramatic change + forbidden outcomes) — not final lines |
+| Character Policy | **Turn Proposal** (action + **inner_monologue** + speech strategy + line) |
+| World Validator | hard legality (knowledge, preconditions, forbidden) |
+| Narrative Critic | soft score (voice, tension, worth) |
+| State Reducer | deterministic Continuity Board / world deltas |
+| Stage Compiler | future: 3D / camera cues |
+
+- Contracts: `backend/agents/narrative_contracts.py`
+- ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
+- Transitional SSE map: inner_monologue→`agent_think`, action→`agent_act`, line→`agent_speak`
+- As-built today: Director still emits concrete events; Character rewrites speak (+ thinking bind). P1+ migrates to contracts.
+
 ## Modes
 
 - **Direct:** one character chat with relation anchor.
