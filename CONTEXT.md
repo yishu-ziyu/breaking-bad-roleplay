@@ -34,21 +34,24 @@ Shared product language. Update when hard decisions land.
 
 ## Narrative pipeline (DEC-0005 — directional)
 
-**Propose → Validate → Repair → Commit** (neuro-symbolic; LLM proposes, symbols verify).
+**Train policy, not only voice.** Correct = hard constraints × character policy × dramatic goal × world mode (canon | alternate | sandbox).
+
+**Propose → Validate → Repair → Commit** (LLM proposes; symbols verify).
 
 | Role | Output |
 |------|--------|
-| Director | **Beat Contract** (dramatic change + forbidden outcomes) — not final lines |
+| Director | **Beat Contract** — not final lines |
 | Character Policy | **Turn Proposal** (action + **inner_monologue** + speech strategy + line) |
-| World Validator | hard legality (knowledge, preconditions, forbidden) |
-| Narrative Critic | soft score (voice, tension, worth) |
-| State Reducer | deterministic Continuity Board / world deltas |
-| Stage Compiler | future: 3D / camera cues |
+| World Validator | hard legality (`backend/scenes/validator.py`) |
+| Narrative Critic | soft score (later) |
+| State Reducer | deterministic Continuity Board (`backend/scenes/state_reducer.py`) |
+| Stage Compiler | future: 3D cues from closed action ontology |
 
-- Contracts: `backend/agents/narrative_contracts.py`
 - ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
-- Transitional SSE map: inner_monologue→`agent_think`, action→`agent_act`, line→`agent_speak`
-- **P1 as-built:** Director prefers `{contract, events}` envelope (legacy array OK); contract synthesized if missing. Character path builds **Turn Proposal** from structured reply+thinking, validates vs contract, commits line/think (and refreshes act). `beat_ready` carries contract summary (cast/role/location only).
+- Contracts: `backend/agents/narrative_contracts.py`
+- Scenes package: `backend/scenes/` (ontology, mode, validator, reducer)
+- **P0–P2 as-built:** envelope contract + Turn Proposal commit + hard checks (presence, death costs, knowledge boundary, verb map→`idle_tense`) + reducer on validated turns. Soft critic / full act-from-policy / 3D still open.
+- Training ladder: golden set → hard evaluator → soft critic → only then SFT/DPO.
 
 ## Modes
 

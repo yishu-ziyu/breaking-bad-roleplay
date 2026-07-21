@@ -30,6 +30,10 @@ from agents.narrative_contracts import (
     turn_proposal_from_character_result,
     validate_turn_against_contract_basic,
 )
+from scenes.action_ontology import map_action_verb
+from scenes.state_reducer import apply_validated_turn
+from scenes.validator import validate_world_turn
+from scenes.world_mode import parse_world_mode
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 from sqlalchemy import select
@@ -1629,16 +1633,54 @@ class DirectorAgent:
                         director_action=director_action,
                         observed_facts=observed,
                     )
+                    # Canonicalize action verb onto the closed ontology.
+                    if turn.action and (turn.action.verb or "").strip():
+                        canon_verb, _mapped = map_action_verb(turn.action.verb)
+                        turn = turn.model_copy(
+                            update={
+                                "action": turn.action.model_copy(
+                                    update={"verb": canon_verb}
+                                )
+                            }
+                        )
                     # Speakers implied by director drafts are always legal cast.
                     beat_contract = ensure_actor_on_contract(beat_contract, character_id)
-                    vresult = validate_turn_against_contract_basic(beat_contract, turn)
-                    if not vresult.ok:
+                    basic = validate_turn_against_contract_basic(beat_contract, turn)
+                    world_mode = parse_world_mode(
+                        context.get("world_mode") or context.get("worldMode")
+                    )
+                    world = validate_world_turn(
+                        beat_contract,
+                        turn,
+                        board=continuity_board,
+                        world_mode=world_mode,
+                    )
+                    v_ok = basic.ok and world.ok
+                    if not v_ok:
                         logger.warning(
-                            "Beat %d turn validation failed for %s: %s",
+                            "Beat %d world/turn validation failed for %s mode=%s: %s",
                             beat_index + 1,
                             character_id,
-                            [iss.model_dump() for iss in vresult.issues],
+                            world_mode,
+                            [iss.model_dump() for iss in (basic.issues + world.issues)],
                         )
+                    # Hard knowledge / presence failure: strip monologue that
+                    # leaks, keep sanitized line if still speakable.
+                    if not world.ok and any(
+                        iss.code == "knowledge_boundary" and iss.severity == "error"
+                        for iss in world.issues
+                    ):
+                        turn = turn.model_copy(update={"inner_monologue": ""})
+                        char_thinking = None
+                    if not v_ok and any(
+                        iss.code in ("actor_removed", "empty_turn")
+                        and iss.severity == "error"
+                        for iss in (basic.issues + world.issues)
+                    ):
+                        # Do not commit speech for dead/removed actors.
+                        reply = ""
+                        turn = turn.model_copy(update={"line": "", "inner_monologue": ""})
+                        char_thinking = None
                     # Commit Turn Proposal → speak fields (SSE-compatible).
                     reply = sanitize_speak_content(turn.line or reply)
                     char_thinking = (turn.inner_monologue or char_thinking or "").strip() or None
@@ -1654,7 +1696,8 @@ class DirectorAgent:
                         "surface_intent": turn.surface_intent or None,
                         "subtext": turn.subtext or None,
                         "relationship_tactic": turn.relationship_tactic or None,
-                        "turn_validation_ok": vresult.ok,
+                        "turn_validation_ok": v_ok,
+                        "world_mode": world_mode,
                     }
                     if turn.action and (turn.action.verb or "").strip():
                         # Refresh nearest prior agent_act with committed action text.
@@ -1678,9 +1721,22 @@ class DirectorAgent:
                                         **pdata,
                                         "action": action_text,
                                         "target": turn.action.target_id,
+                                        "verb": turn.action.verb,
                                     },
                                 }
                                 break
+                    # Deterministic board commit only when hard validation passed.
+                    if v_ok and continuity_board is not None:
+                        try:
+                            continuity_board = apply_validated_turn(
+                                continuity_board, turn, beat_index=beat_index
+                            )
+                        except Exception:
+                            logger.debug(
+                                "State reducer failed for %s beat %s",
+                                character_id,
+                                beat_index + 1,
+                            )
                 except Exception:
                     logger.warning(
                         "Character sub-agent call failed for %s, using LLM dialogue fallback",
