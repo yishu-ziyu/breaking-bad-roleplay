@@ -6,138 +6,182 @@
 
 ## Context
 
-Character Policy Cards (e.g. Walter) already encode mask, engine, contradiction,
-failure modes, relationship tactics, and knowledge rights. The bottleneck is the
-**call chain**, not the cards:
+What must be trained is not only **voice** (does this sound like Walter) but
+**policy**: given world state, goals, knowledge, relationships, and temperament,
+why this action, this inner monologue, and this line.
 
-- Director emits concrete `agent_act` / `agent_think` / `agent_speak` in one shot.
-- Only `agent_speak` is rewritten by Character Agents.
-- Character `thinking` was previously dropped (fixed partially in Loop N+).
-- World consistency and "is this worth staging" are left to the LLM.
+Character Policy Cards already encode mask, engine, contradiction, failure
+modes, relationship tactics, session memory, knowledge rights, and irreversible
+costs. The historical bottleneck was the **call chain**: Director emitted
+act/think/speak; only speak was rewritten by Character Agents; Character
+`thinking` was dropped (later bound in #54). Soft taste and hard legality were
+left to the LLM.
 
-Industrial interactive narrative (neuro-symbolic pattern) separates **creative
-proposal** (LLM) from **symbolic validation and commit** (rules / state).
-
-Related research framing: neuro-symbolic interactive storytelling — LLM proposes;
-symbolic layers enforce location, inventory, knowledge, and legal transitions
-(see e.g. arXiv:2606.13348 and the broader propose-verify literature).
+Industrial interactive narrative (neuro-symbolic) separates creative proposal
+(LLM) from symbolic validation and commit (rules / state).
 
 ## Decision
 
-Adopt a **Propose → Validate → Repair → Commit** pipeline for Story mode.
+Adopt **Propose → Validate → Repair → Commit** for Story mode.
+
+### Correctness formula (three layers + mode)
+
+There is no single correct line. Correctness has three different natures.
+
+**Layer 1 — Hard correctness (program can reject)**
+
+World-state consistency, precondition/effect validation, knowledge boundary,
+constraint satisfaction, simulation validity. Examples:
+
+- Actor cannot know facts outside Continuity Board rights.
+- Dead / off-stage actors cannot act.
+- Items not held cannot be handed over.
+- Door already closed cannot be closed again without reopen.
+- Irreversible costs cannot be pretended away.
+- `agent_act` targets, anchors, animations must exist (stage kit).
+- World deltas must be caused by validated action or dialogue.
+
+**Layer 2 — Soft correctness (comparable, not unique)**
+
+Character intentionality, subtext vs plot dump, goal-driven vs author force,
+value change this beat, non-repetition, player agency room, visual executability.
+Narrative planning research frames two cores: causal plot advance and
+character credibility / intentional readability.
+
+**Layer 3 — Mode correctness**
+
+| Mode | Meaning |
+|------|---------|
+| **Canon** | Strict show timeline, knowledge, relations |
+| **Alternate** | Core character policy fixed; player may rewrite history |
+| **Sandbox** | Keep voice recognizability; freer relations and plot |
+
+Same utterance may fail Canon and pass Alternate.
+
+**Formula**
+
+```text
+correct =
+  hard constraints
+  × character policy fit
+  × dramatic goal advance
+  × selected world mode
+```
+
+Not: correct = “sounds like Breaking Bad.”
 
 ### Roles
 
 | Role | Authority | Must not |
 |------|-----------|----------|
-| **Director / Narrative Planner** | Beat Contract: dramatic change, constraints, present cast | Write final spoken lines or character-specific tactics |
-| **Character Policy Agent** | Turn Proposal: act / inner monologue / speech act / line | Invent facts outside Continuity Board knowledge rights |
-| **World Validator** | Hard legality: preconditions, knowledge, affordance | Score taste |
-| **Narrative Critic** | Soft quality: voice, tension, worth staging | Mutate world state |
+| **Director / Narrative Planner** | Beat Contract: dramatic change, constraints, present cast | Write final lines or character-specific tactics |
+| **Character Policy Agent** | Turn Proposal: act / inner monologue / speech strategy / line | Invent facts outside knowledge rights |
+| **World Validator** | Hard legality | Score taste |
+| **Narrative Critic** | Soft quality | Mutate world state |
 | **State Reducer** | Deterministic apply of accepted effects | Invent narrative |
-| **Stage Compiler** (future) | Map events → stage cues / 3D / camera | Decide story truth |
+| **Stage Compiler** | Map events → stage cues / 3D / camera | Decide story truth |
 
-### Beat Contract (Director output)
+### Beat Contract / Turn Proposal
 
-Director answers: **why this beat exists, what must change, what must not.**
+Director outputs **Beat Contract** (why this beat exists; required / forbidden
+outcomes). Character Policy outputs **Turn Proposal** including structured
+`action`, audience-facing **`inner_monologue`** (not model chain-of-thought),
+speech_act / surface_intent / subtext / relationship_tactic / line.
 
-```json
-{
-  "beat_id": "beat_04",
-  "dramatic_role": "progressive",
-  "location_id": "saul_office",
-  "present_characters": ["walter", "saul"],
-  "value_before": "Walter believes Saul can be controlled",
-  "value_after": "Saul reveals he has leverage",
-  "dramatic_question": "Will Walter threaten Saul or negotiate?",
-  "pressure_source": "Saul knows more than Walter expected",
-  "required_outcome": [
-    "Walter discovers Saul has independent leverage"
-  ],
-  "forbidden_outcomes": [
-    "Walter immediately confesses everything",
-    "Saul behaves physically fearless",
-    "Either character knows hidden facts unavailable to them"
-  ]
-}
-```
-
-Aliases in product language: Scene Objective / Dramatic Constraint /
-Authorial Intent Specification.
-
-### Turn Proposal (Character output)
-
-Each present character returns a **strategy object**, not only a line.
-
-Rename audience-facing inner text to **`inner_monologue`** (not model chain-of-thought).
-
-Fields (v1):
-
-- `actor_id`, `observed_facts`, `private_goal`, `fear`
-- `relationship_tactic`, `speech_act`, `surface_intent`, `subtext`
-- `action` (verb, target, preconditions, effects — structured)
-- `inner_monologue`, `line`, `emotion_state`
-
-### Correctness criteria
-
-**Act** = goal alignment + legal preconditions + affordance + explainable effects  
-  (+ character style; e.g. Walter raises precision before volume).
-
-**Inner monologue** = only known facts; exposes goal/fear/misread; tension with
-line; no plot exposition; no future knowledge; not a paraphrase of the line.
-
-**Speak** = speech_act + surface_intent + subtext + relationship_tactic +
-voice realization. The sentence is the last step, not the first.
-
-### Pipeline (Story)
+### Pipeline
 
 ```text
-World state
+World state + world mode
   → Director: Beat Contract
-  → Character Agents: Turn Proposals (parallel per present cast)
-  → World Validator (hard fail → repair / alternate candidate)
-  → Narrative Critic (score → pick)
-  → State Reducer (deterministic deltas)
+  → Character Agents: Turn Proposals
+  → World Validator (hard fail → repair / drop / idle map)
+  → Narrative Critic (soft score; later)
+  → State Reducer (deterministic Continuity Board)
   → SSE events (+ Stage Compiler cues later)
 ```
 
-### SSE / UI mapping (compatibility)
+### Act / think / speak criteria
 
-| Proposal field | Current event (transitional) |
-|----------------|------------------------------|
+- **Act** = goal alignment + legal preconditions + affordance + explainable
+  effects (+ style; e.g. Walter raises precision before volume).
+- **Inner monologue** = only known facts; goal/fear/misread; tension with line;
+  no plot exposition; no future knowledge; not a paraphrase of the line.
+- **Speak** = speech_act + surface_intent + subtext + relationship_tactic +
+  voice realization (sentence last).
+
+### Training ladder (do not fine-tune first)
+
+1. **Golden set** (50–100 beats): context, contract, candidate A/B, preferred,
+   hard_failures, preference_reasons (why the loser fails).
+2. **Hard evaluator** (this package): schema, presence, knowledge, ontology,
+   preconditions, effects, irreversible.
+3. **Soft critic**: intentionality, voice, causal relevance, continuity,
+   subtext, value turn, player agency, visual executability.
+4. **Then** SFT / DPO / reward model on adjudicated preference data.
+
+### Stage path (later PRs; not blocking 2D Story)
+
+MVP stage kit: Saul office GLB, anchors, cameras, closed action vocabulary,
+Scene Compiler → structured cues, React Three Fiber runtime. Unknown actions
+map to `idle_tense`. Blender produces reusable Stage Kits; web runtime executes
+cues. Do not auto-generate every Breaking Bad set.
+
+### SSE mapping (transitional)
+
+| Proposal field | Event |
+|----------------|--------|
 | `action` | `agent_act` |
 | `inner_monologue` | `agent_think.thought_content` |
 | `line` | `agent_speak.content` |
 | `emotion_state` | `agent_speak.emotion_state` |
 
-Player-facing surfaces must never show McKee craft scaffolding or validator
-internals (see also scene-label sanitization).
+Player surfaces never show McKee craft scaffolding or validator internals.
 
 ## Non-goals (this decision)
 
-- Full 3D stage runtime
+- Full 3D production pipeline in v1 Story
 - Multi-candidate beam search in production v1
-- Replacing McKee outline spine (DEC-0003) — contracts sit **under** outline beats
-- Crew / Direct chat full pipeline rewrite (Story first)
+- Replacing McKee outline spine (DEC-0003) — contracts sit under outline beats
+- Crew / Direct full rewrite first (Story first)
+- Fine-tuning before golden set + hard evaluator
 
-## Phased delivery
+## Phased delivery / PR map
 
-| Phase | Ship | Success |
-|-------|------|---------|
-| **P0** | This ADR + Pydantic contracts + CONTEXT glossary | Types importable; tests round-trip JSON ✅ |
-| **P1** | Director emits Beat Contract; Characters emit Turn Proposal for speak/think | Story still SSE-compatible; think from character policy ✅ (envelope + synthesize + Turn Proposal commit) |
-| **P2** | World Validator (knowledge + forbidden_outcomes) | Violations repaired or blocked with actionable error |
-| **P3** | Narrative Critic scoring + optional second candidate | Measurable drop in "generic" act/think |
-| **P4** | State Reducer sole writer of Continuity Board deltas | No free-text world mutation from LLM |
-| **P5** | Stage Compiler cues | Optional; not required for 2D UI |
+| Phase / PR | Ship | Success |
+|------------|------|---------|
+| **P0** | ADR + Pydantic contracts + CONTEXT | Round-trip tests ✅ |
+| **P1 / PR1** | Beat Contract + Turn Proposal for speak/think; act still transitional from director draft | SSE-compatible; think from policy ✅ |
+| **P2 / PR2** | World Validator + action ontology + reducer-lite | Knowledge/presence/verb hard checks; safe idle map ✅ (this slice) |
+| **P3** | Narrative Critic + optional second candidate | Soft scores drive pick |
+| **P4** | State Reducer sole Continuity writer | No free-text world mutation from LLM as truth |
+| **PR3** | Blender Stage Kit (Saul office) | Anchors/cameras/animations in GLB extras |
+| **PR4** | React 3D runtime | Load GLB, CueRunner, camera |
+| **PR5** | Evaluation harness | 50 golden beats, hard tests, A/B report |
+
+### MVP done when
+
+1. Same story input yields stable Beat Contract structure.
+2. Walter act/think/speak proposals come from Walter policy path (act fully owned by policy is still tightening).
+3. Knowledge overreach, impossible space, state contradiction rejected programmatically.
+4–8. Stage kit load, anchor moves, ordered cues, idle fallback, deterministic replay — later PRs.
+
+## As-built notes
+
+- `backend/agents/narrative_contracts.py` — contracts + SSE map
+- `backend/scenes/` — ontology, world_mode, validator, state_reducer
+- Director prefers `{contract, events}`; synthesizes contract if missing
+- Character structured reply → Turn Proposal → basic + world validate → commit
+- Knowledge hard fail clears monologue; removed actors cannot speak
+- Validated turns feed Continuity Board via reducer (alongside legacy deltas)
 
 ## Consequences
 
-- Positive: persona authority, world consistency, evaluable gates, clear seams for agents.
-- Cost: more LLM calls per beat; latency and quota pressure.
-- Mitigation: cache contracts; validate symbolically before re-call; BYOK path for power users.
+- Positive: persona authority, evaluable gates, clear seams for 3D later.
+- Cost: more structure and calls per beat; latency/quota.
+- Mitigation: symbolic validate before re-call; closed action vocabulary; BYOK.
 
 ## References
 
-- Internal: DEC-0003 (McKee), Character templates under `materials/breaking-bad/`
-- Research framing: neuro-symbolic interactive narrative (e.g. arXiv:2606.13348)
+- DEC-0003 (McKee), Character templates under `materials/breaking-bad/`
+- Continuity Board era packs: `materials/breaking-bad/continuity/eras/`
+- Neuro-symbolic interactive narrative framing (e.g. arXiv:2606.13348)
