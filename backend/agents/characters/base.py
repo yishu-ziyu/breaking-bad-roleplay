@@ -36,9 +36,14 @@ Respond ONLY with a single JSON object (no markdown fences, no extra text):
 
 RULES:
 - reply_text must be the character's spoken reply only (no narration).
+- reply_text is pure dialogue: NO parentheticals, NO stage directions, NO narrator
+  similes. Ban forms like "（声音放低，像是老师…）", "(voice lowers, as if…)",
+  "带着…的神情". Put delivery pressure into the words themselves; physical action
+  is not written inside the line.
 - emotion_state must be exactly one of: calm, tense, angry, fearful, manipulative, guilty, resigned, desperate.
 - gif_search_query must be in English and descriptive enough for image search.
-- thinking reveals what the character is really thinking beneath their words.
+- thinking reveals what the character is really thinking beneath their words
+  (inner monologue stays in "thinking", never inside reply_text parentheses).
 - tool_executed and tool_log describe any fictional in-world tool the character used (e.g. "disposal service", "lab inventory check"), or null if none.
 - Do NOT include any fields outside this schema.
 """
@@ -62,8 +67,10 @@ def _extract_structured(text: str) -> dict:
     if start >= 0 and end > start:
         try:
             data = json.loads(raw[start : end + 1])
+            from agents.speak_sanitize import sanitize_speak_content
+
             return {
-                "reply_text": data.get("reply_text", text),
+                "reply_text": sanitize_speak_content(data.get("reply_text", text)),
                 "emotion_state": data.get("emotion_state"),
                 "gif_search_query": data.get("gif_search_query"),
                 "thinking": data.get("thinking"),
@@ -74,8 +81,10 @@ def _extract_structured(text: str) -> dict:
             pass
 
     # No JSON found — return the raw text as the reply
+    from agents.speak_sanitize import sanitize_speak_content
+
     return {
-        "reply_text": text,
+        "reply_text": sanitize_speak_content(text),
         "emotion_state": None,
         "gif_search_query": None,
         "thinking": None,
