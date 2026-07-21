@@ -1,4 +1,4 @@
-"""P0: Beat Contract + Turn Proposal schema and SSE mapping."""
+"""P0/P1: Beat Contract + Turn Proposal schema, synthesize, SSE mapping."""
 
 from __future__ import annotations
 
@@ -6,6 +6,11 @@ from agents.narrative_contracts import (
     ActionProposal,
     BeatContract,
     TurnProposal,
+    backend_to_actor_id,
+    ensure_actor_on_contract,
+    synthesize_beat_contract,
+    try_parse_beat_contract,
+    turn_proposal_from_character_result,
     turn_to_sse_events,
     validate_turn_against_contract_basic,
 )
@@ -97,3 +102,66 @@ def test_validator_accepts_present_speaker():
     )
     result = validate_turn_against_contract_basic(contract, turn)
     assert result.ok is True
+
+
+def test_try_parse_and_synthesize_contract():
+    raw = {
+        "beat_id": "beat_02",
+        "dramatic_role": "progressive_complication",
+        "location": "RV desert",
+        "present_characters": ["Walter White", "Jesse Pinkman"],
+        "value_before": "trust",
+        "value_after": "doubt",
+        "dramatic_question": "Who cooks?",
+        "pressure_source": "DEA pressure",
+    }
+    c = try_parse_beat_contract(raw)
+    assert c is not None
+    assert c.dramatic_role == "progressive"
+    assert c.location_id == "RV desert"
+    assert c.present_characters == ["walter", "jesse"]
+
+    synth = synthesize_beat_contract(
+        beat_index=0,
+        scene_desc="Kitchen confrontation",
+        location_id="kitchen",
+        dramatic_role="crisis",
+        events=[
+            {
+                "type": "agent_speak",
+                "data": {"character_id": "Skyler White", "content": "Tell me."},
+            }
+        ],
+        active_backend_id="Walter White",
+    )
+    assert "skyler" in synth.present_characters
+    assert "walter" in synth.present_characters
+    assert synth.dramatic_role == "crisis"
+
+
+def test_turn_from_character_result_validates():
+    contract = BeatContract(
+        beat_id="b1",
+        dramatic_role="setup",
+        location_id="lab",
+        present_characters=["walter"],
+        value_before="a",
+        value_after="b",
+        dramatic_question="q",
+        pressure_source="p",
+    )
+    turn = turn_proposal_from_character_result(
+        backend_character_id="Walter White",
+        reply_text="We're done when I say we're done.",
+        thinking="She cannot know the whole truth.",
+        emotion_state="tense",
+        director_action="sets the plate down carefully",
+        observed_facts=["Skyler is waiting"],
+    )
+    assert turn.actor_id == "walter"
+    assert turn.inner_monologue.startswith("She cannot")
+    assert turn.action is not None
+    assert validate_turn_against_contract_basic(contract, turn).ok is True
+    assert backend_to_actor_id("Jesse Pinkman") == "jesse"
+    expanded = ensure_actor_on_contract(contract, "Jesse Pinkman")
+    assert "jesse" in expanded.present_characters
