@@ -265,6 +265,62 @@ def resolve_backend_character_id(raw: str | None) -> str | None:
         return FRONTEND_TO_BACKEND_ID[token]
     logger.warning("resolve_backend_character_id: unknown id %r", raw)
     return s
+
+
+def apply_character_thinking(
+    events: list[dict[str, Any]],
+    character_id: str,
+    thinking: str | None,
+    *,
+    speak_index: int,
+) -> list[dict[str, Any]]:
+    """Bind Character-agent thinking into the beat event list.
+
+    Policy: agent_think must come from the Character Policy Card path, not
+    the Director's generic draft. When the Character Agent returns ``thinking``
+    with a speak rewrite:
+
+    1. Prefer overwriting the nearest prior ``agent_think`` for the same
+       character (index < speak_index).
+    2. If none exists, insert a new ``agent_think`` immediately before speak.
+
+    Returns the (possibly extended) events list. Mutates in place and may
+    insert, so callers must use the returned list and re-resolve indices.
+    """
+    thought = (thinking or "").strip()
+    if not thought or speak_index < 0 or speak_index >= len(events):
+        return events
+
+    think_idx: int | None = None
+    for i in range(speak_index - 1, -1, -1):
+        evt = events[i]
+        if evt.get("type") != "agent_think":
+            continue
+        data = evt.get("data") if isinstance(evt.get("data"), dict) else {}
+        if data.get("character_id") == character_id:
+            think_idx = i
+            break
+
+    if think_idx is not None:
+        prev = events[think_idx]
+        data = dict(prev.get("data") or {})
+        data["character_id"] = character_id
+        data["thought_content"] = thought
+        events[think_idx] = {**prev, "type": "agent_think", "data": data}
+        return events
+
+    speak = events[speak_index]
+    insert = {
+        "type": "agent_think",
+        "data": {
+            "character_id": character_id,
+            "thought_content": thought,
+        },
+    }
+    if speak.get("recommended_model"):
+        insert["recommended_model"] = speak["recommended_model"]
+    events.insert(speak_index, insert)
+    return events
 # ---------------------------------------------------------------------------
 # Crew-mode chat message handler
 # ---------------------------------------------------------------------------
@@ -1359,136 +1415,196 @@ class DirectorAgent:
         except Exception:
             logger.debug("Continuity board load failed for beat %s", beat_index + 1)
             continuity_board = None
-        # Prior spoken lines in this beat (later speakers hear earlier ones).
+        # ------------------------------------------------------------------
+        # Phase 1 — Character Policy polish (speak + thinking)
+        # Director drafts the beat skeleton; Character Agents own mouth and
+        # mind. We rewrite agent_speak and bind thinking into agent_think
+        # BEFORE any yield so the UI never streams Director-generic thoughts.
+        # ------------------------------------------------------------------
         prior_spoken_lines: list[dict[str, str]] = []
+        i = 0
+        while i < len(events):
+            evt = events[i]
+            evt_type = evt.get("type", "")
+            evt_data = dict(evt.get("data") or {}) if isinstance(evt.get("data"), dict) else {}
+            if evt_type != "agent_speak":
+                i += 1
+                continue
+
+            character_id = str(evt_data.get("character_id") or "")
+            character_cls = CHARACTER_AGENTS.get(character_id)
+            char_thinking: str | None = None
+            if character_cls is not None:
+                character_agent = character_cls(self.provider)
+                dossier_context = ""
+                if session_factory is not None:
+                    try:
+                        async with session_factory() as sess:
+                            from db.models import CharacterDossier
+                            stmt = select(CharacterDossier).where(
+                                CharacterDossier.session_id == session_id,
+                            )
+                            result = await sess.execute(stmt)
+                            all_dossiers = result.scalars().all()
+                            from agents.memory import format_dossier_context
+                            dossier_context = format_dossier_context(
+                                list(all_dossiers), character_id,
+                            )
+                    except Exception:
+                        logger.debug("Dossier load failed for %s", character_id)
+                if continuity_board is not None:
+                    try:
+                        board_view = filter_board_for_character(
+                            continuity_board, character_id
+                        )
+                        board_block = format_board_prompt(
+                            board_view, character_id=character_id
+                        )
+                        dossier_context = (
+                            f"{dossier_context}\n\n{board_block}".strip()
+                            if dossier_context
+                            else board_block
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Continuity board inject failed for %s", character_id
+                        )
+                peer_context: list[dict[str, str]] = []
+                for prior in prior_spoken_lines:
+                    peer_context.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[Already said in this scene by "
+                                f"{prior['character_id']}]: {prior['content']}"
+                            ),
+                        }
+                    )
+                try:
+                    speak_lang_note = (
+                        "台词 content 必须用简体中文。不要用英文对白。"
+                        "只写角色说出口的话：禁止任何括号舞台指示或旁白评语"
+                        "（禁止「（声音放低，像是…）」「（眼神…）」「仿佛/像是/带着…的神情」）。"
+                        "动作与目光进 agent_act，不进台词。"
+                        "thinking 必须是该角色私密内心（1-3 句），从面具底下写，"
+                        "禁止旁白腔、禁止解说剧情功能。"
+                        "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
+                        "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯、"
+                        "Hank→汉克、Todd→托德（禁托霍）、Jack Welker→杰克·维尔克"
+                        "（禁杰克·托霍）、Tuco→图科。"
+                        if _norm_lang(language) == "zh"
+                        else (
+                            "Dialogue content must be English. "
+                            "Spoken words only: no parenthetical stage directions "
+                            "or narrator similes. "
+                            "thinking must be this character's private inner monologue "
+                            "(1-3 sentences), from under the public mask — not narrator "
+                            "commentary or plot-function exposition. "
+                            "Physical action belongs in agent_act, not in dialogue."
+                        )
+                    )
+                    prior_note = ""
+                    if prior_spoken_lines:
+                        prior_note = (
+                            "Earlier lines in this beat already happened; "
+                            "continue from them, do not restart the scene.\n"
+                        )
+                    director_draft = str(evt_data.get("content") or "").strip()
+                    draft_note = (
+                        f"Director draft line (facts only; rewrite in-character): "
+                        f"{director_draft}\n"
+                        if director_draft
+                        else ""
+                    )
+                    sub_result = await character_agent.respond_structured(
+                        context=peer_context,
+                        user_message=(
+                            f"{_language_directive(language)}\n\n"
+                            f"{speak_lang_note}\n"
+                            f"{prior_note}"
+                            f"{draft_note}"
+                            f"Scene: {scene_desc}\nContext: {task}\n"
+                            "Respond in character. Fill reply_text AND thinking."
+                        ),
+                        model_route=beat_model_route,
+                        voice_example=voice_example,
+                        dossier_context=dossier_context or None,
+                    )
+                    reply = sub_result["reply_text"]
+                    if _norm_lang(language) == "zh" and _needs_zh_rewrite(reply):
+                        reply = await self._translate_one_field_to_zh(
+                            reply, model_route=beat_model_route
+                        )
+                    if _norm_lang(language) == "zh":
+                        reply = normalize_zh_character_names(reply)
+                    reply = sanitize_speak_content(reply)
+                    char_thinking = (sub_result.get("thinking") or "").strip() or None
+                    if char_thinking and _norm_lang(language) == "zh":
+                        if _needs_zh_rewrite(char_thinking):
+                            char_thinking = await self._translate_one_field_to_zh(
+                                char_thinking, model_route=beat_model_route
+                            )
+                        char_thinking = normalize_zh_character_names(char_thinking)
+                    evt_data = {
+                        **evt_data,
+                        "content": reply,
+                        "emotion_state": sub_result["emotion_state"]
+                        or evt_data.get("emotion_state"),
+                        "gif_search_query": sub_result["gif_search_query"]
+                        or evt_data.get("gif_search_query"),
+                    }
+                except Exception:
+                    logger.warning(
+                        "Character sub-agent call failed for %s, using LLM dialogue fallback",
+                        character_id,
+                    )
+
+            # Always purify speak content (director draft fallback path included).
+            cleaned = sanitize_speak_content(str(evt_data.get("content") or ""))
+            if _norm_lang(language) == "zh":
+                cleaned = normalize_zh_character_names(cleaned)
+            evt_data = {**evt_data, "content": cleaned}
+            events[i] = {**evt, "type": "agent_speak", "data": evt_data}
+
+            if char_thinking:
+                events = apply_character_thinking(
+                    events,
+                    character_id,
+                    char_thinking,
+                    speak_index=i,
+                )
+                # Insertion shifts speak to i+1; advance past think+speak.
+                if (
+                    i < len(events)
+                    and events[i].get("type") == "agent_think"
+                    and (events[i].get("data") or {}).get("character_id") == character_id
+                    and i + 1 < len(events)
+                    and events[i + 1].get("type") == "agent_speak"
+                ):
+                    i += 2
+                    content = cleaned.strip()
+                    if content:
+                        prior_spoken_lines.append(
+                            {"character_id": character_id, "content": content}
+                        )
+                    continue
+
+            content = cleaned.strip()
+            if content:
+                prior_spoken_lines.append(
+                    {"character_id": character_id, "content": content}
+                )
+            i += 1
+
+        # ------------------------------------------------------------------
+        # Phase 2 — yield enriched events (think already Character-bound)
+        # ------------------------------------------------------------------
         for evt in events:
             evt_type = evt.get("type", "")
-            evt_data = evt.get("data", {})
+            evt_data = evt.get("data", {}) if isinstance(evt.get("data"), dict) else {}
+            # Final speak purify (idempotent).
             if evt_type == "agent_speak":
-                # Call the actual character agent for authentic dialogue.
-                # Cycle 37 (Additional #2): use respond_structured so the
-                # sub-agent returns emotion_state and gif_search_query
-                # alongside the rewritten content from the SAME LLM call
-                # (no extra token cost). This keeps the three fields in
-                # sync - the UI shows emotion and GIF that match the final
-                # displayed text, not the Director's original draft. If
-                # the sub-agent response lacks structured metadata (plain
-                # text fallback), keep the Director-provided values.
-                character_id = evt_data.get("character_id", "")
-                character_cls = CHARACTER_AGENTS.get(character_id)
-                if character_cls is not None:
-                    character_agent = character_cls(self.provider)
-                    # Load dossiers for this character if session_factory available
-                    dossier_context = ""
-                    if session_factory is not None:
-                        try:
-                            async with session_factory() as sess:
-                                from db.models import CharacterDossier
-                                stmt = select(CharacterDossier).where(
-                                    CharacterDossier.session_id == session_id,
-                                )
-                                result = await sess.execute(stmt)
-                                all_dossiers = result.scalars().all()
-                                from agents.memory import format_dossier_context
-                                dossier_context = format_dossier_context(
-                                    list(all_dossiers), character_id,
-                                )
-                        except Exception:
-                            logger.debug("Dossier load failed for %s", character_id)
-                    # Inject filtered Continuity Board slice (room memory).
-                    if continuity_board is not None:
-                        try:
-                            board_view = filter_board_for_character(
-                                continuity_board, character_id
-                            )
-                            board_block = format_board_prompt(
-                                board_view, character_id=character_id
-                            )
-                            dossier_context = (
-                                f"{dossier_context}\n\n{board_block}".strip()
-                                if dossier_context
-                                else board_block
-                            )
-                        except Exception:
-                            logger.debug(
-                                "Continuity board inject failed for %s", character_id
-                            )
-                    # Later speakers hear previous spoken lines this beat.
-                    peer_context: list[dict[str, str]] = []
-                    for prior in prior_spoken_lines:
-                        peer_context.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"[Already said in this scene by "
-                                    f"{prior['character_id']}]: {prior['content']}"
-                                ),
-                            }
-                        )
-                    try:
-                        speak_lang_note = (
-                            "台词 content 必须用简体中文。不要用英文对白。"
-                            "只写角色说出口的话：禁止任何括号舞台指示或旁白评语"
-                            "（禁止「（声音放低，像是…）」「（眼神…）」「仿佛/像是/带着…的神情」）。"
-                            "动作与目光进 agent_act，不进台词。"
-                            "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
-                            "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯、"
-                            "Hank→汉克、Todd→托德（禁托霍）、Jack Welker→杰克·维尔克"
-                            "（禁杰克·托霍）、Tuco→图科。"
-                            if _norm_lang(language) == "zh"
-                            else (
-                                "Dialogue content must be English. "
-                                "Spoken words only: no parenthetical stage directions "
-                                "or narrator similes (ban '(voice lowers, as if…)', "
-                                "'(glances…)', 'like a teacher'). "
-                                "Physical action belongs in agent_act, not in dialogue."
-                            )
-                        )
-                        prior_note = ""
-                        if prior_spoken_lines:
-                            prior_note = (
-                                "Earlier lines in this beat already happened; "
-                                "continue from them, do not restart the scene.\n"
-                            )
-                        sub_result = await character_agent.respond_structured(
-                            context=peer_context,
-                            user_message=(
-                                f"{_language_directive(language)}\n\n"
-                                f"{speak_lang_note}\n"
-                                f"{prior_note}"
-                                f"Scene: {scene_desc}\nContext: {task}\n"
-                                "Respond in character."
-                            ),
-                            model_route=beat_model_route,
-                            voice_example=voice_example,
-                            dossier_context=dossier_context or None,
-                        )
-                        reply = sub_result["reply_text"]
-                        # Sub-agent can still leak English under English scene/task.
-                        if _norm_lang(language) == "zh" and _needs_zh_rewrite(reply):
-                            reply = await self._translate_one_field_to_zh(
-                                reply, model_route=beat_model_route
-                            )
-                        if _norm_lang(language) == "zh":
-                            reply = normalize_zh_character_names(reply)
-                        reply = sanitize_speak_content(reply)
-                        evt_data = {
-                            **evt_data,
-                            "content": reply,
-                            "emotion_state": sub_result["emotion_state"]
-                            or evt_data.get("emotion_state"),
-                            "gif_search_query": sub_result["gif_search_query"]
-                            or evt_data.get("gif_search_query"),
-                        }
-                    except Exception:
-                        logger.warning(
-                            "Character sub-agent call failed for %s, using LLM dialogue fallback",
-                            evt_data.get("character_id"),
-                        )
-            # Always purify speak content (director draft fallback path included).
-            if evt_type == "agent_speak":
-                raw_content = str(evt_data.get("content") or "")
-                cleaned = sanitize_speak_content(raw_content)
+                cleaned = sanitize_speak_content(str(evt_data.get("content") or ""))
                 if _norm_lang(language) == "zh":
                     cleaned = normalize_zh_character_names(cleaned)
                 evt_data = {**evt_data, "content": cleaned}
@@ -1505,15 +1621,9 @@ class DirectorAgent:
             # dialogue and are intentionally not persisted here.
             if evt_type == "agent_speak":
                 speak_events_to_persist.append(evt_data)
-                content = str(evt_data.get("content") or "").strip()
-                if content:
-                    prior_spoken_lines.append(
-                        {
-                            "character_id": str(evt_data.get("character_id") or ""),
-                            "content": content,
-                        }
-                    )
-            beat_events_for_dossier.append(evt)
+            beat_events_for_dossier.append(
+                {"type": evt_type, "data": evt_data, "recommended_model": evt.get("recommended_model")}
+            )
         # Persist agent_speak Messages + update dossiers. All writes share
         # ONE session because:
         #  - Messages are committed before update_dossiers (L5 fix) so they
