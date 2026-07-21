@@ -656,7 +656,21 @@ async def session_action(
                 status_code=400,
                 detail="target_character is required for switch_perspective action",
             )
-        session.active_character_id = payload.target_character
+        # Persist canonical frontend short id when possible (walter/jesse/…).
+        from agents.director import (
+            BACKEND_TO_FRONTEND_ID,
+            FRONTEND_TO_BACKEND_ID,
+            resolve_backend_character_id,
+        )
+
+        raw_target = payload.target_character.strip()
+        backend_name = resolve_backend_character_id(raw_target)
+        if backend_name and backend_name in BACKEND_TO_FRONTEND_ID:
+            session.active_character_id = BACKEND_TO_FRONTEND_ID[backend_name]
+        elif raw_target.lower() in FRONTEND_TO_BACKEND_ID:
+            session.active_character_id = raw_target.lower()
+        else:
+            session.active_character_id = raw_target
         session.status = "active"
 
     elif action == "continue_chapter":
