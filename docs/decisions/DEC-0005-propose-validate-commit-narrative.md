@@ -124,8 +124,8 @@ internals (see also scene-label sanitization).
 
 | Phase | Ship | Success |
 |-------|------|---------|
-| **P0** | This ADR + Pydantic contracts + CONTEXT glossary | Types importable; tests round-trip JSON |
-| **P1** | Director emits Beat Contract; Characters emit Turn Proposal for speak/think | Story still SSE-compatible; think from character policy |
+| **P0** | This ADR + Pydantic contracts + CONTEXT glossary | Types importable; tests round-trip JSON ✅ |
+| **P1** | Director emits Beat Contract; Characters emit Turn Proposal for speak/think | Story still SSE-compatible; think from character policy ✅ (envelope + synthesize + Turn Proposal commit) |
 | **P2** | World Validator (knowledge + forbidden_outcomes) | Violations repaired or blocked with actionable error |
 | **P3** | Narrative Critic scoring + optional second candidate | Measurable drop in "generic" act/think |
 | **P4** | State Reducer sole writer of Continuity Board deltas | No free-text world mutation from LLM |

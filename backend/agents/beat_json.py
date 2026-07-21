@@ -95,17 +95,18 @@ def _coerce_event_list(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
-def parse_beat_events(text: str | None) -> list[dict[str, Any]]:
-    """Extract beat event objects from an LLM response.
+def _extract_contract_raw(payload: Any) -> dict[str, Any] | None:
+    """Pull Beat Contract dict from DEC-0005 envelope if present."""
+    if not isinstance(payload, dict):
+        return None
+    for key in ("contract", "beat_contract", "beatContract"):
+        raw = payload.get(key)
+        if isinstance(raw, dict) and raw:
+            return raw
+    return None
 
-    Tries, in order:
-    1. Markdown fenced JSON
-    2. Balanced JSON array
-    3. Balanced JSON object (single event or wrapper)
-    4. First-to-last bracket fallback (legacy)
-    """
-    if not text:
-        return []
+
+def _iter_payload_candidates(text: str) -> list[Any]:
     cleaned = _strip_noise(text)
     if not cleaned:
         return []
@@ -133,7 +134,6 @@ def parse_beat_events(text: str | None) -> list[dict[str, Any]]:
     if s >= 0 and e > s:
         candidates.append(cleaned[s : e + 1])
 
-    # De-dupe while preserving order
     seen: set[str] = set()
     unique: list[str] = []
     for c in candidates:
@@ -141,18 +141,57 @@ def parse_beat_events(text: str | None) -> list[dict[str, Any]]:
             seen.add(c)
             unique.append(c)
 
+    payloads: list[Any] = []
     for cand in unique:
         payload = _loads_lenient(cand)
-        events = _coerce_event_list(payload)
-        if events:
-            return events
+        if payload is not None:
+            payloads.append(payload)
+    return payloads
 
+
+def parse_beat_plan(text: str | None) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Extract (events, contract_raw) from LLM beat planning output.
+
+    Supports legacy JSON arrays and DEC-0005 envelopes:
+    ``{ "contract": {...}, "events": [...] }``.
+    """
+    if not text:
+        return [], None
+
+    best_events: list[dict[str, Any]] = []
+    best_contract: dict[str, Any] | None = None
+
+    for payload in _iter_payload_candidates(text):
+        contract_raw = _extract_contract_raw(payload)
+        events = _coerce_event_list(payload)
+        if contract_raw and not best_contract:
+            best_contract = contract_raw
+        if events and (not best_events or (contract_raw and not best_events)):
+            # Prefer payloads that carry both contract + events.
+            if contract_raw and events:
+                return events, contract_raw
+            if not best_events:
+                best_events = events
+        elif contract_raw and not best_events:
+            # Contract-only object — keep looking for events in other slices.
+            best_contract = best_contract or contract_raw
+
+    if best_events:
+        return best_events, best_contract
+
+    cleaned = _strip_noise(text or "")
     logger.warning(
         "beat_json: parse failed len=%d preview=%r",
         len(cleaned),
         cleaned[:400].replace("\n", "\\n"),
     )
-    return []
+    return [], best_contract
+
+
+def parse_beat_events(text: str | None) -> list[dict[str, Any]]:
+    """Extract beat event objects from an LLM response (legacy entrypoint)."""
+    events, _contract = parse_beat_plan(text)
+    return events
 
 
 def parse_preview(text: str | None, *, limit: int = 240) -> str:

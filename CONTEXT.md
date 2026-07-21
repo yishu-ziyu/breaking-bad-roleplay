@@ -48,7 +48,7 @@ Shared product language. Update when hard decisions land.
 - Contracts: `backend/agents/narrative_contracts.py`
 - ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
 - Transitional SSE map: inner_monologue→`agent_think`, action→`agent_act`, line→`agent_speak`
-- As-built today: Director still emits concrete events; Character rewrites speak (+ thinking bind). P1+ migrates to contracts.
+- **P1 as-built:** Director prefers `{contract, events}` envelope (legacy array OK); contract synthesized if missing. Character path builds **Turn Proposal** from structured reply+thinking, validates vs contract, commits line/think (and refreshes act). `beat_ready` carries contract summary (cast/role/location only).
 
 ## Modes
 
