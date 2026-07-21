@@ -1,5 +1,5 @@
 """Tests for Director beat JSON parsing resilience."""
-from agents.director import DirectorAgent
+from agents.director import DirectorAgent, resolve_backend_character_id
 
 
 class TestBeatParsing:
@@ -36,3 +36,9 @@ class TestBeatParsing:
         raw = 'Walter walks into the room and says hello.'
         events = DirectorAgent._parse_beat_events(raw)
         assert events == []
+
+    def test_resolve_character_ids(self):
+        assert resolve_backend_character_id("hank") == "Hank Schrader"
+        assert resolve_backend_character_id("Hank Schrader") == "Hank Schrader"
+        assert resolve_backend_character_id("HANK") == "Hank Schrader"
+        assert resolve_backend_character_id("walter white") == "Walter White"
