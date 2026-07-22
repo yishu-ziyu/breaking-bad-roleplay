@@ -16,8 +16,26 @@ from agents.characters import (
     HankSchrader,
 )
 from agents import mckee_story
-from agents.beat_json import parse_beat_events as extract_beat_events, parse_preview
+from agents.beat_json import (
+    parse_beat_events as extract_beat_events,
+    parse_beat_plan,
+    parse_preview,
+)
 from agents.speak_sanitize import sanitize_speak_content
+from agents.narrative_contracts import (
+    ActionProposal,
+    BeatContract,
+    ensure_actor_on_contract,
+    synthesize_beat_contract,
+    try_parse_beat_contract,
+    turn_proposal_from_character_result,
+    upsert_agent_act_from_turn,
+    validate_turn_against_contract_basic,
+)
+from scenes.action_ontology import map_action_verb
+from scenes.state_reducer import apply_validated_turn
+from scenes.validator import validate_world_turn
+from scenes.world_mode import parse_world_mode
 from models.schemas import AgentEvent
 from agents.memory import update_dossiers
 from sqlalchemy import select
@@ -1247,7 +1265,25 @@ class DirectorAgent:
             outline_text=outline,
         )
         beat_prompt += (
-            "Generate the events for this beat as a JSON array. "
+            "PREFERRED OUTPUT (DEC-0005 Beat Contract + events): a single JSON object:\n"
+            "{\n"
+            '  "contract": {\n'
+            f'    "beat_id": "beat_{beat_index + 1:02d}",\n'
+            f'    "dramatic_role": "{mckee_role or "progressive"}",\n'
+            '    "location_id": "<short location slug>",\n'
+            '    "present_characters": ["walter","jesse", ... short ids only],\n'
+            '    "value_before": "<private dramatic value before>",\n'
+            '    "value_after": "<private dramatic value after>",\n'
+            '    "dramatic_question": "<what must be answered this beat>",\n'
+            '    "pressure_source": "<what presses the cast>",\n'
+            '    "required_outcome": ["..."],\n'
+            '    "forbidden_outcomes": ["character learns unknown facts", "..."]\n'
+            "  },\n"
+            '  "events": [ /* legacy event array — see system prompt */ ]\n'
+            "}\n"
+            "Contract is authorial intent only — do NOT put final spoken lines in the contract. "
+            "agent_speak.content in events may be draft; Character Agents own final dialogue. "
+            "Legacy fallback: if you cannot emit a contract, emit the events JSON array alone.\n"
             "Keep the beat concise: include at most two agent_speak events total. "
             "Include only one scene_change if needed. Include brief agent_act and agent_think events. "
             "End with one world_state_delta containing only concrete changed facts. "
@@ -1288,8 +1324,8 @@ class DirectorAgent:
             )
             yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
             return
-        # Parse the LLM response as event array (resilient extractor).
-        events = self._parse_beat_events(llm_response)
+        # Parse LLM response as DEC-0005 plan (contract + events) or legacy array.
+        events, contract_raw = parse_beat_plan(llm_response)
         if not events:
             # One repair pass: models often emit prose + broken JSON after
             # perspective switches (longer constraints). Ask for JSON-only.
@@ -1304,15 +1340,16 @@ class DirectorAgent:
                     "role": "system",
                     "content": (
                         "You repair broken story-beat JSON. "
-                        "Output ONLY a JSON array of event objects. No markdown, no prose."
+                        "Prefer {\"contract\":{...},\"events\":[...]} (DEC-0005). "
+                        "Or a plain JSON array of event objects. No markdown, no prose."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
                         f"{lang_directive}\n\n"
-                        "The previous model output could not be parsed as a beat event array.\n"
-                        "Re-emit a valid JSON array for this beat with the same rules:\n"
+                        "The previous model output could not be parsed as a beat plan.\n"
+                        "Re-emit valid JSON for this beat with the same rules:\n"
                         "- types: scene_change | agent_act | agent_think | agent_speak | world_state_delta\n"
                         f"- at most two agent_speak; first speak character_id must be "
                         f"\"{active_character_id}\" if set\n"
@@ -1328,7 +1365,9 @@ class DirectorAgent:
                 repaired = await self.provider.call_model(
                     repair_messages, self.model_route, max_tokens=4096
                 )
-                events = self._parse_beat_events(repaired)
+                events, repair_contract = parse_beat_plan(repaired)
+                if repair_contract and not contract_raw:
+                    contract_raw = repair_contract
             except Exception:
                 logger.exception("Beat %d JSON repair call failed", beat_index + 1)
                 events = []
@@ -1386,6 +1425,31 @@ class DirectorAgent:
                 scene_context=scene_desc,
                 characters=characters_in_scene,
             )
+        # ------------------------------------------------------------------
+        # DEC-0005 P1 — Beat Contract (Director authority)
+        # Prefer LLM contract; synthesize from events if omitted.
+        # ------------------------------------------------------------------
+        beat_contract: BeatContract | None = try_parse_beat_contract(contract_raw)
+        if beat_contract is None:
+            beat_contract = synthesize_beat_contract(
+                beat_index=beat_index,
+                scene_desc=scene_desc or "",
+                location_id=current_scene or scene_desc or "unknown",
+                dramatic_role=mckee_role or "progressive",
+                events=events,
+                active_backend_id=active_character_id,
+            )
+            logger.info(
+                "Beat %d: synthesized BeatContract (LLM contract missing/invalid)",
+                beat_index + 1,
+            )
+        else:
+            logger.info(
+                "Beat %d: BeatContract ok role=%s cast=%s",
+                beat_index + 1,
+                beat_contract.dramatic_role,
+                beat_contract.present_characters,
+            )
         # Process each event - substitute real character responses for agent_speak
         beat_events_for_dossier: list[dict[str, Any]] = []
         # agent_speak event payloads collected during the loop; persisted
@@ -1416,10 +1480,10 @@ class DirectorAgent:
             logger.debug("Continuity board load failed for beat %s", beat_index + 1)
             continuity_board = None
         # ------------------------------------------------------------------
-        # Phase 1 — Character Policy polish (speak + thinking)
-        # Director drafts the beat skeleton; Character Agents own mouth and
-        # mind. We rewrite agent_speak and bind thinking into agent_think
-        # BEFORE any yield so the UI never streams Director-generic thoughts.
+        # Phase 1 — Character Policy owns act + mind + line (Turn Proposal)
+        # Director: Beat Contract + optional event skeleton only.
+        # Character: action (closed verb), inner_monologue, speech strategy, line.
+        # Rewrite BEFORE any yield so UI never streams Director-generic mind/act.
         # ------------------------------------------------------------------
         prior_spoken_lines: list[dict[str, str]] = []
         i = 0
@@ -1482,10 +1546,10 @@ class DirectorAgent:
                     )
                 try:
                     speak_lang_note = (
-                        "台词 content 必须用简体中文。不要用英文对白。"
+                        "台词 reply_text 必须用简体中文。不要用英文对白。"
                         "只写角色说出口的话：禁止任何括号舞台指示或旁白评语"
                         "（禁止「（声音放低，像是…）」「（眼神…）」「仿佛/像是/带着…的神情」）。"
-                        "动作与目光进 agent_act，不进台词。"
+                        "物理动作必须写在 action.verb（封闭词表），禁止写进台词。"
                         "thinking 必须是该角色私密内心（1-3 句），从面具底下写，"
                         "禁止旁白腔、禁止解说剧情功能。"
                         "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
@@ -1494,13 +1558,13 @@ class DirectorAgent:
                         "（禁杰克·托霍）、Tuco→图科。"
                         if _norm_lang(language) == "zh"
                         else (
-                            "Dialogue content must be English. "
+                            "Dialogue reply_text must be English. "
                             "Spoken words only: no parenthetical stage directions "
                             "or narrator similes. "
+                            "YOU own physical action via action.verb (closed ontology). "
                             "thinking must be this character's private inner monologue "
                             "(1-3 sentences), from under the public mask — not narrator "
-                            "commentary or plot-function exposition. "
-                            "Physical action belongs in agent_act, not in dialogue."
+                            "commentary or plot-function exposition."
                         )
                     )
                     prior_note = ""
@@ -1511,24 +1575,38 @@ class DirectorAgent:
                         )
                     director_draft = str(evt_data.get("content") or "").strip()
                     draft_note = (
-                        f"Director draft line (facts only; rewrite in-character): "
+                        f"Director draft line is optional scene pressure only "
+                        f"(facts may be wrong for your knowledge — rewrite):\n"
                         f"{director_draft}\n"
                         if director_draft
                         else ""
                     )
+                    contract_note = ""
+                    if beat_contract is not None:
+                        contract_note = (
+                            f"Beat Contract (authorial intent — obey constraints, "
+                            f"do not dump craft labels into dialogue):\n"
+                            f"- role: {beat_contract.dramatic_role}\n"
+                            f"- dramatic_question: {beat_contract.dramatic_question}\n"
+                            f"- pressure: {beat_contract.pressure_source}\n"
+                            f"- forbidden: {beat_contract.forbidden_outcomes}\n"
+                        )
                     sub_result = await character_agent.respond_structured(
                         context=peer_context,
                         user_message=(
                             f"{_language_directive(language)}\n\n"
                             f"{speak_lang_note}\n"
                             f"{prior_note}"
+                            f"{contract_note}"
                             f"{draft_note}"
                             f"Scene: {scene_desc}\nContext: {task}\n"
-                            "Respond in character. Fill reply_text AND thinking."
+                            "Respond as Character Policy: fill action, thinking, "
+                            "speech strategy fields, and reply_text."
                         ),
                         model_route=beat_model_route,
                         voice_example=voice_example,
                         dossier_context=dossier_context or None,
+                        policy_turn=True,
                     )
                     reply = sub_result["reply_text"]
                     if _norm_lang(language) == "zh" and _needs_zh_rewrite(reply):
@@ -1545,14 +1623,136 @@ class DirectorAgent:
                                 char_thinking, model_route=beat_model_route
                             )
                         char_thinking = normalize_zh_character_names(char_thinking)
+
+                    # Director act is fallback only if Character omitted action.
+                    director_action: str | None = None
+                    for j in range(i - 1, -1, -1):
+                        prev = events[j]
+                        if prev.get("type") != "agent_act":
+                            continue
+                        pdata = prev.get("data") if isinstance(prev.get("data"), dict) else {}
+                        if pdata.get("character_id") == character_id:
+                            if pdata.get("source") != "character_policy":
+                                director_action = (
+                                    str(pdata.get("action") or "").strip() or None
+                                )
+                            break
+
+                    observed = [
+                        f"{p['character_id']}: {p['content']}"
+                        for p in prior_spoken_lines
+                        if p.get("content")
+                    ]
+                    turn = turn_proposal_from_character_result(
+                        backend_character_id=character_id,
+                        reply_text=reply,
+                        thinking=char_thinking,
+                        emotion_state=sub_result.get("emotion_state")
+                        or evt_data.get("emotion_state"),
+                        director_action=director_action,
+                        character_action=sub_result.get("action"),
+                        observed_facts=observed,
+                        private_goal=str(sub_result.get("private_goal") or ""),
+                        fear=str(sub_result.get("fear") or ""),
+                        relationship_tactic=str(
+                            sub_result.get("relationship_tactic") or ""
+                        ),
+                        speech_act=str(sub_result.get("speech_act") or ""),
+                        surface_intent=str(sub_result.get("surface_intent") or ""),
+                        subtext=str(sub_result.get("subtext") or ""),
+                    )
+                    # Canonicalize action verb onto the closed ontology.
+                    if turn.action and (turn.action.verb or "").strip():
+                        canon_verb, _mapped = map_action_verb(turn.action.verb)
+                        turn = turn.model_copy(
+                            update={
+                                "action": turn.action.model_copy(
+                                    update={"verb": canon_verb}
+                                )
+                            }
+                        )
+                    elif turn.action is None:
+                        # Character must still stage something executable.
+                        turn = turn.model_copy(
+                            update={"action": ActionProposal(verb="idle_tense")}
+                        )
+                    # Speakers implied by director drafts are always legal cast.
+                    beat_contract = ensure_actor_on_contract(beat_contract, character_id)
+                    basic = validate_turn_against_contract_basic(beat_contract, turn)
+                    world_mode = parse_world_mode(
+                        context.get("world_mode") or context.get("worldMode")
+                    )
+                    world = validate_world_turn(
+                        beat_contract,
+                        turn,
+                        board=continuity_board,
+                        world_mode=world_mode,
+                    )
+                    v_ok = basic.ok and world.ok
+                    if not v_ok:
+                        logger.warning(
+                            "Beat %d world/turn validation failed for %s mode=%s: %s",
+                            beat_index + 1,
+                            character_id,
+                            world_mode,
+                            [iss.model_dump() for iss in (basic.issues + world.issues)],
+                        )
+                    # Hard knowledge / presence failure: strip monologue that
+                    # leaks, keep sanitized line if still speakable.
+                    if not world.ok and any(
+                        iss.code == "knowledge_boundary" and iss.severity == "error"
+                        for iss in world.issues
+                    ):
+                        turn = turn.model_copy(update={"inner_monologue": ""})
+                        char_thinking = None
+                    if not v_ok and any(
+                        iss.code in ("actor_removed", "empty_turn")
+                        and iss.severity == "error"
+                        for iss in (basic.issues + world.issues)
+                    ):
+                        # Do not commit speech for dead/removed actors.
+                        reply = ""
+                        turn = turn.model_copy(update={"line": "", "inner_monologue": ""})
+                        char_thinking = None
+                    # Commit Turn Proposal → speak fields (SSE-compatible).
+                    reply = sanitize_speak_content(turn.line or reply)
+                    char_thinking = (turn.inner_monologue or char_thinking or "").strip() or None
                     evt_data = {
                         **evt_data,
                         "content": reply,
-                        "emotion_state": sub_result["emotion_state"]
+                        "emotion_state": turn.emotion_state
+                        or sub_result["emotion_state"]
                         or evt_data.get("emotion_state"),
                         "gif_search_query": sub_result["gif_search_query"]
                         or evt_data.get("gif_search_query"),
+                        "speech_act": turn.speech_act or None,
+                        "surface_intent": turn.surface_intent or None,
+                        "subtext": turn.subtext or None,
+                        "relationship_tactic": turn.relationship_tactic or None,
+                        "private_goal": turn.private_goal or None,
+                        "turn_validation_ok": v_ok,
+                        "world_mode": world_mode,
+                        "action_source": "character_policy",
                     }
+                    # Character Policy action overwrites/inserts agent_act.
+                    events, i = upsert_agent_act_from_turn(
+                        events,
+                        backend_character_id=character_id,
+                        turn=turn,
+                        speak_index=i,
+                    )
+                    # Deterministic board commit only when hard validation passed.
+                    if v_ok and continuity_board is not None:
+                        try:
+                            continuity_board = apply_validated_turn(
+                                continuity_board, turn, beat_index=beat_index
+                            )
+                        except Exception:
+                            logger.debug(
+                                "State reducer failed for %s beat %s",
+                                character_id,
+                                beat_index + 1,
+                            )
                 except Exception:
                     logger.warning(
                         "Character sub-agent call failed for %s, using LLM dialogue fallback",
@@ -1710,9 +1910,12 @@ class DirectorAgent:
                 logger.debug(
                     "Continuity board save failed for beat %s", beat_index + 1
                 )
-        # Signal beat completion
+        # Signal beat completion (attach contract summary for clients/debug).
         yield self._beat_ready_event(
-            beat_index, scene_desc, mckee_role=mckee_role
+            beat_index,
+            scene_desc,
+            mckee_role=mckee_role,
+            beat_contract=beat_contract,
         )
 
     async def _translate_one_field_to_zh(
@@ -1976,6 +2179,7 @@ class DirectorAgent:
         summary: str,
         *,
         mckee_role: str | None = None,
+        beat_contract: BeatContract | None = None,
     ) -> AgentEvent:
         data: dict[str, Any] = {
             "beat_id": f"beat_{beat_index + 1}",
@@ -1983,6 +2187,14 @@ class DirectorAgent:
         }
         if mckee_role:
             data["mckee_role"] = mckee_role
+        if beat_contract is not None:
+            # Authorial intent only — never player-facing craft dump.
+            data["beat_contract"] = {
+                "beat_id": beat_contract.beat_id,
+                "dramatic_role": beat_contract.dramatic_role,
+                "location_id": beat_contract.location_id,
+                "present_characters": list(beat_contract.present_characters),
+            }
         return AgentEvent(type="beat_ready", data=data)
     @staticmethod
     def _parse_beat_events(text: str) -> list[dict[str, Any]]:

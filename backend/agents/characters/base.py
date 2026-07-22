@@ -48,14 +48,74 @@ RULES:
 - Do NOT include any fields outside this schema.
 """
 
+# Story-mode Turn Proposal (DEC-0005): Character Policy owns act + mind + line.
+TURN_POLICY_OUTPUT_PROMPT = """\
+
+Respond ONLY with a single JSON object (no markdown fences, no extra text):
+
+{
+  "reply_text": "<spoken dialogue only — pure words, no stage directions>",
+  "emotion_state": "<calm|tense|angry|fearful|manipulative|guilty|resigned|desperate>",
+  "gif_search_query": "<English visual emotion search phrase>",
+  "thinking": "<diegetic inner monologue 1-3 sentences; known facts only; not a paraphrase of the line>",
+  "private_goal": "<what this character wants in this beat>",
+  "fear": "<what they fear if they lose control of the moment>",
+  "relationship_tactic": "<how they play the person opposite them>",
+  "speech_act": "<e.g. implied_threat|deflect|confess|bargain|correct|probe>",
+  "surface_intent": "<what the line pretends to do>",
+  "subtext": "<what the line really does>",
+  "action": {
+    "verb": "<one of: enter, exit, walk_to, sit, stand, turn_to, look_at, gesture, hand_over, open, close, idle, idle_tense>",
+    "target_id": "<short id of person/object or null>",
+    "destination_anchor": "<stage anchor id or null, e.g. desk_front>",
+    "animation": "<optional animation hint or null>",
+    "preconditions": ["optional"],
+    "effects": ["optional short effect strings"]
+  },
+  "tool_executed": null,
+  "tool_log": null
+}
+
+RULES:
+- YOU decide the physical action. Do not wait for the Director to invent it.
+- action.verb MUST be from the closed list above (or the runtime maps to idle_tense).
+- reply_text is spoken words only — never parentheticals or narrator similes.
+- thinking is audience-facing inner monologue from under the public mask; only facts this character knows.
+- speech_act + surface_intent + subtext + relationship_tactic come BEFORE polishing the sentence.
+- Do NOT include fields outside this schema.
+"""
+
+
+def _normalize_action_field(raw: object) -> dict | None:
+    """Coerce model action object / string into a dict or None."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        s = raw.strip()
+        return {"verb": s} if s else None
+    if isinstance(raw, dict):
+        verb = raw.get("verb") or raw.get("action") or ""
+        if not str(verb).strip() and not raw.get("destination_anchor"):
+            return None
+        return {
+            "verb": str(verb or "idle_tense").strip(),
+            "target_id": raw.get("target_id") or raw.get("target"),
+            "destination_anchor": raw.get("destination_anchor") or raw.get("anchor"),
+            "animation": raw.get("animation"),
+            "preconditions": list(raw.get("preconditions") or []),
+            "effects": list(raw.get("effects") or []),
+        }
+    return None
+
 
 def _extract_structured(text: str) -> dict:
     """
     Try to parse a character response that may contain a JSON envelope.
 
     Returns a dict with keys: reply_text, emotion_state, gif_search_query,
-    thinking, tool_executed, tool_log.  Falls back to plain-text reply if
-    no JSON is found.
+    thinking, tool_executed, tool_log, plus optional turn-policy fields
+    (action, private_goal, fear, relationship_tactic, speech_act, …).
+    Falls back to plain-text reply if no JSON is found.
     """
     # Strip markdown fences if present
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -69,11 +129,29 @@ def _extract_structured(text: str) -> dict:
             data = json.loads(raw[start : end + 1])
             from agents.speak_sanitize import sanitize_speak_content
 
+            action = _normalize_action_field(data.get("action"))
+            # Flat fields some models emit instead of nested action
+            if action is None and data.get("action_verb"):
+                action = _normalize_action_field(
+                    {
+                        "verb": data.get("action_verb"),
+                        "target_id": data.get("action_target_id") or data.get("target_id"),
+                        "destination_anchor": data.get("destination_anchor"),
+                        "animation": data.get("animation"),
+                    }
+                )
             return {
                 "reply_text": sanitize_speak_content(data.get("reply_text", text)),
                 "emotion_state": data.get("emotion_state"),
                 "gif_search_query": data.get("gif_search_query"),
-                "thinking": data.get("thinking"),
+                "thinking": data.get("thinking") or data.get("inner_monologue"),
+                "private_goal": data.get("private_goal") or "",
+                "fear": data.get("fear") or "",
+                "relationship_tactic": data.get("relationship_tactic") or "",
+                "speech_act": data.get("speech_act") or "",
+                "surface_intent": data.get("surface_intent") or "",
+                "subtext": data.get("subtext") or "",
+                "action": action,
                 "tool_executed": data.get("tool_executed"),
                 "tool_log": data.get("tool_log"),
             }
@@ -88,6 +166,13 @@ def _extract_structured(text: str) -> dict:
         "emotion_state": None,
         "gif_search_query": None,
         "thinking": None,
+        "private_goal": "",
+        "fear": "",
+        "relationship_tactic": "",
+        "speech_act": "",
+        "surface_intent": "",
+        "subtext": "",
+        "action": None,
         "tool_executed": None,
         "tool_log": None,
     }
@@ -130,6 +215,8 @@ class BaseCharacter(ABC):
         model_route: str = "stepfun/step-3.7-flash",
         voice_example: str | None = None,
         dossier_context: str | None = None,
+        *,
+        policy_turn: bool = False,
     ) -> dict:
         """
         Generate an in-character reply with structured metadata.
@@ -138,6 +225,10 @@ class BaseCharacter(ABC):
         the LLM response into a dict with keys:
           reply_text, emotion_state, gif_search_query, thinking,
           tool_executed, tool_log
+
+        When ``policy_turn=True`` (Story beat path), also requests a full
+        Turn Proposal: action (closed verb set), private_goal, fear,
+        relationship_tactic, speech_act, surface_intent, subtext.
 
         When ``dossier_context`` is provided (relationship state from the
         DB), it is injected as a RELATIONSHIP CONTEXT block so the
@@ -157,9 +248,12 @@ class BaseCharacter(ABC):
             )
         if extras:
             system_prompt = system_prompt + "\n\n" + "\n\n".join(extras)
+        schema_prompt = (
+            TURN_POLICY_OUTPUT_PROMPT if policy_turn else STRUCTURED_OUTPUT_PROMPT
+        )
         # Build messages with structured-output instruction
         messages: list[dict] = [
-            {"role": "system", "content": system_prompt + STRUCTURED_OUTPUT_PROMPT},
+            {"role": "system", "content": system_prompt + schema_prompt},
         ]
         messages.extend(context)
         messages.append({"role": "user", "content": user_message})
@@ -195,11 +289,30 @@ class BaseCharacter(ABC):
                 "emotion_state": "calm",
                 "gif_search_query": None,
                 "thinking": None,
+                "action": None,
                 "tool_executed": None,
                 "tool_log": None,
             })
 
         return _extract_structured(raw)
+
+    async def respond_turn_policy(
+        self,
+        context: Sequence[dict],
+        user_message: str,
+        model_route: str = "stepfun/step-3.7-flash",
+        voice_example: str | None = None,
+        dossier_context: str | None = None,
+    ) -> dict:
+        """Story-mode: full Turn Proposal (act + mind + line) from Character Policy."""
+        return await self.respond_structured(
+            context,
+            user_message,
+            model_route=model_route,
+            voice_example=voice_example,
+            dossier_context=dossier_context,
+            policy_turn=True,
+        )
 
     async def _run_with_tools(self, messages: list[dict], model_route: str) -> ModelResult:
         """Native function-calling loop: model -> tool_calls -> execute -> feed back.

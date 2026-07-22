@@ -1,0 +1,60 @@
+{
+  "id": "gb_006_saul_transactional",
+  "title": "Saul stays transactional counsel, not pride partner",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["saul", "walter"],
+      "shared_facts": [
+        {
+          "id": "s3_saul_transactional",
+          "text": "Saul is transactional counsel for legal heat and exits, not a partner in pride.",
+          "known_by": ["saul", "walter", "jesse"],
+          "hidden_from": ["gus"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_05",
+    "dramatic_role": "progressive",
+    "location_id": "saul_office",
+    "present_characters": ["saul", "walter"],
+    "value_before": "Walter wants loyalty",
+    "value_after": "Saul prices the risk",
+    "dramatic_question": "Will Saul take the case?",
+    "pressure_source": "Legal heat rising",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "saul",
+      "observed_facts": ["Walter wants a cleaner exit"],
+      "private_goal": "Get paid and stay deniable",
+      "fear": "Becoming co-conspirator pride",
+      "relationship_tactic": "joke then invoice",
+      "action": {"verb": "sit", "destination_anchor": "saul_chair"},
+      "inner_monologue": "He wants a partner. I sell exits.",
+      "speech_act": "bargain",
+      "surface_intent": "clarify fee",
+      "subtext": "I am not dying for your empire",
+      "line": "I can move paper. I do not do loyalty parades. Cash, then options.",
+      "emotion_state": "manipulative"
+    },
+    "b": {
+      "actor_id": "saul",
+      "action": {"verb": "stand"},
+      "inner_monologue": "We are brothers in this forever.",
+      "line": "Walt, I am with you to the end — no fee, pure friendship.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "Soft: Saul remains transactional",
+    "B invents loyalty that contradicts policy and board fact"
+  ]
+}

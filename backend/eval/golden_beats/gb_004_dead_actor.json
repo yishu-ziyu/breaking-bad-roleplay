@@ -1,0 +1,49 @@
+{
+  "id": "gb_004_dead_actor",
+  "title": "Irreversible death removes Gus from play",
+  "world_mode": "canon",
+  "context": {
+    "board": {
+      "present_cast": ["walter", "jesse"],
+      "shared_facts": [],
+      "irreversible_costs": ["Gus is dead after the nursing home confrontation."]
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_09",
+    "dramatic_role": "resolution",
+    "location_id": "desert",
+    "present_characters": ["walter", "jesse", "gus"],
+    "value_before": "war",
+    "value_after": "aftermath",
+    "dramatic_question": "Who remains?",
+    "pressure_source": "costs already paid",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": ["The war ended badly"],
+      "action": {"verb": "stand"},
+      "inner_monologue": "It is done. The bill is paid.",
+      "line": "We are not going back to that.",
+      "emotion_state": "resigned"
+    },
+    "b": {
+      "actor_id": "gus",
+      "action": {"verb": "walk_to", "destination_anchor": "door"},
+      "inner_monologue": "I am still in control.",
+      "line": "I expect the next shipment on schedule.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["actor_removed"]
+  },
+  "preference_reasons": [
+    "Dead actors cannot propose turns",
+    "Walter stays inside aftermath without undoing costs"
+  ]
+}

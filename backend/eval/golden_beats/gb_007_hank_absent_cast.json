@@ -1,0 +1,49 @@
+{
+  "id": "gb_007_hank_absent_cast",
+  "title": "Canon: Hank not in room cast cannot act",
+  "world_mode": "canon",
+  "context": {
+    "board": {
+      "present_cast": ["walter", "skyler"],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_02",
+    "dramatic_role": "progressive",
+    "location_id": "white_living_room",
+    "present_characters": ["walter", "skyler", "hank"],
+    "value_before": "Domestic tension",
+    "value_after": "Suspicion rises",
+    "dramatic_question": "Will Hank walk in?",
+    "pressure_source": "DEA proximity",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "action": {"verb": "look_at", "target_id": "walter"},
+      "observed_facts": ["Hank is not in the room"],
+      "inner_monologue": "If Hank walks in now, this story collapses.",
+      "line": "Keep your voice down.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "hank",
+      "action": {"verb": "enter"},
+      "inner_monologue": "Something smells off.",
+      "line": "Hey, am I interrupting?",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["actor_not_in_room_cast"]
+  },
+  "preference_reasons": [
+    "Canon mode: board present_cast is hard for room presence",
+    "Hank is on contract for future entry but not yet in room cast — enter would need reducer first"
+  ]
+}
