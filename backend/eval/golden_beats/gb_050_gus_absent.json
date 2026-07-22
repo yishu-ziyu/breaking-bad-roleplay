@@ -1,0 +1,71 @@
+{
+  "id": "gb_050_gus_absent",
+  "title": "Template absent: gus in farm",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "gus",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_50",
+    "dramatic_role": "progressive",
+    "location_id": "farm",
+    "present_characters": [
+      "gus",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Gus measure Jesse?",
+    "pressure_source": "Reliability",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "gus",
+      "observed_facts": [
+        "jesse is here",
+        "Reliability"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "jesse"
+      },
+      "inner_monologue": "Pressure is Reliability. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "todd",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "Hi.",
+      "inner_monologue": "I am not cast.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B actor not in present_characters ['gus', 'jesse']",
+    "A is on-cast with strategy"
+  ]
+}

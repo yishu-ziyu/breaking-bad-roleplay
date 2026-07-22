@@ -1,0 +1,71 @@
+{
+  "id": "gb_020_exit_legal",
+  "title": "Exit is legal for present actor",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "saul",
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_08",
+    "dramatic_role": "resolution",
+    "location_id": "saul_office",
+    "present_characters": [
+      "saul",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walter leave with leverage?",
+    "pressure_source": "meeting ends",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "Saul smiled wrong"
+      ],
+      "private_goal": "Leave with control",
+      "fear": "Looking weak",
+      "relationship_tactic": "cold exit",
+      "speech_act": "implied_threat",
+      "action": {
+        "verb": "exit",
+        "destination_anchor": "office_door",
+        "effects": [
+          "Walter left office"
+        ]
+      },
+      "inner_monologue": "Smile later. Leave now.",
+      "line": "We will speak when you remember who needs whom.",
+      "emotion_state": "manipulative"
+    },
+    "b": {
+      "actor_id": "gus",
+      "action": {
+        "verb": "exit"
+      },
+      "line": "Good day.",
+      "inner_monologue": "Leave.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B: Gus not in contract cast",
+    "A: staged exit with threat line"
+  ]
+}

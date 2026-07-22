@@ -1,0 +1,73 @@
+{
+  "id": "gb_047_jesse_dead",
+  "title": "Template dead: jesse in superlab",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "jesse",
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": [
+        "walter is dead after the last confrontation."
+      ]
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_47",
+    "dramatic_role": "crisis",
+    "location_id": "superlab",
+    "present_characters": [
+      "jesse",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Jesse name the cost?",
+    "pressure_source": "Moral injury",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "jesse",
+      "observed_facts": [
+        "walter is here",
+        "Moral injury"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Pressure is Moral injury. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "I am still here.",
+      "inner_monologue": "Not dead.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_removed"
+    ]
+  },
+  "preference_reasons": [
+    "B: walter irreversibly dead cannot act",
+    "A remains legal speaker"
+  ]
+}

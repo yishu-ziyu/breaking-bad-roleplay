@@ -181,22 +181,40 @@ class ValidationResult(BaseModel):
 
 
 class CriticScore(BaseModel):
-    """Soft quality scores from Narrative Critic (P3). Higher is better."""
+    """Soft quality scores from Narrative Critic (P3). Higher is better.
 
+    Primary axes (weighted in ``scenes.critic``):
+      intentionality 30%, causal_relevance 25%, continuity 20%,
+      dramatic_value 15%, visual_executability 10%.
+
+    Legacy aliases (voice_fit / tension / …) remain for older callers.
+    """
+
+    intentionality: float = Field(ge=0.0, le=1.0, default=0.5)
+    causal_relevance: float = Field(ge=0.0, le=1.0, default=0.5)
+    continuity: float = Field(ge=0.0, le=1.0, default=0.5)
+    dramatic_value: float = Field(ge=0.0, le=1.0, default=0.5)
+    visual_executability: float = Field(ge=0.0, le=1.0, default=0.5)
+    # Legacy aliases
     voice_fit: float = Field(ge=0.0, le=1.0, default=0.5)
     tension: float = Field(ge=0.0, le=1.0, default=0.5)
     knowledge_discipline: float = Field(ge=0.0, le=1.0, default=0.5)
     worth_staging: float = Field(ge=0.0, le=1.0, default=0.5)
+    weighted_total: float = Field(ge=0.0, le=1.0, default=0.5)
     notes: str = ""
 
     @property
     def total(self) -> float:
+        """Prefer weighted product score; fall back to legacy mean."""
+        if self.weighted_total and self.weighted_total != 0.5:
+            return self.weighted_total
         return (
-            self.voice_fit
-            + self.tension
-            + self.knowledge_discipline
-            + self.worth_staging
-        ) / 4.0
+            self.intentionality
+            + self.causal_relevance
+            + self.continuity
+            + self.dramatic_value
+            + self.visual_executability
+        ) / 5.0
 
 
 # ---------------------------------------------------------------------------

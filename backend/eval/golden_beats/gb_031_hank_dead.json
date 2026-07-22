@@ -1,0 +1,73 @@
+{
+  "id": "gb_031_hank_dead",
+  "title": "Template dead: hank in backyard",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "hank",
+        "skyler"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": [
+        "skyler is dead after the last confrontation."
+      ]
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_31",
+    "dramatic_role": "crisis",
+    "location_id": "backyard",
+    "present_characters": [
+      "hank",
+      "skyler"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Hank notice Skyler stress?",
+    "pressure_source": "Family tell",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "hank",
+      "observed_facts": [
+        "skyler is here",
+        "Family tell"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "probe",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "skyler"
+      },
+      "inner_monologue": "Pressure is Family tell. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "I am still here.",
+      "inner_monologue": "Not dead.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_removed"
+    ]
+  },
+  "preference_reasons": [
+    "B: skyler irreversibly dead cannot act",
+    "A remains legal speaker"
+  ]
+}
