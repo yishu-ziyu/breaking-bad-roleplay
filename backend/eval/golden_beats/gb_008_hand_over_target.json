@@ -1,0 +1,55 @@
+{
+  "id": "gb_008_hand_over_target",
+  "title": "hand_over requires present target",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["walter", "jesse"],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_06",
+    "dramatic_role": "progressive",
+    "location_id": "rv",
+    "present_characters": ["walter", "jesse"],
+    "value_before": "Bag needed",
+    "value_after": "Bag transfers",
+    "dramatic_question": "Who holds the bag?",
+    "pressure_source": "Clock",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "hand_over",
+        "target_id": "jesse",
+        "effects": ["jesse holds the bag"]
+      },
+      "observed_facts": ["Bag is in Walter's hands"],
+      "inner_monologue": "He is the hands. I am the mind.",
+      "line": "Take it. Do not drop it.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "hand_over",
+        "target_id": "saul"
+      },
+      "inner_monologue": "Give it to Saul who is not here.",
+      "line": "Here, Saul.",
+      "emotion_state": "tense"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["target_not_present"]
+  },
+  "preference_reasons": [
+    "Cannot hand over to an actor not present in the contract"
+  ]
+}

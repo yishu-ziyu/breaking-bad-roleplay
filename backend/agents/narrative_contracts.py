@@ -426,26 +426,52 @@ def turn_proposal_from_character_result(
     thinking: str | None = None,
     emotion_state: str | None = None,
     director_action: str | None = None,
+    character_action: dict[str, Any] | ActionProposal | None = None,
     observed_facts: list[str] | None = None,
+    private_goal: str = "",
+    fear: str = "",
     relationship_tactic: str = "",
     speech_act: str = "",
     surface_intent: str = "",
     subtext: str = "",
 ) -> TurnProposal:
-    """Map Character Agent structured output → Turn Proposal (P1)."""
+    """Map Character Agent structured output → Turn Proposal.
+
+    Character Policy owns ``action``. ``director_action`` is legacy fallback
+    only when the model omitted action entirely.
+    """
     actor = backend_to_actor_id(backend_character_id)
     action: ActionProposal | None = None
-    act = (director_action or "").strip()
-    if act:
-        action = ActionProposal(verb=act[:200])
+    if isinstance(character_action, ActionProposal):
+        action = character_action
+    elif isinstance(character_action, dict) and (
+        character_action.get("verb") or character_action.get("destination_anchor")
+    ):
+        try:
+            action = ActionProposal.model_validate(
+                {
+                    "verb": character_action.get("verb") or "idle_tense",
+                    "target_id": character_action.get("target_id"),
+                    "destination_anchor": character_action.get("destination_anchor"),
+                    "animation": character_action.get("animation"),
+                    "preconditions": list(character_action.get("preconditions") or []),
+                    "effects": list(character_action.get("effects") or []),
+                }
+            )
+        except Exception:
+            action = ActionProposal(verb=str(character_action.get("verb") or "idle_tense")[:200])
+    if action is None:
+        act = (director_action or "").strip()
+        if act:
+            action = ActionProposal(verb=act[:200])
     emo = (emotion_state or "tense").strip().lower()
     if emo not in EMOTION_ALLOWED:
         emo = "tense"
     return TurnProposal(
         actor_id=actor,
         observed_facts=list(observed_facts or []),
-        private_goal="",
-        fear="",
+        private_goal=(private_goal or "").strip(),
+        fear=(fear or "").strip(),
         relationship_tactic=relationship_tactic,
         action=action,
         inner_monologue=(thinking or "").strip(),
@@ -455,6 +481,67 @@ def turn_proposal_from_character_result(
         line=(reply_text or "").strip(),
         emotion_state=emo,
     )
+
+
+def upsert_agent_act_from_turn(
+    events: list[dict[str, Any]],
+    *,
+    backend_character_id: str,
+    turn: TurnProposal,
+    speak_index: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Commit Character Policy action into the event list before speak.
+
+    Overwrites the nearest prior agent_act for the same character, or inserts
+    a new one immediately before speak. Returns (events, new_speak_index).
+    """
+    if speak_index < 0 or speak_index >= len(events):
+        return events, speak_index
+    if not turn.action or not (turn.action.verb or "").strip():
+        return events, speak_index
+
+    verb = turn.action.verb.strip()
+    action_text = verb
+    if turn.action.target_id:
+        action_text = f"{verb} → {turn.action.target_id}"
+    if turn.action.destination_anchor:
+        action_text = f"{action_text} ({turn.action.destination_anchor})"
+
+    act_data: dict[str, Any] = {
+        "character_id": backend_character_id,
+        "action": action_text,
+        "target": turn.action.target_id,
+        "verb": verb,
+        "destination_anchor": turn.action.destination_anchor,
+        "animation": turn.action.animation,
+        "source": "character_policy",
+    }
+
+    act_idx: int | None = None
+    for j in range(speak_index - 1, -1, -1):
+        prev = events[j]
+        if prev.get("type") != "agent_act":
+            continue
+        pdata = prev.get("data") if isinstance(prev.get("data"), dict) else {}
+        if pdata.get("character_id") == backend_character_id:
+            act_idx = j
+            break
+
+    if act_idx is not None:
+        prev = events[act_idx]
+        events[act_idx] = {
+            **prev,
+            "type": "agent_act",
+            "data": {**(prev.get("data") if isinstance(prev.get("data"), dict) else {}), **act_data},
+        }
+        return events, speak_index
+
+    speak = events[speak_index]
+    insert: dict[str, Any] = {"type": "agent_act", "data": act_data}
+    if speak.get("recommended_model"):
+        insert["recommended_model"] = speak["recommended_model"]
+    events.insert(speak_index, insert)
+    return events, speak_index + 1
 
 
 def ensure_actor_on_contract(

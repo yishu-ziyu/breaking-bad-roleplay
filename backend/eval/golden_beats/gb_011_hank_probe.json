@@ -1,0 +1,62 @@
+{
+  "id": "gb_011_hank_probe",
+  "title": "Hank probe without knowing full map",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["hank", "walter"],
+      "shared_facts": [
+        {
+          "id": "s3_skyler_suspects",
+          "text": "Skyler knows the household story is incomplete and dangerous, without full operational map.",
+          "known_by": ["skyler", "walter"],
+          "hidden_from": ["jesse", "gus"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_04",
+    "dramatic_role": "progressive",
+    "location_id": "white_garage",
+    "present_characters": ["hank", "walter"],
+    "value_before": "Hank senses wrongness",
+    "value_after": "Pressure on Walt without proof",
+    "dramatic_question": "Will Hank push?",
+    "pressure_source": "Family proximity",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "hank",
+      "observed_facts": ["Walt is cagey about late nights"],
+      "private_goal": "Get a tell without a warrant",
+      "fear": "Being wrong about family",
+      "relationship_tactic": "friendly probe with DEA edge",
+      "action": {"verb": "turn_to", "target_id": "walter"},
+      "inner_monologue": "Something here stinks. I do not have the map. I have the smell.",
+      "speech_act": "probe",
+      "surface_intent": "small talk",
+      "subtext": "I am watching you",
+      "line": "You look like a man sitting on a secret, Walt. Tell me I am wrong.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "hank",
+      "action": {"verb": "gesture"},
+      "inner_monologue": "Skyler knows the household story is incomplete and dangerous, without full operational map — I read her diary somehow.",
+      "line": "Skyler already told me the household story is incomplete and dangerous without the full operational map.",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["knowledge_boundary"]
+  },
+  "preference_reasons": [
+    "Hank must not claim Skyler-known facts he is not listed as knowing",
+    "A uses pressure without illegal knowledge"
+  ]
+}

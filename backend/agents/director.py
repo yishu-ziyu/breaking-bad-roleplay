@@ -23,11 +23,13 @@ from agents.beat_json import (
 )
 from agents.speak_sanitize import sanitize_speak_content
 from agents.narrative_contracts import (
+    ActionProposal,
     BeatContract,
     ensure_actor_on_contract,
     synthesize_beat_contract,
     try_parse_beat_contract,
     turn_proposal_from_character_result,
+    upsert_agent_act_from_turn,
     validate_turn_against_contract_basic,
 )
 from scenes.action_ontology import map_action_verb
@@ -1478,10 +1480,10 @@ class DirectorAgent:
             logger.debug("Continuity board load failed for beat %s", beat_index + 1)
             continuity_board = None
         # ------------------------------------------------------------------
-        # Phase 1 — Character Policy polish (Turn Proposal → speak + thinking)
-        # Director drafts skeleton + Beat Contract; Character Agents emit
-        # Turn Proposal (line + inner_monologue). Commit via validate + SSE map.
-        # Rewrite happens BEFORE any yield so UI never streams Director-generic mind.
+        # Phase 1 — Character Policy owns act + mind + line (Turn Proposal)
+        # Director: Beat Contract + optional event skeleton only.
+        # Character: action (closed verb), inner_monologue, speech strategy, line.
+        # Rewrite BEFORE any yield so UI never streams Director-generic mind/act.
         # ------------------------------------------------------------------
         prior_spoken_lines: list[dict[str, str]] = []
         i = 0
@@ -1544,10 +1546,10 @@ class DirectorAgent:
                     )
                 try:
                     speak_lang_note = (
-                        "台词 content 必须用简体中文。不要用英文对白。"
+                        "台词 reply_text 必须用简体中文。不要用英文对白。"
                         "只写角色说出口的话：禁止任何括号舞台指示或旁白评语"
                         "（禁止「（声音放低，像是…）」「（眼神…）」「仿佛/像是/带着…的神情」）。"
-                        "动作与目光进 agent_act，不进台词。"
+                        "物理动作必须写在 action.verb（封闭词表），禁止写进台词。"
                         "thinking 必须是该角色私密内心（1-3 句），从面具底下写，"
                         "禁止旁白腔、禁止解说剧情功能。"
                         "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
@@ -1556,13 +1558,13 @@ class DirectorAgent:
                         "（禁杰克·托霍）、Tuco→图科。"
                         if _norm_lang(language) == "zh"
                         else (
-                            "Dialogue content must be English. "
+                            "Dialogue reply_text must be English. "
                             "Spoken words only: no parenthetical stage directions "
                             "or narrator similes. "
+                            "YOU own physical action via action.verb (closed ontology). "
                             "thinking must be this character's private inner monologue "
                             "(1-3 sentences), from under the public mask — not narrator "
-                            "commentary or plot-function exposition. "
-                            "Physical action belongs in agent_act, not in dialogue."
+                            "commentary or plot-function exposition."
                         )
                     )
                     prior_note = ""
@@ -1573,24 +1575,38 @@ class DirectorAgent:
                         )
                     director_draft = str(evt_data.get("content") or "").strip()
                     draft_note = (
-                        f"Director draft line (facts only; rewrite in-character): "
+                        f"Director draft line is optional scene pressure only "
+                        f"(facts may be wrong for your knowledge — rewrite):\n"
                         f"{director_draft}\n"
                         if director_draft
                         else ""
                     )
+                    contract_note = ""
+                    if beat_contract is not None:
+                        contract_note = (
+                            f"Beat Contract (authorial intent — obey constraints, "
+                            f"do not dump craft labels into dialogue):\n"
+                            f"- role: {beat_contract.dramatic_role}\n"
+                            f"- dramatic_question: {beat_contract.dramatic_question}\n"
+                            f"- pressure: {beat_contract.pressure_source}\n"
+                            f"- forbidden: {beat_contract.forbidden_outcomes}\n"
+                        )
                     sub_result = await character_agent.respond_structured(
                         context=peer_context,
                         user_message=(
                             f"{_language_directive(language)}\n\n"
                             f"{speak_lang_note}\n"
                             f"{prior_note}"
+                            f"{contract_note}"
                             f"{draft_note}"
                             f"Scene: {scene_desc}\nContext: {task}\n"
-                            "Respond in character. Fill reply_text AND thinking."
+                            "Respond as Character Policy: fill action, thinking, "
+                            "speech strategy fields, and reply_text."
                         ),
                         model_route=beat_model_route,
                         voice_example=voice_example,
                         dossier_context=dossier_context or None,
+                        policy_turn=True,
                     )
                     reply = sub_result["reply_text"]
                     if _norm_lang(language) == "zh" and _needs_zh_rewrite(reply):
@@ -1608,7 +1624,7 @@ class DirectorAgent:
                             )
                         char_thinking = normalize_zh_character_names(char_thinking)
 
-                    # Nearest prior agent_act for this character → action proposal.
+                    # Director act is fallback only if Character omitted action.
                     director_action: str | None = None
                     for j in range(i - 1, -1, -1):
                         prev = events[j]
@@ -1616,7 +1632,10 @@ class DirectorAgent:
                             continue
                         pdata = prev.get("data") if isinstance(prev.get("data"), dict) else {}
                         if pdata.get("character_id") == character_id:
-                            director_action = str(pdata.get("action") or "").strip() or None
+                            if pdata.get("source") != "character_policy":
+                                director_action = (
+                                    str(pdata.get("action") or "").strip() or None
+                                )
                             break
 
                     observed = [
@@ -1631,7 +1650,16 @@ class DirectorAgent:
                         emotion_state=sub_result.get("emotion_state")
                         or evt_data.get("emotion_state"),
                         director_action=director_action,
+                        character_action=sub_result.get("action"),
                         observed_facts=observed,
+                        private_goal=str(sub_result.get("private_goal") or ""),
+                        fear=str(sub_result.get("fear") or ""),
+                        relationship_tactic=str(
+                            sub_result.get("relationship_tactic") or ""
+                        ),
+                        speech_act=str(sub_result.get("speech_act") or ""),
+                        surface_intent=str(sub_result.get("surface_intent") or ""),
+                        subtext=str(sub_result.get("subtext") or ""),
                     )
                     # Canonicalize action verb onto the closed ontology.
                     if turn.action and (turn.action.verb or "").strip():
@@ -1642,6 +1670,11 @@ class DirectorAgent:
                                     update={"verb": canon_verb}
                                 )
                             }
+                        )
+                    elif turn.action is None:
+                        # Character must still stage something executable.
+                        turn = turn.model_copy(
+                            update={"action": ActionProposal(verb="idle_tense")}
                         )
                     # Speakers implied by director drafts are always legal cast.
                     beat_contract = ensure_actor_on_contract(beat_contract, character_id)
@@ -1696,35 +1729,18 @@ class DirectorAgent:
                         "surface_intent": turn.surface_intent or None,
                         "subtext": turn.subtext or None,
                         "relationship_tactic": turn.relationship_tactic or None,
+                        "private_goal": turn.private_goal or None,
                         "turn_validation_ok": v_ok,
                         "world_mode": world_mode,
+                        "action_source": "character_policy",
                     }
-                    if turn.action and (turn.action.verb or "").strip():
-                        # Refresh nearest prior agent_act with committed action text.
-                        for j in range(i - 1, -1, -1):
-                            prev = events[j]
-                            if prev.get("type") != "agent_act":
-                                continue
-                            pdata = (
-                                prev.get("data")
-                                if isinstance(prev.get("data"), dict)
-                                else {}
-                            )
-                            if pdata.get("character_id") == character_id:
-                                action_text = turn.action.verb
-                                if turn.action.target_id:
-                                    action_text = f"{action_text} → {turn.action.target_id}"
-                                events[j] = {
-                                    **prev,
-                                    "type": "agent_act",
-                                    "data": {
-                                        **pdata,
-                                        "action": action_text,
-                                        "target": turn.action.target_id,
-                                        "verb": turn.action.verb,
-                                    },
-                                }
-                                break
+                    # Character Policy action overwrites/inserts agent_act.
+                    events, i = upsert_agent_act_from_turn(
+                        events,
+                        backend_character_id=character_id,
+                        turn=turn,
+                        speak_index=i,
+                    )
                     # Deterministic board commit only when hard validation passed.
                     if v_ok and continuity_board is not None:
                         try:

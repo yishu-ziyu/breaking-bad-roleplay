@@ -150,8 +150,9 @@ Player surfaces never show McKee craft scaffolding or validator internals.
 | Phase / PR | Ship | Success |
 |------------|------|---------|
 | **P0** | ADR + Pydantic contracts + CONTEXT | Round-trip tests ✅ |
-| **P1 / PR1** | Beat Contract + Turn Proposal for speak/think; act still transitional from director draft | SSE-compatible; think from policy ✅ |
-| **P2 / PR2** | World Validator + action ontology + reducer-lite | Knowledge/presence/verb hard checks; safe idle map ✅ (this slice) |
+| **P1 / PR1** | Beat Contract + Turn Proposal; Character owns act + mind + line (`policy_turn`) | SSE-compatible; act upserted from policy ✅ |
+| **P2 / PR2** | World Validator + action ontology + reducer-lite | Knowledge/presence/verb hard checks; safe idle map ✅ |
+| **PR5 start** | Golden Beats hard harness (12 cases) | `backend/eval/golden_beats/` + `golden_harness.py` ✅ |
 | **P3** | Narrative Critic + optional second candidate | Soft scores drive pick |
 | **P4** | State Reducer sole Continuity writer | No free-text world mutation from LLM as truth |
 | **PR3** | Blender Stage Kit (Saul office) | Anchors/cameras/animations in GLB extras |
@@ -170,9 +171,11 @@ Player surfaces never show McKee craft scaffolding or validator internals.
 - `backend/agents/narrative_contracts.py` — contracts + SSE map
 - `backend/scenes/` — ontology, world_mode, validator, state_reducer
 - Director prefers `{contract, events}`; synthesizes contract if missing
-- Character structured reply → Turn Proposal → basic + world validate → commit
+- Character `policy_turn` structured reply → Turn Proposal (incl. action) → validate → commit
+- `upsert_agent_act_from_turn` overwrites/inserts agent_act with `source=character_policy`
 - Knowledge hard fail clears monologue; removed actors cannot speak
 - Validated turns feed Continuity Board via reducer (alongside legacy deltas)
+- Golden harness: preferred must hard-pass; losers must hit listed error codes
 
 ## Consequences
 
