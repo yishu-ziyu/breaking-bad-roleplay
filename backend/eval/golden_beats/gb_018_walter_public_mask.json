@@ -1,0 +1,66 @@
+{
+  "id": "gb_018_walter_public_mask",
+  "title": "Walter keeps teacher mask in public kitchen",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "skyler"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_01",
+    "dramatic_role": "setup",
+    "location_id": "kitchen",
+    "present_characters": [
+      "walter",
+      "skyler"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walt hold the mask?",
+    "pressure_source": "Skyler watching",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "Skyler is watching closely"
+      ],
+      "private_goal": "Hold public mask",
+      "fear": "She sees the engine",
+      "relationship_tactic": "patient explanation",
+      "speech_act": "deflect",
+      "surface_intent": "reassure",
+      "subtext": "Do not dig",
+      "action": {
+        "verb": "look_at",
+        "target_id": "skyler"
+      },
+      "inner_monologue": "If I raise volume, she wins the tell.",
+      "line": "It is a busy week at school. That is all.",
+      "emotion_state": "calm"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I WILL DESTROY THIS KITCHEN WITH MY BARE HANDS IF YOU ASK AGAIN!",
+      "inner_monologue": "SCREAM NOW",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B volume-first violates Walter precision-before-volume policy",
+    "A holds mask with calm deflection"
+  ]
+}

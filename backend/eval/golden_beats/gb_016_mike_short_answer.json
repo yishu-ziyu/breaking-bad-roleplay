@@ -1,0 +1,68 @@
+{
+  "id": "gb_016_mike_short_answer",
+  "title": "Mike short professional answer",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "mike",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_02",
+    "dramatic_role": "progressive",
+    "location_id": "desert",
+    "present_characters": [
+      "mike",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Mike answer Jesse?",
+    "pressure_source": "curiosity vs procedure",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "mike",
+      "observed_facts": [
+        "Jesse asks too many questions"
+      ],
+      "private_goal": "Keep procedure",
+      "fear": "Ego improvisation",
+      "relationship_tactic": "cold brevity",
+      "speech_act": "correct",
+      "surface_intent": "end conversation",
+      "subtext": "You do not need that",
+      "action": {
+        "verb": "look_at",
+        "target_id": "jesse"
+      },
+      "inner_monologue": "Questions create bodies.",
+      "line": "You do not need that. Do your part.",
+      "emotion_state": "calm"
+    },
+    "b": {
+      "actor_id": "mike",
+      "action": null,
+      "line": "",
+      "inner_monologue": "",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "empty_turn"
+    ]
+  },
+  "preference_reasons": [
+    "B empty turn is hard-illegal",
+    "A is Mike brevity with look_at target"
+  ]
+}

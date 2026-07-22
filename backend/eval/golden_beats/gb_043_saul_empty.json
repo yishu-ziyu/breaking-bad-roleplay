@@ -1,0 +1,69 @@
+{
+  "id": "gb_043_saul_empty",
+  "title": "Template empty: saul in parking",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "saul",
+        "mike"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_43",
+    "dramatic_role": "progressive",
+    "location_id": "parking",
+    "present_characters": [
+      "saul",
+      "mike"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Saul joke past Mike?",
+    "pressure_source": "Professional cold",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "saul",
+      "observed_facts": [
+        "mike is here",
+        "Professional cold"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "mike"
+      },
+      "inner_monologue": "Pressure is Professional cold. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "saul",
+      "action": null,
+      "line": "",
+      "inner_monologue": "",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "empty_turn"
+    ]
+  },
+  "preference_reasons": [
+    "B empty turn hard-fails",
+    "A stages look_at + line"
+  ]
+}

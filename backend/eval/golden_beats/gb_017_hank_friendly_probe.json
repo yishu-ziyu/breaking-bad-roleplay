@@ -1,0 +1,86 @@
+{
+  "id": "gb_017_hank_friendly_probe",
+  "title": "Hank friendly probe without proof",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "hank",
+        "walter"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_04",
+    "dramatic_role": "progressive",
+    "location_id": "backyard",
+    "present_characters": [
+      "hank",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Hank smell the lie?",
+    "pressure_source": "family proximity",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "hank",
+      "observed_facts": [
+        "Walt is cagey"
+      ],
+      "private_goal": "Get a tell",
+      "fear": "Wrong about family",
+      "relationship_tactic": "beer-buddy probe",
+      "speech_act": "probe",
+      "surface_intent": "small talk",
+      "subtext": "I am watching",
+      "action": {
+        "verb": "turn_to",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Smell, not map.",
+      "line": "You look like a man sitting on a secret. Tell me I am wrong.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "hank",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I know the cook partnership operates under Gus Fring's organization and standards.",
+      "inner_monologue": "The cook partnership operates under Gus Fring's organization and standards.",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "knowledge_boundary"
+    ]
+  },
+  "preference_reasons": [
+    "B claims Gus-org fact Hank does not know (hidden_from hank on era packs)",
+    "A probes without illegal knowledge"
+  ]
+}

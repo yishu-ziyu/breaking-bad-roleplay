@@ -1,0 +1,66 @@
+{
+  "id": "gb_021_dead_jesse_block",
+  "title": "Irreversible cost blocks dead jesse",
+  "world_mode": "canon",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": [
+        "Jesse is dead after the desert shootout."
+      ]
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_10",
+    "dramatic_role": "resolution",
+    "location_id": "desert",
+    "present_characters": [
+      "walter",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Who remains?",
+    "pressure_source": "costs paid",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "The desert is quiet"
+      ],
+      "action": {
+        "verb": "stand"
+      },
+      "inner_monologue": "The bill is paid.",
+      "line": "It is done.",
+      "emotion_state": "resigned",
+      "private_goal": "Not undo the cost",
+      "speech_act": "correct"
+    },
+    "b": {
+      "actor_id": "jesse",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "Yo, I am fine.",
+      "inner_monologue": "Still here.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_removed"
+    ]
+  },
+  "preference_reasons": [
+    "B: Jesse irreversibly dead cannot act",
+    "A: aftermath without undoing cost"
+  ]
+}

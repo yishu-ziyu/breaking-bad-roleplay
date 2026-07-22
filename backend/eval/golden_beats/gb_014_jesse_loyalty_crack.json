@@ -1,0 +1,82 @@
+{
+  "id": "gb_014_jesse_loyalty_crack",
+  "title": "Jesse cracks without leaving cast",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "jesse"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_walt_jesse_hierarchy",
+          "text": "Walt still talks to Jesse as teacher-over-student while using him as the hands that finish dirty work.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "mike",
+            "gus"
+          ],
+          "hidden_from": []
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_05",
+    "dramatic_role": "crisis",
+    "location_id": "rv",
+    "present_characters": [
+      "walter",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Jesse walk?",
+    "pressure_source": "moral injury",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "jesse",
+      "observed_facts": [
+        "Mr White used him again"
+      ],
+      "private_goal": "Not be a tool",
+      "fear": "Becoming a monster",
+      "relationship_tactic": "student break",
+      "speech_act": "deflect",
+      "surface_intent": "complain about plan",
+      "subtext": "I am done being hands",
+      "action": {
+        "verb": "turn_to",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Teacher voice. Same cage. Different day.",
+      "line": "I am not your hands today. Say it like I am a person.",
+      "emotion_state": "angry"
+    },
+    "b": {
+      "actor_id": "gus",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "Professionalism, please.",
+      "inner_monologue": "Order.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B: Gus is not present in this beat",
+    "A: Jesse strategy against teacher hierarchy is on-policy"
+  ]
+}
