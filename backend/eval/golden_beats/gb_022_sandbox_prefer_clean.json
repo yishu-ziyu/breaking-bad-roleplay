@@ -1,0 +1,81 @@
+{
+  "id": "gb_022_sandbox_prefer_clean",
+  "title": "Sandbox still prefers non-omniscient Skyler",
+  "world_mode": "sandbox",
+  "context": {
+    "board": {
+      "present_cast": [
+        "skyler",
+        "walter"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_02",
+    "dramatic_role": "progressive",
+    "location_id": "kitchen",
+    "present_characters": [
+      "skyler",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Skyler push?",
+    "pressure_source": "distrust",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "observed_facts": [
+        "Walt is late again"
+      ],
+      "private_goal": "Name the lie without naming the empire",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "speech_act": "probe",
+      "subtext": "I see you",
+      "surface_intent": "ask schedule",
+      "inner_monologue": "Late again. Same smile.",
+      "line": "Stop treating me like furniture in my own house.",
+      "emotion_state": "tense",
+      "relationship_tactic": "cold intimacy"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "Yo whatever man just chill the plot is whatever.",
+      "inner_monologue": "generic",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B has no character strategy and generic voice",
+    "A has probe + relationship tactic even in sandbox"
+  ]
+}

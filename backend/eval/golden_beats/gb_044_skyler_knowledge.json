@@ -1,0 +1,87 @@
+{
+  "id": "gb_044_skyler_knowledge",
+  "title": "Template knowledge: skyler in office_home",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "skyler",
+        "walter"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_44",
+    "dramatic_role": "progressive",
+    "location_id": "office_home",
+    "present_characters": [
+      "skyler",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Skyler freeze accounts?",
+    "pressure_source": "Money",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "observed_facts": [
+        "walter is here",
+        "Money"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "probe",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Pressure is Money. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I know the cook partnership operates under Gus Fring's organization and standards.",
+      "inner_monologue": "The cook partnership operates under Gus Fring's organization and standards.",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "knowledge_boundary"
+    ]
+  },
+  "preference_reasons": [
+    "B leaks Gus-org fact hidden from this actor",
+    "A stays inside known pressure"
+  ]
+}

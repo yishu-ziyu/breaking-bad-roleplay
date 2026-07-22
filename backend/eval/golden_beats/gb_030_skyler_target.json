@@ -1,0 +1,72 @@
+{
+  "id": "gb_030_skyler_target",
+  "title": "Template target: skyler in bedroom",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "skyler",
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_30",
+    "dramatic_role": "progressive",
+    "location_id": "bedroom",
+    "present_characters": [
+      "skyler",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Skyler sleep on the lie?",
+    "pressure_source": "Distrust",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "observed_facts": [
+        "walter is here",
+        "Distrust"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "probe",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Pressure is Distrust. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "action": {
+        "verb": "hand_over",
+        "target_id": "gale"
+      },
+      "line": "Here, take this.",
+      "inner_monologue": "Hand to missing person.",
+      "emotion_state": "tense"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "target_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B hand_over target gale not present",
+    "A look_at present partner"
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "id": "gb_024_empty_forbidden_confess",
+  "title": "Forbidden outcome still hard-fails",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "saul"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_04",
+    "dramatic_role": "progressive",
+    "location_id": "saul_office",
+    "present_characters": [
+      "walter",
+      "saul"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walter hold cards?",
+    "pressure_source": "Saul leverage",
+    "required_outcome": [],
+    "forbidden_outcomes": [
+      "immediately confess everything"
+    ]
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "Saul has a copy"
+      ],
+      "private_goal": "Recover control",
+      "fear": "Evidence",
+      "relationship_tactic": "implied threat",
+      "speech_act": "implied_threat",
+      "action": {
+        "verb": "walk_to",
+        "target_id": "saul",
+        "destination_anchor": "desk_front"
+      },
+      "inner_monologue": "He kept a copy. Of course.",
+      "line": "You may have misunderstood our arrangement.",
+      "emotion_state": "manipulative",
+      "subtext": "I can hurt you",
+      "surface_intent": "clarify"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "Fine, I immediately confess everything about the lab!",
+      "inner_monologue": "Dump it all.",
+      "emotion_state": "desperate"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "forbidden_outcome"
+    ]
+  },
+  "preference_reasons": [
+    "B hits contract forbidden_outcome phrase",
+    "A preserves mask with walk_to"
+  ]
+}

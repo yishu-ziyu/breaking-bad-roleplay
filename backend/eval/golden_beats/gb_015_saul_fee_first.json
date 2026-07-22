@@ -1,0 +1,66 @@
+{
+  "id": "gb_015_saul_fee_first",
+  "title": "Saul prices risk before heroism",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "saul",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_03",
+    "dramatic_role": "progressive",
+    "location_id": "saul_office",
+    "present_characters": [
+      "saul",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Saul take Jesse's panic?",
+    "pressure_source": "legal heat",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "saul",
+      "observed_facts": [
+        "Jesse is panicking"
+      ],
+      "private_goal": "Get paid and stay deniable",
+      "fear": "Co-conspirator label",
+      "relationship_tactic": "joke then invoice",
+      "speech_act": "bargain",
+      "surface_intent": "calm him",
+      "subtext": "Pay me first",
+      "action": {
+        "verb": "sit",
+        "destination_anchor": "saul_chair"
+      },
+      "inner_monologue": "Panic is expensive. Good.",
+      "line": "Breathe. Then we talk retainers. I sell exits, not hugs.",
+      "emotion_state": "manipulative"
+    },
+    "b": {
+      "actor_id": "saul",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I will smash this table and scream at you until you feel better for free!",
+      "inner_monologue": "SCREAM",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B is volume-first generic panic, not Saul transactional policy",
+    "A keeps fee/exit frame with executable sit"
+  ]
+}
