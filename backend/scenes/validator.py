@@ -211,21 +211,27 @@ def validate_world_turn(
             )
             break
 
-    # --- forbidden outcomes (contract) soft string match ---
+    # --- forbidden outcomes (contract) phrase match ---
     blob = f"{turn.line or ''} {turn.inner_monologue or ''}".lower()
     for fo in contract.forbidden_outcomes or []:
         fo_s = str(fo).strip().lower()
         if len(fo_s) < 12:
             continue
-        # crude: if a long forbidden phrase appears
-        key = fo_s[:40]
-        if key in blob:
+        # Drop leading character name so "Walter immediately…" matches the act.
+        core = re.sub(
+            r"^(walter|jesse|skyler|saul|mike|gus|hank)\s+",
+            "",
+            fo_s,
+        )
+        keys = {fo_s[:48], core[:48]}
+        if any(k and k in blob for k in keys):
+            # Contract forbidden_outcomes are hard authorial constraints in all modes.
             issues.append(
                 ValidationIssue(
                     code="forbidden_outcome",
                     message=f"Turn hits forbidden_outcome: {fo_s[:80]}",
                     actor_id=actor,
-                    severity="error" if world_mode == "canon" else "warn",
+                    severity="error",
                 )
             )
 

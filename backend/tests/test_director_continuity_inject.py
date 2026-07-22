@@ -99,7 +99,15 @@ async def test_second_speaker_receives_prior_line_and_board(director, mock_provi
 
     captured: list[dict] = []
 
-    async def fake_structured(self, context, user_message, model_route="x", voice_example=None, dossier_context=None):
+    async def fake_structured(
+        self,
+        context,
+        user_message,
+        model_route="x",
+        voice_example=None,
+        dossier_context=None,
+        **kwargs,
+    ):
         captured.append(
             {
                 "name": self.name,
@@ -114,6 +122,7 @@ async def test_second_speaker_receives_prior_line_and_board(director, mock_provi
             "emotion_state": "tense",
             "gif_search_query": "face",
             "thinking": None,
+            "action": {"verb": "look_at", "target_id": "jesse" if "Walter" in who else "walter"},
             "tool_executed": None,
             "tool_log": None,
         }

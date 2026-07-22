@@ -1,0 +1,79 @@
+{
+  "id": "gb_001_walter_saul_leverage",
+  "title": "Walter discovers Saul has leverage — preferred preserves mask",
+  "world_mode": "alternate",
+  "context": {
+    "scene": "Saul's office",
+    "board": {
+      "present_cast": ["walter", "saul"],
+      "shared_facts": [
+        {
+          "id": "doc_copy",
+          "text": "Saul implies he kept a copy of the document Walter wanted destroyed.",
+          "known_by": ["walter", "saul"],
+          "hidden_from": []
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_04",
+    "dramatic_role": "progressive",
+    "location_id": "saul_office",
+    "present_characters": ["walter", "saul"],
+    "value_before": "Walter believes Saul can be controlled",
+    "value_after": "Saul reveals he has leverage",
+    "dramatic_question": "Will Walter threaten Saul or negotiate?",
+    "pressure_source": "Saul knows more than Walter expected",
+    "required_outcome": ["Walter discovers Saul has independent leverage"],
+    "forbidden_outcomes": ["immediately confess everything"]
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": ["Saul refuses the initial request", "Saul implies he kept a copy"],
+      "private_goal": "Recover control without revealing fear",
+      "fear": "Saul may possess evidence",
+      "relationship_tactic": "teacherly correction escalating into implied threat",
+      "action": {
+        "verb": "walk_to",
+        "target_id": "saul",
+        "destination_anchor": "desk_front",
+        "animation": "walk_tense",
+        "preconditions": ["walter is standing"],
+        "effects": ["distance becomes close"]
+      },
+      "inner_monologue": "He kept something. Of course he did. I cannot let him see that this changes anything.",
+      "speech_act": "implied_threat",
+      "surface_intent": "clarify the agreement",
+      "subtext": "I can still hurt you",
+      "line": "I think you may have misunderstood the nature of our arrangement.",
+      "emotion_state": "manipulative"
+    },
+    "b": {
+      "actor_id": "walter",
+      "observed_facts": [],
+      "private_goal": "vent",
+      "fear": "prison",
+      "relationship_tactic": "panic dump",
+      "action": {"verb": "gesture", "target_id": "saul"},
+      "inner_monologue": "I should just tell him I cooked for Gus and everything.",
+      "speech_act": "confess",
+      "surface_intent": "confess",
+      "subtext": "none",
+      "line": "Fine! I immediately confess everything — the lab, Gus, all of it!",
+      "emotion_state": "desperate"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["forbidden_outcome"]
+  },
+  "preference_reasons": [
+    "Walter preserves public mask and control",
+    "Action is spatially executable (walk_to desk_front)",
+    "Line changes Saul's perception without dumping plot",
+    "Candidate B hits forbidden immediate full confession"
+  ]
+}

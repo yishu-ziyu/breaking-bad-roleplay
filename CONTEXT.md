@@ -50,7 +50,8 @@ Shared product language. Update when hard decisions land.
 - ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
 - Contracts: `backend/agents/narrative_contracts.py`
 - Scenes package: `backend/scenes/` (ontology, mode, validator, reducer)
-- **P0–P2 as-built:** envelope contract + Turn Proposal commit + hard checks (presence, death costs, knowledge boundary, verb map→`idle_tense`) + reducer on validated turns. Soft critic / full act-from-policy / 3D still open.
+- **P0–P2 + act-from-policy as-built:** envelope contract; Character `policy_turn` owns **action + inner_monologue + line**; hard checks + reducer; Golden Beats first batch under `backend/eval/golden_beats/` (12 cases, hard harness).
+- Soft critic / Stage Compiler / 3D still open.
 - Training ladder: golden set → hard evaluator → soft critic → only then SFT/DPO.
 
 ## Modes

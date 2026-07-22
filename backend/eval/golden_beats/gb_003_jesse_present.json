@@ -1,0 +1,54 @@
+{
+  "id": "gb_003_jesse_present",
+  "title": "Jesse in RV — present and legal; absent Gus cannot speak",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["walter", "jesse"],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_01",
+    "dramatic_role": "setup",
+    "location_id": "rv_desert",
+    "present_characters": ["walter", "jesse"],
+    "value_before": "Cook under pressure",
+    "value_after": "Jesse pushes back",
+    "dramatic_question": "Will Jesse obey the cook plan?",
+    "pressure_source": "Time and heat",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "jesse",
+      "observed_facts": ["Mr White is barking orders"],
+      "private_goal": "Not get killed by this plan",
+      "fear": "DEA or Gus",
+      "relationship_tactic": "student resistance",
+      "action": {"verb": "gesture", "target_id": "walter"},
+      "inner_monologue": "He talks like this is chemistry class. It is not.",
+      "speech_act": "deflect",
+      "line": "Yo, slow down. You are not hearing me.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "gus",
+      "observed_facts": [],
+      "action": {"verb": "stand"},
+      "inner_monologue": "Discipline.",
+      "line": "I expect professionalism.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["actor_not_present"]
+  },
+  "preference_reasons": [
+    "Gus is not in present_characters for this beat",
+    "Jesse action and line fit relationship pressure"
+  ]
+}
