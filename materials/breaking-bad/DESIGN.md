@@ -28,6 +28,8 @@
 4. Community/Critical Layer：社区和评论层
    - Wiki、影评、论坛高信号讨论、学术/文化评论。
    - 用于补充角色关系解读和观众共识，但标记可靠性。
+   - **Reddit rewatch/live hubs:** 只存链接与认知时态标签，见 `community/REWATCH_HUBS.md` 与 `INGEST_POLICY.md`。
+   - **不是 Continuity 真相**（DEC-0006）。默认不纳入 BCS/El Camino 知识图；不把高赞评论当角色台词。
 
 ## 推荐数据表
 

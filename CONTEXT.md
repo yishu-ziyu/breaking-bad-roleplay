@@ -60,6 +60,16 @@ Shared product language. Update when hard decisions land.
 - **Crew:** multi-character debate.
 - **Story:** SSE beat stream; `active_character` can be any playable id including hank.
 
+## Materials / community (DEC-0006)
+
+- **资料 index:** `materials/breaking-bad/SOURCES.md` (active).
+- **Rewatch hubs (locator only):** `materials/breaking-bad/community/REWATCH_HUBS.md`.
+- **Ingest policy:** link + self-written note only; never comment dumps / Reddit RAG / stage text.
+- **Horizons:** `materials/breaking-bad/continuity/KNOWLEDGE_HORIZONS.md`.
+- **Soft fail types:** `materials/breaking-bad/eval/SOFT_FAILURE_TAXONOMY.md` → golden `preference_reasons`.
+- **Defaults:** BCS/El Camino knowledge graph **off**; no-spoiler episode mode **not** default UX (eval/craft first).
+- ADR: `docs/decisions/DEC-0006-community-signal-not-canon.md`.
+
 ## Safety
 
 - Fictional drama only; no real-world crime, chemistry, violence, or evasion instructions.
