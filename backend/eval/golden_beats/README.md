@@ -28,3 +28,7 @@ cd backend && uv run pytest tests/test_golden_beats.py tests/test_soft_critic.py
 ```
 
 Grow toward 100+. Always store **why the other answer is wrong**, not only the winner.
+
+Soft failure vocabulary (stable ids):  
+`materials/breaking-bad/eval/SOFT_FAILURE_TAXONOMY.md`  
+(e.g. `plot_dump`, `volume_first`, `future_knowledge`, `relation_wrong`).
