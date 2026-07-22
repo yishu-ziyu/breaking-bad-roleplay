@@ -1,0 +1,67 @@
+{
+  "id": "gb_033_walter_soft",
+  "title": "Template soft: walter in saul_office",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "saul"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_33",
+    "dramatic_role": "progressive",
+    "location_id": "saul_office",
+    "present_characters": [
+      "walter",
+      "saul"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walter threaten counsel?",
+    "pressure_source": "Leverage",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "saul is here",
+        "Leverage"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "saul"
+      },
+      "inner_monologue": "Pressure is Leverage. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "idle_tense"
+      },
+      "line": "Okay.",
+      "inner_monologue": "Okay.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B paraphrases monologue as line with no strategy fields",
+    "A has private_goal/fear/tactic/subtext and beat pressure"
+  ]
+}

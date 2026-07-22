@@ -1,0 +1,67 @@
+{
+  "id": "gb_037_saul_volume",
+  "title": "Template volume: saul in saul_office",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "saul",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_37",
+    "dramatic_role": "crisis",
+    "location_id": "saul_office",
+    "present_characters": [
+      "saul",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Saul take the panicked client?",
+    "pressure_source": "Cash",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "saul",
+      "observed_facts": [
+        "jesse is here",
+        "Cash"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "jesse"
+      },
+      "inner_monologue": "Pressure is Cash. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "saul",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I WILL DESTROY THIS PLACE AND SCREAM AT YOU RIGHT NOW!",
+      "inner_monologue": "VOLUME FIRST",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B is volume-first without character strategy",
+    "A uses look_at + probe/correct policy"
+  ]
+}

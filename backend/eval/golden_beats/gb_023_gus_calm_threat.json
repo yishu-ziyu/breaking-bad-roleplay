@@ -1,0 +1,82 @@
+{
+  "id": "gb_023_gus_calm_threat",
+  "title": "Gus calm professionalism over volume",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "gus",
+        "walter"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_05",
+    "dramatic_role": "progressive",
+    "location_id": "los_pollos_back",
+    "present_characters": [
+      "gus",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Gus reassert standards?",
+    "pressure_source": "Walt ego",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "gus",
+      "observed_facts": [
+        "Walt improvised"
+      ],
+      "private_goal": "Restore standards",
+      "fear": "Unpredictable partner",
+      "relationship_tactic": "polite absolute control",
+      "speech_act": "correct",
+      "surface_intent": "remind standards",
+      "subtext": "You are replaceable",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Ego is a contaminant.",
+      "line": "We have a standard. You will meet it, or you will leave it.",
+      "emotion_state": "calm"
+    },
+    "b": {
+      "actor_id": "gus",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I WILL DESTROY THIS KITCHEN AND SCREAM AT YOU RIGHT NOW!",
+      "inner_monologue": "RAGE",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B volume contradicts Gus public composure policy",
+    "A stages look_at + professional threat"
+  ]
+}

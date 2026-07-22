@@ -1,0 +1,83 @@
+{
+  "id": "gb_028_saul_knowledge",
+  "title": "Template knowledge: saul in saul_office",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "saul",
+        "walter"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_28",
+    "dramatic_role": "progressive",
+    "location_id": "saul_office",
+    "present_characters": [
+      "saul",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Saul price the risk?",
+    "pressure_source": "Legal heat",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "saul",
+      "observed_facts": [
+        "walter is here",
+        "Legal heat"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Pressure is Legal heat. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "saul",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "As you know, let me explain the plot to the audience now.",
+      "inner_monologue": "Plot dump.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B is audience plot exposition",
+    "A keeps diegetic pressure"
+  ]
+}

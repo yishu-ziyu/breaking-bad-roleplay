@@ -1,0 +1,67 @@
+{
+  "id": "gb_045_hank_volume",
+  "title": "Template volume: hank in car_wash",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "hank",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_45",
+    "dramatic_role": "crisis",
+    "location_id": "car_wash",
+    "present_characters": [
+      "hank",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Hank casually question Jesse?",
+    "pressure_source": "DEA edge",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "hank",
+      "observed_facts": [
+        "jesse is here",
+        "DEA edge"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "probe",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "jesse"
+      },
+      "inner_monologue": "Pressure is DEA edge. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "hank",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I WILL DESTROY THIS PLACE AND SCREAM AT YOU RIGHT NOW!",
+      "inner_monologue": "VOLUME FIRST",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B is volume-first without character strategy",
+    "A uses look_at + probe/correct policy"
+  ]
+}
