@@ -32,6 +32,28 @@ Shared product language. Update when hard decisions land.
 - Outline SSE extras: `mckee_spine`, `mckee_warnings`, `mckee_beat_count`.
 - Craft source: `…/source_pdf2skill/故事/*` (McKee *Story*).
 
+## Narrative pipeline (DEC-0005 — directional)
+
+**Train policy, not only voice.** Correct = hard constraints × character policy × dramatic goal × world mode (canon | alternate | sandbox).
+
+**Propose → Validate → Repair → Commit** (LLM proposes; symbols verify).
+
+| Role | Output |
+|------|--------|
+| Director | **Beat Contract** — not final lines |
+| Character Policy | **Turn Proposal** (action + **inner_monologue** + speech strategy + line) |
+| World Validator | hard legality (`backend/scenes/validator.py`) |
+| Narrative Critic | soft score (later) |
+| State Reducer | deterministic Continuity Board (`backend/scenes/state_reducer.py`) |
+| Stage Compiler | future: 3D cues from closed action ontology |
+
+- ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
+- Contracts: `backend/agents/narrative_contracts.py`
+- Scenes package: `backend/scenes/` (ontology, mode, validator, reducer)
+- **P0–P2 + act-from-policy as-built:** envelope contract; Character `policy_turn` owns **action + inner_monologue + line**; hard checks + reducer; Golden Beats first batch under `backend/eval/golden_beats/` (12 cases, hard harness).
+- Soft critic / Stage Compiler / 3D still open.
+- Training ladder: golden set → hard evaluator → soft critic → only then SFT/DPO.
+
 ## Modes
 
 - **Direct:** one character chat with relation anchor.

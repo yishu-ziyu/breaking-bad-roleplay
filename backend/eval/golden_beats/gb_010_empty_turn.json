@@ -1,0 +1,48 @@
+{
+  "id": "gb_010_empty_turn",
+  "title": "Empty turn is hard-fail",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["walter"],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_01",
+    "dramatic_role": "setup",
+    "location_id": "lab",
+    "present_characters": ["walter"],
+    "value_before": "a",
+    "value_after": "b",
+    "dramatic_question": "q",
+    "pressure_source": "p",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "action": {"verb": "look_at", "destination_anchor": "reactor"},
+      "inner_monologue": "The numbers have to be perfect.",
+      "line": "Again. From the top.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": null,
+      "inner_monologue": "",
+      "line": "",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["empty_turn"]
+  },
+  "preference_reasons": [
+    "A stages look_at + line",
+    "B commits nothing"
+  ]
+}
