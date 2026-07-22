@@ -1,0 +1,67 @@
+{
+  "id": "gb_049_saul_soft",
+  "title": "Template soft: saul in courthouse_steps",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "saul",
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_49",
+    "dramatic_role": "progressive",
+    "location_id": "courthouse_steps",
+    "present_characters": [
+      "saul",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Saul demand more cash?",
+    "pressure_source": "Risk up",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "saul",
+      "observed_facts": [
+        "walter is here",
+        "Risk up"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Pressure is Risk up. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "saul",
+      "action": {
+        "verb": "idle_tense"
+      },
+      "line": "Okay.",
+      "inner_monologue": "Okay.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B paraphrases monologue as line with no strategy fields",
+    "A has private_goal/fear/tactic/subtext and beat pressure"
+  ]
+}

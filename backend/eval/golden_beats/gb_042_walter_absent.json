@@ -1,0 +1,71 @@
+{
+  "id": "gb_042_walter_absent",
+  "title": "Template absent: walter in lab",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "mike"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_42",
+    "dramatic_role": "progressive",
+    "location_id": "lab",
+    "present_characters": [
+      "walter",
+      "mike"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walter override Mike?",
+    "pressure_source": "Control",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "mike is here",
+        "Control"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "mike"
+      },
+      "inner_monologue": "Pressure is Control. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "todd",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "Hi.",
+      "inner_monologue": "I am not cast.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B actor not in present_characters ['walter', 'mike']",
+    "A is on-cast with strategy"
+  ]
+}

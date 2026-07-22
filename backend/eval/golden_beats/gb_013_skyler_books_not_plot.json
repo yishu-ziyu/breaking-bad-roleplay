@@ -1,0 +1,85 @@
+{
+  "id": "gb_013_skyler_books_not_plot",
+  "title": "Skyler pressures money without plot dump",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "skyler",
+        "walter"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_02",
+    "dramatic_role": "progressive",
+    "location_id": "kitchen",
+    "present_characters": [
+      "skyler",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Skyler force honesty about money?",
+    "pressure_source": "missing money",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "observed_facts": [
+        "Ledger does not balance"
+      ],
+      "private_goal": "Force a real answer",
+      "fear": "Family already ruined",
+      "relationship_tactic": "quiet steel",
+      "speech_act": "probe",
+      "surface_intent": "ask about accounts",
+      "subtext": "Stop lying",
+      "action": {
+        "verb": "stand",
+        "destination_anchor": "kitchen_island"
+      },
+      "inner_monologue": "He is lying about the numbers. I do not need the full map yet.",
+      "line": "The accounts do not work. Explain the gap, not the story.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "observed_facts": [],
+      "action": {
+        "verb": "gesture"
+      },
+      "inner_monologue": "As you know, the audience should know Walt is a meth cook.",
+      "line": "As you know, let me explain the plot: you cook meth for money.",
+      "emotion_state": "angry",
+      "speech_act": "confess"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B is plot exposition for the audience, not Skyler's tactic",
+    "A keeps knowledge-right pressure on money only",
+    "A has strategy fields; B dumps narration"
+  ]
+}

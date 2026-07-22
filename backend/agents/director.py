@@ -33,6 +33,7 @@ from agents.narrative_contracts import (
     validate_turn_against_contract_basic,
 )
 from scenes.action_ontology import map_action_verb
+from scenes.critic import score_turn
 from scenes.state_reducer import apply_validated_turn
 from scenes.validator import validate_world_turn
 from scenes.world_mode import parse_world_mode
@@ -1734,6 +1735,27 @@ class DirectorAgent:
                         "world_mode": world_mode,
                         "action_source": "character_policy",
                     }
+                    # Soft critic (P3): score only; hard fail already applied above.
+                    if v_ok:
+                        try:
+                            critic = score_turn(
+                                beat_contract, turn, board=continuity_board
+                            )
+                            evt_data["critic_score"] = {
+                                "weighted_total": critic.weighted_total,
+                                "intentionality": critic.intentionality,
+                                "causal_relevance": critic.causal_relevance,
+                                "continuity": critic.continuity,
+                                "dramatic_value": critic.dramatic_value,
+                                "visual_executability": critic.visual_executability,
+                                "notes": critic.notes or None,
+                            }
+                        except Exception:
+                            logger.debug(
+                                "Soft critic failed for %s beat %s",
+                                character_id,
+                                beat_index + 1,
+                            )
                     # Character Policy action overwrites/inserts agent_act.
                     events, i = upsert_agent_act_from_turn(
                         events,

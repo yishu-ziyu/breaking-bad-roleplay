@@ -1,7 +1,8 @@
-"""Golden Beat harness (DEC-0005 training ladder stage 1–2).
+"""Golden Beat harness (DEC-0005 training ladder stage 1–3).
 
-Loads adjudicated samples and runs the hard World Validator.
-Soft preference reasons are recorded but not scored by LLM here.
+Loads adjudicated samples and runs:
+  1) hard World Validator
+  2) soft Narrative Critic (when both candidates hard-pass)
 """
 
 from __future__ import annotations
@@ -13,10 +14,10 @@ from typing import Any
 
 from agents.narrative_contracts import (
     ActionProposal,
-    BeatContract,
     TurnProposal,
     try_parse_beat_contract,
 )
+from scenes.critic import prefer_turn, score_turn
 from scenes.validator import validate_world_turn
 from scenes.world_mode import WorldMode, parse_world_mode
 
@@ -129,6 +130,31 @@ def evaluate_case(case: dict[str, Any]) -> GoldenCaseResult:
                             f"loser_missing_expected_codes:{key}:"
                             f"got={codes} expected_any={sorted(expected_fails)}"
                         )
+
+    # Soft critic: when both hard-pass, preferred must outrank the other.
+    if (
+        "a" in candidates
+        and "b" in candidates
+        and details.get("a", {}).get("ok")
+        and details.get("b", {}).get("ok")
+    ):
+        turn_a = _turn_from_raw(candidates["a"])
+        turn_b = _turn_from_raw(candidates["b"])
+        sa = score_turn(contract, turn_a, board=board)
+        sb = score_turn(contract, turn_b, board=board)
+        details["soft"] = {
+            "a": sa.weighted_total,
+            "b": sb.weighted_total,
+            "pick": prefer_turn(contract, turn_a, turn_b, board=board),
+        }
+        if preferred in ("a", "b"):
+            pref_score = sa.weighted_total if preferred == "a" else sb.weighted_total
+            other_score = sb.weighted_total if preferred == "a" else sa.weighted_total
+            if pref_score + 1e-9 < other_score:
+                errors.append(
+                    f"soft_prefer_mismatch:preferred={preferred} "
+                    f"scores a={sa.weighted_total:.3f} b={sb.weighted_total:.3f}"
+                )
 
     return GoldenCaseResult(
         case_id=case_id,

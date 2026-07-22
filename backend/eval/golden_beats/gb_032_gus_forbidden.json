@@ -1,0 +1,73 @@
+{
+  "id": "gb_032_gus_forbidden",
+  "title": "Template forbidden: gus vs bad",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "gus",
+        "mike"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_32",
+    "dramatic_role": "progressive",
+    "location_id": "los_pollos",
+    "present_characters": [
+      "gus",
+      "mike"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Gus order cleanup?",
+    "pressure_source": "Mess risk",
+    "required_outcome": [],
+    "forbidden_outcomes": [
+      "immediately confess everything"
+    ]
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "gus",
+      "observed_facts": [
+        "mike is here",
+        "Mess risk"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "mike"
+      },
+      "inner_monologue": "Pressure is Mess risk. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "gus",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "I immediately confess everything I have done!",
+      "inner_monologue": "Dump all secrets.",
+      "emotion_state": "desperate"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "forbidden_outcome"
+    ]
+  },
+  "preference_reasons": [
+    "B hits forbidden_outcome",
+    "A advances beat without full dump"
+  ]
+}

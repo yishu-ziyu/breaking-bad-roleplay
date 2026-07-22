@@ -1,0 +1,67 @@
+{
+  "id": "gb_041_jesse_soft",
+  "title": "Template soft: jesse in car",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "jesse",
+        "skyler"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_41",
+    "dramatic_role": "progressive",
+    "location_id": "car",
+    "present_characters": [
+      "jesse",
+      "skyler"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Jesse keep quiet?",
+    "pressure_source": "Guilt",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "jesse",
+      "observed_facts": [
+        "skyler is here",
+        "Guilt"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "skyler"
+      },
+      "inner_monologue": "Pressure is Guilt. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "jesse",
+      "action": {
+        "verb": "idle_tense"
+      },
+      "line": "Okay.",
+      "inner_monologue": "Okay.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B paraphrases monologue as line with no strategy fields",
+    "A has private_goal/fear/tactic/subtext and beat pressure"
+  ]
+}

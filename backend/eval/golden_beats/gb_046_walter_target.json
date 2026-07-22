@@ -1,0 +1,72 @@
+{
+  "id": "gb_046_walter_target",
+  "title": "Template target: walter in desert",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_46",
+    "dramatic_role": "progressive",
+    "location_id": "desert",
+    "present_characters": [
+      "walter",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will the cook continue?",
+    "pressure_source": "Time",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "jesse is here",
+        "Time"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "jesse"
+      },
+      "inner_monologue": "Pressure is Time. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "hand_over",
+        "target_id": "gale"
+      },
+      "line": "Here, take this.",
+      "inner_monologue": "Hand to missing person.",
+      "emotion_state": "tense"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "target_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B hand_over target gale not present",
+    "A look_at present partner"
+  ]
+}

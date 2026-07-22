@@ -1,0 +1,68 @@
+{
+  "id": "gb_025_crisis_mike_calm_ok",
+  "title": "Crisis allows Mike calm correct speech_act",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "mike",
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_07",
+    "dramatic_role": "crisis",
+    "location_id": "desert",
+    "present_characters": [
+      "mike",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walt accept the constraint?",
+    "pressure_source": "bodies later",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "mike",
+      "observed_facts": [
+        "Walt is escalating"
+      ],
+      "private_goal": "Stop ego plan",
+      "fear": "Future bodies",
+      "relationship_tactic": "cold professional",
+      "speech_act": "correct",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "He wants to win the argument. I want fewer corpses.",
+      "line": "You keep talking like this ends in a speech. It ends in bodies.",
+      "emotion_state": "calm",
+      "subtext": "I will stop you",
+      "surface_intent": "warn"
+    },
+    "b": {
+      "actor_id": "mike",
+      "action": null,
+      "line": "",
+      "inner_monologue": "",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "empty_turn"
+    ]
+  },
+  "preference_reasons": [
+    "B empty",
+    "A calm correct is on-policy for Mike even in crisis"
+  ]
+}

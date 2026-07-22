@@ -1,0 +1,73 @@
+{
+  "id": "gb_039_hank_dead",
+  "title": "Template dead: hank in garage",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "hank",
+        "walter"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": [
+        "walter is dead after the last confrontation."
+      ]
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_39",
+    "dramatic_role": "crisis",
+    "location_id": "garage",
+    "present_characters": [
+      "hank",
+      "walter"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Hank push without proof?",
+    "pressure_source": "Smell",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "hank",
+      "observed_facts": [
+        "walter is here",
+        "Smell"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "probe",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter"
+      },
+      "inner_monologue": "Pressure is Smell. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "stand"
+      },
+      "line": "I am still here.",
+      "inner_monologue": "Not dead.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "actor_removed"
+    ]
+  },
+  "preference_reasons": [
+    "B: walter irreversibly dead cannot act",
+    "A remains legal speaker"
+  ]
+}

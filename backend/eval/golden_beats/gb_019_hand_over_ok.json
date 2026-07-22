@@ -1,0 +1,72 @@
+{
+  "id": "gb_019_hand_over_ok",
+  "title": "Legal hand_over to present jesse",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "jesse"
+      ],
+      "shared_facts": [],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_06",
+    "dramatic_role": "progressive",
+    "location_id": "rv",
+    "present_characters": [
+      "walter",
+      "jesse"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Who holds the bag?",
+    "pressure_source": "clock",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "jesse",
+      "observed_facts": [
+        "Bag is offered"
+      ],
+      "private_goal": "Not drop it",
+      "fear": "Mr White rage",
+      "relationship_tactic": "reluctant hands",
+      "speech_act": "deflect",
+      "action": {
+        "verb": "hand_over",
+        "target_id": "walter",
+        "effects": [
+          "bag returns briefly"
+        ]
+      },
+      "inner_monologue": "If I take it, I am hands again.",
+      "line": "Why is it always me holding the bag?",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "jesse",
+      "action": {
+        "verb": "hand_over",
+        "target_id": "saul"
+      },
+      "line": "Here Saul.",
+      "inner_monologue": "Give to missing man.",
+      "emotion_state": "tense"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "target_not_present"
+    ]
+  },
+  "preference_reasons": [
+    "B hands to Saul who is not present",
+    "A targets present Walter"
+  ]
+}

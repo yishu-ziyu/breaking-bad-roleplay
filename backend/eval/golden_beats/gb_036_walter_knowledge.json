@@ -1,0 +1,83 @@
+{
+  "id": "gb_036_walter_knowledge",
+  "title": "Template knowledge: walter in superlab",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": [
+        "walter",
+        "gus"
+      ],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": [
+            "walter",
+            "jesse",
+            "gus",
+            "mike",
+            "saul"
+          ],
+          "hidden_from": [
+            "skyler",
+            "hank"
+          ]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_36",
+    "dramatic_role": "progressive",
+    "location_id": "superlab",
+    "present_characters": [
+      "walter",
+      "gus"
+    ],
+    "value_before": "pressure held",
+    "value_after": "pressure advances",
+    "dramatic_question": "Will Walter accept Gus standard?",
+    "pressure_source": "Ego",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "gus is here",
+        "Ego"
+      ],
+      "private_goal": "Advance without losing mask",
+      "fear": "Loss of control",
+      "relationship_tactic": "character-specific pressure",
+      "speech_act": "correct",
+      "surface_intent": "manage the beat",
+      "subtext": "I still set terms",
+      "action": {
+        "verb": "look_at",
+        "target_id": "gus"
+      },
+      "inner_monologue": "Pressure is Ego. Hold the line.",
+      "line": "We do this carefully. That is the only way.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {
+        "verb": "gesture"
+      },
+      "line": "As you know, let me explain the plot to the audience now.",
+      "inner_monologue": "Plot dump.",
+      "emotion_state": "calm"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "B is audience plot exposition",
+    "A keeps diegetic pressure"
+  ]
+}
