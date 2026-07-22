@@ -1,0 +1,61 @@
+{
+  "id": "gb_005_mike_discipline",
+  "title": "Mike prefers precision over volume",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["mike", "walter"],
+      "shared_facts": [
+        {
+          "id": "s3_mike_discipline",
+          "text": "Mike enforces professional discipline for Gus; ego plans create future bodies.",
+          "known_by": ["mike", "gus", "walter", "jesse"],
+          "hidden_from": ["skyler"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_03",
+    "dramatic_role": "progressive",
+    "location_id": "desert_meet",
+    "present_characters": ["mike", "walter"],
+    "value_before": "Walt asserts control",
+    "value_after": "Mike reasserts professional order",
+    "dramatic_question": "Will Walt accept constraints?",
+    "pressure_source": "Ego versus procedure",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "mike",
+      "observed_facts": ["Walter is improvising again"],
+      "private_goal": "Shut down ego improvisation",
+      "fear": "Bodies later",
+      "relationship_tactic": "cold professional correction",
+      "action": {"verb": "look_at", "target_id": "walter"},
+      "inner_monologue": "He wants to be the smartest man in the room. That is how people die.",
+      "speech_act": "correct",
+      "surface_intent": "procedure reminder",
+      "subtext": "You are not the boss of this",
+      "line": "We do it clean, or we do not do it. I am not cleaning up your speech.",
+      "emotion_state": "calm"
+    },
+    "b": {
+      "actor_id": "mike",
+      "action": {"verb": "gesture"},
+      "inner_monologue": "I will smash the table and scream.",
+      "line": "I AM GOING TO SMASH THIS TABLE AND SCREAM AT YOU RIGHT NOW!",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "Soft: Mike raises precision before volume",
+    "Both pass hard checks; A matches policy card style",
+    "B is loud generic anger without Mike discipline"
+  ]
+}

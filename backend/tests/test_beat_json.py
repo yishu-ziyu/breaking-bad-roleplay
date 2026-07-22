@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.beat_json import parse_beat_events, parse_preview
+from agents.beat_json import parse_beat_events, parse_beat_plan, parse_preview
 
 
 def test_plain_array():
@@ -70,3 +70,29 @@ def test_preview_truncates():
     p = parse_preview("x" * 500, limit=50)
     assert len(p) <= 50
     assert p.endswith("…")
+
+
+def test_dec0005_contract_envelope():
+    raw = """
+    {
+      "contract": {
+        "beat_id": "beat_01",
+        "dramatic_role": "setup",
+        "location_id": "kitchen",
+        "present_characters": ["walter", "skyler"],
+        "value_before": "a",
+        "value_after": "b",
+        "dramatic_question": "q",
+        "pressure_source": "p"
+      },
+      "events": [
+        {"type":"agent_speak","data":{"character_id":"Walter White","content":"hi"}}
+      ]
+    }
+    """
+    events, contract = parse_beat_plan(raw)
+    assert len(events) == 1
+    assert events[0]["type"] == "agent_speak"
+    assert contract is not None
+    assert contract["beat_id"] == "beat_01"
+    assert contract["present_characters"] == ["walter", "skyler"]

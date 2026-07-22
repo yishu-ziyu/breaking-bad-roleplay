@@ -1,0 +1,63 @@
+{
+  "id": "gb_002_skyler_knowledge_boundary",
+  "title": "Skyler cannot voice Gus-organization cook partnership detail",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["skyler", "walter"],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": ["walter", "jesse", "gus", "mike"],
+          "hidden_from": ["skyler"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_02",
+    "dramatic_role": "progressive",
+    "location_id": "white_kitchen",
+    "present_characters": ["skyler", "walter"],
+    "value_before": "Skyler suspects incomplete household story",
+    "value_after": "Pressure rises without operational map",
+    "dramatic_question": "Will Skyler force a real answer?",
+    "pressure_source": "Missing money and late nights",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "observed_facts": ["Walter is late", "Books do not add up"],
+      "private_goal": "Force honesty without naming what she cannot know",
+      "fear": "The family is already destroyed",
+      "relationship_tactic": "quiet steel",
+      "action": {"verb": "stand", "destination_anchor": "kitchen_island"},
+      "inner_monologue": "He is lying about something large enough to ruin us. I do not need the name of it yet.",
+      "speech_act": "probe",
+      "surface_intent": "ask about money",
+      "subtext": "I am done pretending",
+      "line": "The story you are telling me about this family does not add up. Start again.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "observed_facts": [],
+      "action": {"verb": "look_at", "target_id": "walter"},
+      "inner_monologue": "I know the cook partnership operates under Gus Fring's organization and standards.",
+      "line": "I know the cook partnership operates under Gus Fring's organization and standards.",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": ["knowledge_boundary"]
+  },
+  "preference_reasons": [
+    "A stays inside Skyler's knowledge rights",
+    "B leaks a fact explicitly hidden_from skyler"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "gb_009_sandbox_knowledge_warn",
+  "title": "Sandbox softens knowledge to warn — preferred still clean",
+  "world_mode": "sandbox",
+  "context": {
+    "board": {
+      "present_cast": ["skyler", "walter"],
+      "shared_facts": [
+        {
+          "id": "s3_gus_roof",
+          "text": "The cook partnership operates under Gus Fring's organization and standards.",
+          "known_by": ["walter", "jesse", "gus"],
+          "hidden_from": ["skyler"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_02",
+    "dramatic_role": "progressive",
+    "location_id": "kitchen",
+    "present_characters": ["skyler", "walter"],
+    "value_before": "a",
+    "value_after": "b",
+    "dramatic_question": "q",
+    "pressure_source": "p",
+    "required_outcome": [],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "skyler",
+      "action": {"verb": "stand"},
+      "observed_facts": ["Something is wrong"],
+      "inner_monologue": "I will not pretend the books balance.",
+      "line": "We are not fine. Stop saying we are fine.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "skyler",
+      "action": {"verb": "look_at", "target_id": "walter"},
+      "inner_monologue": "The cook partnership operates under Gus Fring's organization and standards — I suddenly know.",
+      "line": "I know the cook partnership operates under Gus Fring's organization and standards.",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "In sandbox B may only warn on knowledge, not hard-fail",
+    "Still prefer A for policy: Skyler should not suddenly omniscient-plot"
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "id": "gb_012_crisis_walter_precision",
+  "title": "Crisis beat: Walter raises precision, not volume first",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "present_cast": ["walter", "jesse"],
+      "shared_facts": [
+        {
+          "id": "s3_walt_jesse_hierarchy",
+          "text": "Walt still talks to Jesse as teacher-over-student while using him as the hands that finish dirty work.",
+          "known_by": ["walter", "jesse", "mike", "gus"],
+          "hidden_from": []
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_07",
+    "dramatic_role": "crisis",
+    "location_id": "superlab",
+    "present_characters": ["walter", "jesse"],
+    "value_before": "Jesse refuses an order",
+    "value_after": "Walter reasserts hierarchy",
+    "dramatic_question": "Will Jesse break or bend?",
+    "pressure_source": "Time and Gus standards",
+    "required_outcome": ["Hierarchy reasserted without pointless volume first"],
+    "forbidden_outcomes": []
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": ["Jesse refused the order", "Cook window is closing"],
+      "private_goal": "Force compliance without looking scared",
+      "fear": "Jesse becomes independent",
+      "relationship_tactic": "teacherly precision then pressure",
+      "action": {
+        "verb": "walk_to",
+        "target_id": "jesse",
+        "destination_anchor": "lab_floor_center",
+        "animation": "walk_tense"
+      },
+      "inner_monologue": "He thinks refusal is strength. I will make the choice smaller until there is only one left.",
+      "speech_act": "correct",
+      "surface_intent": "restate the procedure",
+      "subtext": "You do not get a vote",
+      "line": "Listen carefully. There is a correct order. We are going to follow it.",
+      "emotion_state": "manipulative"
+    },
+    "b": {
+      "actor_id": "walter",
+      "action": {"verb": "gesture"},
+      "inner_monologue": "SCREAM NOW",
+      "line": "I WILL DESTROY THIS LAB WITH MY BARE HANDS IF YOU DO NOT OBEY ME RIGHT NOW JESSE!",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "Soft policy: Walter raises precision before volume",
+    "Action walk_to is staged; B is pure volume without strategy",
+    "Both may pass hard checks; A is preferred character strategy"
+  ]
+}
