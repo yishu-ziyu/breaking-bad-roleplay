@@ -39,6 +39,20 @@ _VOLUME_FIRST_RE = re.compile(
     r"我要砸|我现在就杀|大声吼)\b",
     re.I,
 )
+# Late-arc Walter confession / myth voice — soft-fail on early eras (S1 pack).
+_LATE_WALT_CONFESS_RE = re.compile(
+    r"\b("
+    r"i (did|do) it because i (liked|love) it|"
+    r"i am the danger|"
+    r"say my name|"
+    r"i liked it\.?\s*i (was good|was really good)|"
+    r"money (was|is) never (the|enough)|"
+    r"我喜欢这样|"
+    r"我就是危险|"
+    r"说我的名字"
+    r")\b",
+    re.I,
+)
 _TOKEN_RE = re.compile(r"[a-zA-Z\u4e00-\u9fff]{3,}")
 
 
@@ -62,7 +76,10 @@ def _filled(*parts: str) -> int:
     return sum(1 for p in parts if (p or "").strip())
 
 
-def score_intentionality(turn: TurnProposal) -> float:
+def score_intentionality(
+    turn: TurnProposal,
+    board: dict[str, Any] | None = None,
+) -> float:
     """Character policy completeness + mind/mouth tension."""
     score = 0.15  # base: has a line
     score += 0.12 * min(1, _filled(turn.private_goal))
@@ -90,6 +107,15 @@ def score_intentionality(turn: TurnProposal) -> float:
         score -= 0.25
     if _VOLUME_FIRST_RE.search(turn.line or "") and not _filled(turn.subtext):
         score -= 0.15
+
+    # S1 mouth must not bleed S5 confession / myth voice (mask_break_cheap + era).
+    era = str((board or {}).get("era") or "").lower()
+    actor = (turn.actor_id or "").lower()
+    if era.startswith("s1") and "walter" in actor:
+        if _LATE_WALT_CONFESS_RE.search(turn.line or "") or _LATE_WALT_CONFESS_RE.search(
+            turn.inner_monologue or ""
+        ):
+            score -= 0.42
 
     return _clamp01(score)
 
@@ -142,6 +168,13 @@ def score_continuity(turn: TurnProposal, board: dict[str, Any] | None = None) ->
 
     if turn.action and turn.action.effects:
         score += 0.08
+
+    # Early-era future-voice bleed is a continuity soft failure.
+    era = str((board or {}).get("era") or "").lower()
+    actor = (turn.actor_id or "").lower()
+    if era.startswith("s1") and "walter" in actor:
+        if _LATE_WALT_CONFESS_RE.search(turn.line or ""):
+            score -= 0.35
 
     return _clamp01(score)
 
@@ -211,7 +244,7 @@ def score_turn(
     board: dict[str, Any] | None = None,
 ) -> CriticScore:
     """Return weighted soft scores for one Turn Proposal."""
-    intentionality = score_intentionality(turn)
+    intentionality = score_intentionality(turn, board)
     causal = score_causal_relevance(contract, turn)
     continuity = score_continuity(turn, board)
     dramatic = score_dramatic_value(contract, turn)

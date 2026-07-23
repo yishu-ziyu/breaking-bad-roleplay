@@ -251,6 +251,98 @@ async def test_board_deltas_saved_after_beat(director, mock_provider):
     assert saved[0]["updated_at_beat"] == 3
 
 
+@pytest.mark.asyncio
+async def test_s1_board_injects_walter_intelligence_pack(director, mock_provider):
+    """S1 era board must inject Character Intelligence Pack into Walter only."""
+    board = new_session_board(session_id="sess-s1-intel", era="s1_early", location="driveway")
+    plan = json.dumps(
+        [
+            {
+                "type": "agent_speak",
+                "data": {
+                    "character_id": "Walter White",
+                    "content": "DRAFT_WALT",
+                    "emotion_state": "tense",
+                    "gif_search_query": "walt tense",
+                },
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+            {
+                "type": "agent_speak",
+                "data": {
+                    "character_id": "Jesse Pinkman",
+                    "content": "DRAFT_JESSE",
+                    "emotion_state": "tense",
+                    "gif_search_query": "jesse tense",
+                },
+                "recommended_model": "stepfun/step-3.7-flash",
+            },
+        ]
+    )
+    mock_provider.call_model = AsyncMock(return_value=plan)
+    captured: list[dict] = []
+
+    async def fake_structured(
+        self,
+        context,
+        user_message,
+        model_route="x",
+        voice_example=None,
+        dossier_context=None,
+        **kwargs,
+    ):
+        captured.append(
+            {
+                "name": self.name,
+                "dossier_context": dossier_context or "",
+            }
+        )
+        return {
+            "reply_text": f"{self.name} spoken",
+            "emotion_state": "tense",
+            "gif_search_query": "face",
+            "thinking": None,
+            "action": {"verb": "look_at", "target_id": "jesse"},
+            "tool_executed": None,
+            "tool_log": None,
+        }
+
+    with patch(
+        "agents.continuity_board.load_or_init_session_board",
+        new=AsyncMock(return_value=board),
+    ), patch(
+        "agents.continuity_board.save_session_board",
+        new=AsyncMock(),
+    ), patch(
+        "agents.director.update_dossiers",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "agents.characters.base.BaseCharacter.respond_structured",
+        new=fake_structured,
+    ):
+        async for _ in director._generate_beat(
+            task="Argue about quitting",
+            outline="1. Driveway",
+            beat_index=0,
+            context={"previous_scene": "", "current_scene": "Driveway"},
+            scene_desc="Driveway",
+            session_factory=None,
+            session_id="sess-s1-intel",
+        ):
+            pass
+
+    assert len(captured) == 2
+    walt = next(c for c in captured if c["name"] == "Walter White")
+    jesse = next(c for c in captured if c["name"] == "Jesse Pinkman")
+    assert "CHARACTER INTELLIGENCE PACK" in walt["dossier_context"]
+    assert "era_family=s1" in walt["dossier_context"]
+    assert "enough money" in walt["dossier_context"].lower() or "Money / exit" in walt[
+        "dossier_context"
+    ]
+    # No jesse pack yet — intelligence header must not appear for Jesse
+    assert "CHARACTER INTELLIGENCE PACK" not in jesse["dossier_context"]
+
+
 def test_format_board_prompt_is_play_not_courtroom():
     board = new_session_board(session_id="s", era="s3_mid")
     view = filter_board_for_character(board, "walter")

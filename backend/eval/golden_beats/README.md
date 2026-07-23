@@ -29,6 +29,10 @@ cd backend && uv run pytest tests/test_golden_beats.py tests/test_soft_critic.py
 
 Grow toward 100+. Always store **why the other answer is wrong**, not only the winner.
 
+S1 policy seed: `gb_051_walter_s1_money_quit` — enough-money quit pressure; preferred
+family/unfinished-duty frame over Felina confession voice (`era_bleed_voice`).
+Pack: `materials/breaking-bad/intelligence/s1/walter/`.
+
 Soft failure vocabulary (stable ids):  
 `materials/breaking-bad/eval/SOFT_FAILURE_TAXONOMY.md`  
 (e.g. `plot_dump`, `volume_first`, `future_knowledge`, `relation_wrong`).
