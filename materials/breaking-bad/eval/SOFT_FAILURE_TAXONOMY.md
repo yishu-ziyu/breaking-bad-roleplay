@@ -24,6 +24,7 @@ They do not auto-fill scores.
 | `cross_series_leak` | continuity / hard | BCS/El Camino fact in default BB session | Default graph contamination |
 | `prediction_as_fact` | continuity | Live-era guess written as Board truth | "Gus will definitely…" as fact |
 | `meme_voice` | voice_fit | Quote-contest or meme cadence | Famous line karaoke |
+| `era_bleed_voice` | intentionality / continuity | Later-arc identity spoken on earlier era board | S1 Walt Felina confession ("I liked it" / "I am the danger") |
 
 ## Mapping to Soft Critic weights
 

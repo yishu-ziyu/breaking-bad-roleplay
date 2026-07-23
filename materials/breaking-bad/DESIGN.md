@@ -31,6 +31,12 @@
    - **Reddit rewatch/live hubs:** 只存链接与认知时态标签，见 `community/REWATCH_HUBS.md` 与 `INGEST_POLICY.md`。
    - **不是 Continuity 真相**（DEC-0006）。默认不纳入 BCS/El Camino 知识图；不把高赞评论当角色台词。
 
+5. Character Intelligence Layer：时代切片决策层（运行时）
+   - 路径：`intelligence/{era_family}/{character}/`（先做 `s1/walter`）。
+   - 内容：identity era、decision rules、forbidden、scene DNA。
+   - 注入：Story Character Policy 路径（与 Continuity Board 同缝）；Direct 仅在显式 `era` 时注入。
+   - **禁止**把全季心理学混进早期会话。见 `docs/narrative/intelligence_architecture_review.md`。
+
 ## 推荐数据表
 
 ### `sources.jsonl`

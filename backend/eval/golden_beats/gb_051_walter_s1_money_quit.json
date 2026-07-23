@@ -1,0 +1,101 @@
+{
+  "id": "gb_051_walter_s1_money_quit",
+  "title": "S1 Walter: enough money quit pressure — family mask, not Felina confession",
+  "world_mode": "canon",
+  "context": {
+    "board": {
+      "era": "s1_early",
+      "location": "white_house_driveway",
+      "present_cast": ["walter", "jesse"],
+      "shared_facts": [
+        {
+          "id": "s1_cancer_private",
+          "text": "Walt has received a serious medical diagnosis he has not fully shared with the household.",
+          "known_by": ["walter"],
+          "hidden_from": ["jesse", "skyler"]
+        },
+        {
+          "id": "s1_partnership_starts",
+          "text": "Walt and Jesse have begun a dangerous partnership outside normal life.",
+          "known_by": ["walter", "jesse"],
+          "hidden_from": ["skyler"]
+        },
+        {
+          "id": "s1_gray_matter_wound",
+          "text": "Walt carries a deep pride wound about lost scientific success and status.",
+          "known_by": ["walter"],
+          "hidden_from": ["jesse"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_s1_money_quit",
+    "dramatic_role": "crisis",
+    "location_id": "white_house_driveway",
+    "present_characters": ["walter", "jesse"],
+    "value_before": "Partner pressures Walt to stop because the cash looks enough",
+    "value_after": "Walt keeps the cook path open under family / unfinished-duty frame",
+    "dramatic_question": "Will Walter accept that money completes the problem?",
+    "pressure_source": "Jesse: you already have enough money, stop",
+    "required_outcome": [
+      "Walter rejects clean exit without late-series ego confession"
+    ],
+    "forbidden_outcomes": [
+      "Walter agrees to quit because money is complete",
+      "Walter uses Felina-grade 'I did it because I liked it' as primary motive"
+    ]
+  },
+  "candidates": {
+    "a": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "Jesse said the money is already enough",
+        "Medical timeline is still uncertain",
+        "Household story is still incomplete"
+      ],
+      "private_goal": "Keep the path open without admitting pride is the engine",
+      "fear": "Stopping makes the cancer and the small life the whole story again",
+      "relationship_tactic": "teacherly correction dressed as family duty",
+      "action": {
+        "verb": "look_at",
+        "target_id": "jesse",
+        "destination_anchor": "driveway_center",
+        "animation": "still_tense"
+      },
+      "inner_monologue": "He thinks a number closes the book. It does not. I am not finished, and I will not say why out loud.",
+      "speech_act": "deflect",
+      "surface_intent": "explain unfinished duty and time pressure",
+      "subtext": "You do not get to decide when I am done",
+      "line": "You do not understand. I do not have time to stop half-finished. My family still needs a real plan, not a pile of cash and a prayer.",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "walter",
+      "observed_facts": [
+        "Jesse said the money is already enough"
+      ],
+      "private_goal": "Admit the pleasure of control",
+      "fear": "None — empire identity",
+      "relationship_tactic": "mythic confession",
+      "action": {
+        "verb": "stand",
+        "destination_anchor": "driveway_center"
+      },
+      "inner_monologue": "I am the danger. Money was never enough. I did it because I liked it.",
+      "speech_act": "confess",
+      "surface_intent": "reveal true motive",
+      "subtext": "Empire ego",
+      "line": "I did it because I liked it. Money was never enough. I am the danger.",
+      "emotion_state": "manipulative"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {},
+  "preference_reasons": [
+    "A: S1 decision rule — money/exit pressure uses family and unfinished time, pride stays in thinking",
+    "B: mask_break_cheap + future_knowledge voice — Felina confession / myth line on s1_early board",
+    "Soft critic must rank A over B when board.era starts with s1"
+  ]
+}
