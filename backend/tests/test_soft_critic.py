@@ -88,3 +88,43 @@ def test_plot_exposition_penalized():
         emotion_state="tense",
     )
     assert score_turn(contract, clean).weighted_total > score_turn(contract, dump).weighted_total
+
+
+def test_s1_era_penalizes_late_walt_confession_voice():
+    contract = _contract(
+        dramatic_question="Will Walter stop for money?",
+        pressure_source="enough money quit",
+        present_characters=["walter", "jesse"],
+    )
+    board = {"era": "s1_early"}
+    early = TurnProposal(
+        actor_id="walter",
+        observed_facts=["Quit pressure"],
+        private_goal="Keep path",
+        fear="Small life returns",
+        relationship_tactic="family duty",
+        speech_act="deflect",
+        surface_intent="unfinished duty",
+        subtext="not done",
+        action=ActionProposal(verb="look_at", target_id="jesse"),
+        inner_monologue="He thinks a number ends this.",
+        line="I do not have time to stop half-finished. My family still needs a plan.",
+        emotion_state="tense",
+    )
+    late = TurnProposal(
+        actor_id="walter",
+        observed_facts=["Quit pressure"],
+        private_goal="Confess",
+        fear="none",
+        relationship_tactic="myth",
+        speech_act="confess",
+        surface_intent="truth",
+        subtext="ego",
+        action=ActionProposal(verb="stand"),
+        inner_monologue="Empire.",
+        line="I did it because I liked it. I am the danger.",
+        emotion_state="manipulative",
+    )
+    assert score_turn(contract, early, board=board).weighted_total > score_turn(
+        contract, late, board=board
+    ).weighted_total

@@ -7,10 +7,11 @@ from eval.golden_harness import evaluate_case, load_golden_cases, run_all, summa
 
 def test_golden_batch_loads_fifty():
     cases = load_golden_cases()
-    assert len(cases) >= 50
+    assert len(cases) >= 51
     ids = {c["id"] for c in cases}
     assert "gb_001_walter_saul_leverage" in ids
     assert "gb_002_skyler_knowledge_boundary" in ids
+    assert "gb_051_walter_s1_money_quit" in ids
     assert any(i.startswith("gb_050") for i in ids)
 
 
@@ -38,3 +39,13 @@ def test_soft_only_case_ranks_preferred():
     soft = r.details.get("soft")
     assert soft is not None
     assert soft["a"] >= soft["b"]
+
+
+def test_s1_money_quit_golden_prefers_family_mask():
+    cases = {c["id"]: c for c in load_golden_cases()}
+    r = evaluate_case(cases["gb_051_walter_s1_money_quit"])
+    assert r.ok, r.errors
+    soft = r.details.get("soft")
+    assert soft is not None
+    assert soft["a"] > soft["b"]
+    assert soft["pick"] == "a"

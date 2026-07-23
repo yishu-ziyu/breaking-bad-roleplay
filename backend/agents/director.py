@@ -1534,6 +1534,28 @@ class DirectorAgent:
                         logger.debug(
                             "Continuity board inject failed for %s", character_id
                         )
+                # Era-bound Character Intelligence Pack (S1 Walter v1, etc.)
+                try:
+                    from agents.character_intelligence import (
+                        format_intelligence_prompt_block,
+                    )
+
+                    board_era = ""
+                    if continuity_board is not None:
+                        board_era = str(continuity_board.get("era") or "")
+                    intel_block = format_intelligence_prompt_block(
+                        character_id, board_era
+                    )
+                    if intel_block:
+                        dossier_context = (
+                            f"{dossier_context}\n\n{intel_block}".strip()
+                            if dossier_context
+                            else intel_block
+                        )
+                except Exception:
+                    logger.debug(
+                        "Character intelligence inject failed for %s", character_id
+                    )
                 peer_context: list[dict[str, str]] = []
                 for prior in prior_spoken_lines:
                     peer_context.append(
@@ -2322,6 +2344,25 @@ class DirectorAgent:
                     )
             except Exception:
                 logger.debug("Dossier load failed for direct chat %s", backend_id)
+        # Optional era-bound intelligence pack (Direct chat when era is set).
+        try:
+            from agents.character_intelligence import format_intelligence_prompt_block
+
+            chat_era = str(
+                context.get("era")
+                or context.get("board_era")
+                or context.get("eraId")
+                or ""
+            )
+            intel_block = format_intelligence_prompt_block(backend_id, chat_era)
+            if intel_block:
+                dossier_context = (
+                    f"{dossier_context}\n\n{intel_block}".strip()
+                    if dossier_context
+                    else intel_block
+                )
+        except Exception:
+            logger.debug("Character intelligence inject failed for direct %s", backend_id)
         # Instantiate character and call structured respond
         agent = character_cls(self.provider)
         result = await agent.respond_structured(
