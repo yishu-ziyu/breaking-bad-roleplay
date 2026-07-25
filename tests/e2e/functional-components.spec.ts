@@ -12,7 +12,7 @@ async function gotoFresh(page: Page) {
 }
 
 async function sendChatMessage(page: Page, text: string) {
-  await page.locator('.composer input').fill(text)
+  await page.locator('.composer textarea').fill(text)
   await page.locator('.composer button[type="submit"]').click()
 }
 
@@ -101,7 +101,10 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
   await page.locator('.seg-control button:has-text("EN")').click()
   await page.locator('.char-card', { hasText: 'Saul' }).click()
   await page.locator('#relation').selectOption('witness')
-  await page.locator('section', { hasText: 'Model Backend' }).locator('select').selectOption('cliproxy')
+  // Model line is chosen via the connection chip → sheet → provider brand.
+  await page.locator('.connection-chip').first().click()
+  await page.locator('.connection-sheet__brands button', { hasText: 'StepFun' }).click()
+  await page.locator('.connection-sheet__close').click()
   await sendChatMessage(page, 'I need representation.')
 
   await expect(page.locator('.msg--char p', { hasText: 'For a client' })).toBeVisible()
@@ -112,7 +115,7 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
     relation: 'witness',
     mode: 'direct',
     language: 'en',
-    llmProvider: 'cliproxy',
+    llmProvider: 'stepfun',
   })
 })
 
@@ -252,6 +255,11 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
+  // Stage cards dwell 7s for readability; browse to the newest card via the nav.
+  const stageNext = page.locator('.story-scene-card__nav button[aria-label="Next card"]')
+  while ((await stageNext.count()) > 0 && (await stageNext.isEnabled())) {
+    await stageNext.click()
+  }
   await expect(page.locator('.story-scene-card__quote', { hasText: 'back online' })).toBeVisible()
   await expect(page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'back online' })).toBeVisible()
 })

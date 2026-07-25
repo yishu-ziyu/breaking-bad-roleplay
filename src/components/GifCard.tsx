@@ -16,6 +16,8 @@ export function GifCard({ src, alt, caption }: GifCardProps) {
       <img
         src={src}
         alt={alt || ''}
+        loading="lazy"
+        decoding="async"
         onError={() => {
           setFailedSrc(src)
         }}
