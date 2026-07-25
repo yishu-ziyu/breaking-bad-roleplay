@@ -110,6 +110,17 @@ async function mockSSEStates(page: Page): Promise<number[]> {
   ).__mockSSEInstances?.map((source) => source.readyState) ?? [])
 }
 
+/**
+ * Stage cards dwell 7s each for readability. Browse to the newest card via
+ * the stage nav so assertions don't wait out the paced autoplay.
+ */
+async function pinLatestStageCard(page: Page) {
+  const next = page.locator('.story-scene-card__nav button[aria-label="Next card"]')
+  while ((await next.count()) > 0 && (await next.isEnabled())) {
+    await next.click()
+  }
+}
+
 /** Seed localStorage (abq_ prefix is added by caller, matching persistedState). */
 async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
@@ -218,6 +229,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
   // Full dialogue lives on the paper stage; timeline keeps a short summary
+  await pinLatestStageCard(page)
   await expect(page.locator('.story-scene-card__quote')).toContainText(
     'We need to cook',
   )
@@ -279,12 +291,13 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pres
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
   await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos office')
 
-  await expect(page.locator('.story-outline__summary')).toContainText('2 story beats planned')
+  await expect(page.locator('.story-outline__summary')).toContainText('2 McKee-structured beats planned')
   await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
 
   await expect(page.locator('.story-event--scene_change', { hasText: 'Los Pollos Hermanos office' })).toBeVisible()
-  await expect(page.locator('.story-scene-card h3')).toContainText('Gus Fring')
+  await pinLatestStageCard(page)
+  await expect(page.locator('.story-scene-card__speaker')).toContainText('Gus Fring')
   await expect(page.locator('.story-scene-card__quote')).toContainText('A calm conversation prevents')
 
   await expect(page.locator('.beat-paused')).toContainText('Choose the next move')
@@ -346,6 +359,7 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   await expect(page.locator('.story-hud')).toContainText('Beat 2')
 
   // New agent_speak content visible on stage + timeline summary
+  await pinLatestStageCard(page)
   await expect(page.locator('.story-scene-card__quote')).toContainText('The batch is ready.')
   await expect(
     page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'The batch is ready.' }),
@@ -455,6 +469,7 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
   // New agent_speak content visible on stage
+  await pinLatestStageCard(page)
   await expect(page.locator('.story-scene-card__quote')).toContainText('take him out')
   await expect(
     page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'take him out' }),
@@ -616,6 +631,7 @@ test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) 
   })
 
   // Voice lives on the paper stage for the focused speak beat
+  await pinLatestStageCard(page)
   const voicePlayer = page.locator('.story-scene-card .voice-player').first()
   await expect(voicePlayer).toBeVisible()
   await expect(voicePlayer).toBeEnabled()
