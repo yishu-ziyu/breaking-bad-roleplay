@@ -57,7 +57,7 @@ async function selectCharacter(page: Page, name: string) {
 }
 
 async function sendChatMessage(page: Page, text: string) {
-  const input = page.locator('.composer input')
+  const input = page.locator('.composer textarea')
   await input.fill(text)
   await page.locator('.composer button[type="submit"]').click()
 }
@@ -246,12 +246,13 @@ test('AC-6: VoicePlayer renders enabled play button when speechSynthesis availab
 /* ------------------------------------------------------------------ */
 
 test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavailable', async ({ page }) => {
-  // Remove speechSynthesis so VoicePlayer falls back to disabled state
+  // Remove speechSynthesis so VoicePlayer falls back to disabled state.
+  // Hank has no MiniMax cloned voice, so without speechSynthesis he cannot play.
   await page.addInitScript(() => {
     delete (window as Window & { speechSynthesis?: SpeechSynthesis }).speechSynthesis
   })
-  await seedStorage(page, chatState('walter', [
-    { id: 'opener-walter', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
+  await seedStorage(page, chatState('hank', [
+    { id: 'opener-hank', sender: 'hank', text: 'Hey, buddy. You look like a guy with a story.', emotion: 'jovial', gifQuery: null, gifUrl: null },
   ]))
 
   // Ensure no console errors (e.g. runtime exception from missing audio)
