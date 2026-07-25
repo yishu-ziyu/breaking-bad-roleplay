@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent } from 'react'
+import type { CSSProperties, FormEvent, ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
@@ -249,6 +249,17 @@ function truncateText(text: string, maxLen: number): string {
   const cleaned = text.replace(/\s+/g, ' ').trim()
   if (cleaned.length <= maxLen) return cleaned
   return `${cleaned.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/** True while an IME candidate window is open — Enter confirms the candidate, not submit. */
+function isImeComposing(e: ReactKeyboardEvent<HTMLElement>): boolean {
+  return e.nativeEvent.isComposing || e.keyCode === 229
 }
 
 function getStoryEventTimelineSummary(evt: StoryEvent, lang: Language, maxLen = 52): string {
@@ -511,6 +522,12 @@ const uiText: Record<Language, Record<string, string>> = {
     timelineExpand: 'Show rail',
     gifToggleHide: 'Hide GIF',
     gifToggleShow: 'Show GIF',
+    stopGenerating: 'Stop',
+    newMessages: 'New messages',
+    stagePrev: 'Previous card',
+    stageNext: 'Next card',
+    backToLive: 'Back to latest',
+    storyStartHint: 'Tip: press ⌘/Ctrl+Enter to start',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
@@ -633,6 +650,12 @@ const uiText: Record<Language, Record<string, string>> = {
     timelineExpand: '展开分镜',
     gifToggleHide: '关 GIF',
     gifToggleShow: '开 GIF',
+    stopGenerating: '停止',
+    newMessages: '新消息',
+    stagePrev: '上一张',
+    stageNext: '下一张',
+    backToLive: '回到最新',
+    storyStartHint: '提示：按 ⌘/Ctrl+Enter 快速开始',
   },
 }
 
@@ -698,35 +721,52 @@ function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchP
         <button onClick={() => setRedirectOpen(true)} disabled={pending !== null}>{labels.redirect}</button>
       )}
       {redirectOpen && (
-        <div className="redirect-control">
+        <form
+          className="redirect-control"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!redirectText.trim() || pending) return
+            void wrap('redirect', () => {
+              const p = redirectText
+              setRedirectOpen(false)
+              setRedirectText('')
+              return onRedirect(p)
+            })()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setRedirectOpen(false)
+          }}
+        >
           <input
+            autoFocus
             value={redirectText}
             onChange={e => setRedirectText(e.target.value)}
+            onKeyDown={(e) => {
+              // IME guard: Enter that confirms a candidate must not submit the redirect.
+              if (e.key === 'Enter' && isImeComposing(e)) e.preventDefault()
+            }}
             placeholder={labels.redirectPlaceholder}
             disabled={pending !== null}
           />
           <button
-            onClick={wrap('redirect', () => {
-              if (redirectText.trim()) {
-                const p = redirectText
-                setRedirectOpen(false)
-                setRedirectText('')
-                return onRedirect(p)
-              }
-              return Promise.resolve()
-            })}
+            type="submit"
             disabled={pending !== null || !redirectText.trim()}
           >
             {labels.submit}
           </button>
-          <button onClick={() => setRedirectOpen(false)} disabled={pending !== null}>{labels.cancel}</button>
-        </div>
+          <button type="button" onClick={() => setRedirectOpen(false)} disabled={pending !== null}>{labels.cancel}</button>
+        </form>
       )}
       {!perspectiveOpen && (
         <button onClick={() => setPerspectiveOpen(true)} disabled={pending !== null}>{labels.switchPerspective}</button>
       )}
       {perspectiveOpen && (
-        <div className="perspective-control">
+        <div
+          className="perspective-control"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setPerspectiveOpen(false)
+          }}
+        >
           <select
             value=""
             onChange={e => {
@@ -746,6 +786,19 @@ function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchP
           <button onClick={() => setPerspectiveOpen(false)} disabled={pending !== null}>{labels.cancel}</button>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  ErrorBox - dismissable inline error                               */
+/* ------------------------------------------------------------------ */
+
+function ErrorBox({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div className="error-box" role="alert">
+      <span className="error-box__text">{message}</span>
+      <button type="button" className="error-box__dismiss" onClick={onDismiss} aria-label="Dismiss">×</button>
     </div>
   )
 }
@@ -800,6 +853,13 @@ function App() {
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Composer textarea: auto-grow + focus target after send / view switch. */
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  /** In-flight /api/chat request; aborted by the stop button. */
+  const chatAbortRef = useRef<AbortController | null>(null)
+  /** Chat stream: only auto-scroll when the reader is already near the bottom. */
+  const [chatPinnedToBottom, setChatPinnedToBottom] = useState(true)
+  const [unseenBelow, setUnseenBelow] = useState(false)
   /** Story board: outline collapsed by default to free stage space. */
   const [outlineExpanded, setOutlineExpanded] = useState(false)
   /** null = auto-follow latest card event; number = user pinned a timeline row. */
@@ -870,6 +930,10 @@ function App() {
   // Story state
   const story = useStoryStream()
   const [storyTask, setStoryTask] = useState('')
+  /** Story setup textarea: autofocus target when the board is idle. */
+  const storyTaskRef = useRef<HTMLTextAreaElement>(null)
+  /** Beat rail container: keeps the active beat scrolled into view. */
+  const storyEventsRef = useRef<HTMLDivElement>(null)
 
   // Keep story SSE bind token in sync with connection vault.
   useEffect(() => {
@@ -1010,11 +1074,67 @@ function App() {
     return () => clearTimeout(id)
   }, [currentSceneUrl])
 
+  const handleChatScroll = useCallback(() => {
+    const el = chatStreamRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    setChatPinnedToBottom(nearBottom)
+    if (nearBottom) setUnseenBelow(false)
+  }, [])
+
   useEffect(() => {
-    const stream = chatStreamRef.current
-    if (!stream) return
-    stream.scrollTo({ top: stream.scrollHeight, behavior: 'smooth' })
-  }, [messages.length])
+    const el = chatStreamRef.current
+    if (!el) return
+    if (chatPinnedToBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+    } else {
+      // Defer so we do not cascade-render inside the effect body (react-hooks/set-state-in-effect).
+      queueMicrotask(() => setUnseenBelow(true))
+    }
+  }, [messages, chatPinnedToBottom])
+
+  const scrollChatToBottom = useCallback(() => {
+    const el = chatStreamRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+    setChatPinnedToBottom(true)
+    setUnseenBelow(false)
+  }, [])
+
+  /* Composer: auto-grow on input, Enter sends / Shift+Enter newline. */
+  const handleComposerChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value)
+    const el = e.target
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+  }, [])
+
+  const handleComposerKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    // IME guard: Enter that confirms a composition candidate must not send.
+    if (isImeComposing(e)) return
+    e.preventDefault()
+    e.currentTarget.form?.requestSubmit()
+  }, [])
+
+  const handleStopSending = useCallback(() => {
+    chatAbortRef.current?.abort()
+  }, [])
+
+  /* Focus the composer when the chat view / active character changes
+     (desktop pointers only - avoid popping the mobile keyboard). */
+  useEffect(() => {
+    if (view !== 'chat') return
+    if (!window.matchMedia('(pointer: fine)').matches) return
+    composerRef.current?.focus()
+  }, [view, selectedCharId])
+
+  /* Same for the story setup textarea while the board waits for a brief. */
+  useEffect(() => {
+    if (view !== 'story' || story.connectionState !== 'idle') return
+    if (!window.matchMedia('(pointer: fine)').matches) return
+    storyTaskRef.current?.focus()
+  }, [view, story.connectionState])
 
   const userTurnCount = messages.filter(m => m.sender === 'user').length
   const showSavePrompt = !auth.user && userTurnCount >= 3
@@ -1123,6 +1243,8 @@ function App() {
     const nextHistory = [...messages, userMsg]
     updateMessages(prev => [...prev, userMsg])
     setMessage('')
+    if (composerRef.current) composerRef.current.style.height = 'auto'
+    setChatPinnedToBottom(true)
 
     // Update memory with user turn
     const updatedAfterUser = charMemory.addTurn(selectedCharId, 'user', userText, currentMemory)
@@ -1141,10 +1263,13 @@ function App() {
       setSyncStatus('privacy-locked')
     }
 
+    const controller = new AbortController()
+    chatAbortRef.current = controller
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        signal: controller.signal,
         body: JSON.stringify({
           characterId: selectedCharId,
           userInput: userText,
@@ -1256,9 +1381,22 @@ function App() {
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (!(e instanceof Error && e.name === 'AbortError')) {
+        // Roll back the optimistic bubble and restore the draft so retry is one click.
+        updateMessages(prev => prev.filter(m => m.id !== userMsg.id))
+        setMessage(userText)
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
+      if (chatAbortRef.current === controller) chatAbortRef.current = null
       setIsSending(false)
+      const el = composerRef.current
+      if (el) {
+        el.focus()
+        // Re-grow for a restored draft (or collapse after a cleared one).
+        el.style.height = 'auto'
+        el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+      }
     }
   }, [message, isSending, messages, selectedCharId, relation, mode, language, connection, story, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key])
 
@@ -1364,6 +1502,85 @@ function App() {
     const safePos = Math.min(Math.max(stageCardPos, 0), stageCardIndices.length - 1)
     return story.events[stageCardIndices[safePos]] ?? null
   }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos, story.events])
+  /** Stage position currently on the paper (pin wins over autoplay pos). */
+  const activeStagePos = useMemo(() => {
+    if (stageCardIndices.length === 0) return 0
+    if (pinnedStoryEventIndex != null) {
+      const idx = stageCardIndices.indexOf(pinnedStoryEventIndex)
+      if (idx >= 0) return idx
+    }
+    return Math.min(Math.max(stageCardPos, 0), stageCardIndices.length - 1)
+  }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos])
+
+  /* Manual browsing pins the card, freezing paced autoplay (same contract
+     as clicking a timeline row). */
+  const stepStageCard = useCallback((delta: number) => {
+    if (stageCardIndices.length === 0) return
+    const next = Math.min(Math.max(activeStagePos + delta, 0), stageCardIndices.length - 1)
+    if (next === activeStagePos) return
+    setPinnedStoryEventIndex(stageCardIndices[next])
+    stageShownAtRef.current = Date.now()
+  }, [activeStagePos, stageCardIndices])
+
+  /* Keep the active beat visible on the rail as autoplay advances. */
+  useEffect(() => {
+    if (!timelineRailOpen) return
+    const container = storyEventsRef.current
+    if (!container) return
+    const active = container.querySelector('.story-event.is-active')
+    if (active instanceof HTMLElement) {
+      active.scrollIntoView({
+        block: 'nearest',
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      })
+    }
+  }, [currentStoryEvent, timelineRailOpen])
+
+  const returnToLiveStage = useCallback(() => {
+    setPinnedStoryEventIndex(null)
+    setStageCardPos(Math.max(stageCardIndices.length - 1, 0))
+    stageShownAtRef.current = Date.now()
+  }, [stageCardIndices])
+
+  /* Stage keyboard nav: ←/→ browse cards; Enter continues at a beat pause.
+     Skips editable / interactive targets so typing and buttons keep working. */
+  const storyConnectionState = story.connectionState
+  const storySendAction = story.sendAction
+  useEffect(() => {
+    if (view !== 'story') return
+    const live = storyConnectionState === 'streaming'
+      || storyConnectionState === 'beat_paused'
+      || storyConnectionState === 'complete'
+    if (!live) return
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (
+        tag === 'INPUT'
+        || tag === 'TEXTAREA'
+        || tag === 'SELECT'
+        || target?.isContentEditable
+      ) return
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        stepStageCard(-1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        stepStageCard(1)
+      } else if (
+        e.key === 'Enter'
+        && storyConnectionState === 'beat_paused'
+        && tag !== 'BUTTON'
+        && tag !== 'A'
+      ) {
+        e.preventDefault()
+        void storySendAction('continue', undefined, selectedCharId)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view, storyConnectionState, stepStageCard, storySendAction, selectedCharId])
+
   const currentStoryText = currentStoryEvent ? getStoryEventSummary(currentStoryEvent, language) : t.sceneFallback
   const currentStoryTypeChip = currentStoryEvent
     ? getEventTypeChip(currentStoryEvent, language)
@@ -1438,7 +1655,7 @@ function App() {
           <div className="landing-screen__divider" />
           {/* Loop 10 Gap 2: one in-character voice line (original, not a show quote) */}
           <p className="landing-screen__voice">{t.landingVoice}</p>
-          <button className="landing-screen__enter" onClick={handleEnterWorld} type="button">
+          <button className="landing-screen__enter" onClick={handleEnterWorld} type="button" autoFocus>
             {t.enterWorld}
             <span className="landing-screen__enter-arrow">&rarr;</span>
           </button>
@@ -1644,8 +1861,15 @@ function App() {
               <h3>{t.setStage}</h3>
               <p>{t.setStageHint}</p>
               <textarea
+                ref={storyTaskRef}
                 value={storyTask}
                 onChange={e => setStoryTask(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && storyTask.trim()) {
+                    e.preventDefault()
+                    void handleStartStory()
+                  }
+                }}
                 placeholder={t.placeholder}
               />
               <button
@@ -1655,7 +1879,8 @@ function App() {
               >
                 {t.startStory}
               </button>
-              {error && <div className="error-box">{error}</div>}
+              <span className="story-setup__kbd-hint">{t.storyStartHint}</span>
+              {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}
             </div>
           )}
 
@@ -1683,7 +1908,7 @@ function App() {
               <button type="button" onClick={story.reset}>
                 {t.restart}
               </button>
-              {error && <div className="error-box">{error}</div>}
+              {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}
             </div>
           )}
 
@@ -1726,6 +1951,34 @@ function App() {
                       </span>
                       {currentStoryHeading && currentStoryHeading !== currentStoryTypeChip && (
                         <span className="story-scene-card__speaker">{currentStoryHeading}</span>
+                      )}
+                      {stageCardIndices.length > 1 && (
+                        <span className="story-scene-card__nav">
+                          <button
+                            type="button"
+                            aria-label={t.stagePrev}
+                            title={t.stagePrev}
+                            disabled={activeStagePos <= 0}
+                            onClick={() => stepStageCard(-1)}
+                          >‹</button>
+                          <span className="story-scene-card__pos">{activeStagePos + 1}/{stageCardIndices.length}</span>
+                          <button
+                            type="button"
+                            aria-label={t.stageNext}
+                            title={t.stageNext}
+                            disabled={activeStagePos >= stageCardIndices.length - 1}
+                            onClick={() => stepStageCard(1)}
+                          >›</button>
+                        </span>
+                      )}
+                      {pinnedStoryEventIndex != null && (
+                        <button
+                          type="button"
+                          className="story-scene-card__live"
+                          onClick={returnToLiveStage}
+                        >
+                          {t.backToLive}
+                        </button>
                       )}
                       <button
                         type="button"
@@ -1774,7 +2027,7 @@ function App() {
                       </button>
                     </div>
                     <p className="story-timeline__hint">{t.timelineHint}</p>
-                    <div className="story-events">
+                    <div className="story-events" ref={storyEventsRef}>
                       {story.events.map((evt, i) => {
                         const isCardType = STORY_CARD_EVENT_TYPES.has(evt.type)
                         const isActive = evt === currentStoryEvent
@@ -1900,7 +2153,7 @@ function App() {
                 </div>
               )}
 
-              {error && <div className="error-box">{error}</div>}
+              {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}
             </div>
           )}
         </section>
@@ -1924,7 +2177,7 @@ function App() {
             <span className="schema-pill">{t.schema}</span>
           </header>
 
-          <div className="chat-stream" ref={chatStreamRef}>
+          <div className="chat-stream" ref={chatStreamRef} onScroll={handleChatScroll}>
             {messages.map(msg => {
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
@@ -1967,23 +2220,42 @@ function App() {
             <div className="chat-end" aria-hidden="true" />
           </div>
 
+          {unseenBelow && !chatPinnedToBottom && (
+            <button
+              type="button"
+              className="chat-scroll-latest"
+              onClick={scrollChatToBottom}
+            >
+              ↓ {t.newMessages}
+            </button>
+          )}
+
           <div className="chat-footer">
             {isSending && (
               <div className="typing" aria-live="polite">
                 <span className="dot" /><span className="dot" /><span className="dot" />
               </div>
             )}
-            {error && <div className="error-box">{error}</div>}
+            {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}
 
             <form className="composer" onSubmit={handleSend}>
-              <input
+              <textarea
+                ref={composerRef}
+                rows={1}
                 value={message}
-                onChange={e => setMessage(e.target.value)}
+                onChange={handleComposerChange}
+                onKeyDown={handleComposerKeyDown}
                 placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
               />
-              <button type="submit" disabled={isSending || !message.trim()}>
-                {isSending ? t.sending : t.send}
-              </button>
+              {isSending ? (
+                <button type="button" className="composer__stop" onClick={handleStopSending}>
+                  ⏹ {t.stopGenerating}
+                </button>
+              ) : (
+                <button type="submit" disabled={!message.trim()}>
+                  {t.send}
+                </button>
+              )}
             </form>
           </div>
         </section>

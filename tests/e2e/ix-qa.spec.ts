@@ -6,7 +6,11 @@ const consoleErrors: string[] = []
 
 function collectErrors(page: Page) {
   page.on('console', (msg) => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text())
+    if (msg.type() !== 'error') return
+    const text = msg.text()
+    // The story backend is proxied but not running under e2e; resource 5xx noise is ignored.
+    if (text.startsWith('Failed to load resource')) return
+    consoleErrors.push(text)
   })
   page.on('pageerror', (err) => consoleErrors.push(err.message))
 }
@@ -181,7 +185,7 @@ test.describe('IX-2: App shell and navigation', () => {
     await expect(page.locator('.app-shell')).toBeVisible()
     await expect(page.locator('.sidebar')).toBeVisible()
     await expect(page.locator('.char-grid')).toBeVisible()
-    await expect(page.locator('.char-card')).toHaveCount(6)
+    await expect(page.locator('.char-card')).toHaveCount(7)
     await expect(page.locator('.char-card.selected')).toBeVisible()
 
     await page.waitForTimeout(500)
@@ -399,6 +403,9 @@ test.describe('IX-5: Additional interaction checks', () => {
 
   test('IX-5a: connecting state visible during story start', async ({ page }) => {
     collectErrors(page)
+    // Mock the session backend so 'connecting' persists instead of flipping to error.
+    await installMockEventSource(page)
+    await mockSessionCreate(page, 'ix-5a')
     await seedStorage(page, { abq_character: 'walter', abq_language: 'zh', abq_view: 'story' })
 
     await page.locator('.story-setup textarea').fill('Walter 需要拿到新的甲胺供应。')

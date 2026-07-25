@@ -1257,6 +1257,64 @@ textarea {
   color: rgba(36, 42, 28, 0.72);
 }
 
+/* Stage card browsing: prev / position / next + back-to-live */
+.story-scene-card__meta .story-scene-card__nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  letter-spacing: 0;
+}
+
+.story-scene-card__nav button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(23, 32, 14, 0.2);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  color: rgba(36, 42, 28, 0.72);
+  font: 900 14px/1 var(--font-sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.story-scene-card__nav button:hover:not(:disabled) {
+  border-color: rgba(23, 32, 14, 0.36);
+  color: rgba(36, 42, 28, 0.92);
+}
+
+.story-scene-card__nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.story-scene-card__meta .story-scene-card__pos {
+  padding: 0 4px;
+  background: none;
+  color: rgba(36, 42, 28, 0.55);
+  font: 700 11px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+}
+
+.story-scene-card__live {
+  padding: 4px 10px;
+  border: 1px solid rgba(23, 32, 14, 0.3);
+  border-radius: 999px;
+  background: rgba(142, 169, 63, 0.22);
+  color: rgba(36, 42, 28, 0.85);
+  font: 900 10px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.story-scene-card__live:hover {
+  background: rgba(142, 169, 63, 0.34);
+}
+
 .story-scene-card__quote {
   max-width: var(--layout-reading-measure);
   margin: 0;
@@ -2219,7 +2277,7 @@ button.story-event {
   grid-template-columns: minmax(0, 1fr) max-content;
   gap: 10px;
   min-height: 64px;
-  align-items: center;
+  align-items: end;
   padding: 10px;
   border-radius: 10px;
   background:
@@ -2231,18 +2289,22 @@ button.story-event {
   -webkit-backdrop-filter: blur(16px) saturate(0.9);
 }
 
-.composer input {
+.composer textarea {
   border: 1px solid var(--color-border-soft);
   min-height: 48px;
-  padding: 0 14px;
+  max-height: 140px;
+  padding: 12px 14px;
   border-radius: 8px;
   background: var(--color-surface-cream);
   color: var(--color-text-ink);
   font-family: var(--font-sans);
   font-size: 15px;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
 }
 
-.composer input::placeholder {
+.composer textarea::placeholder {
   color: var(--color-text-muted-2);
   opacity: 0.82;
 }
@@ -2263,6 +2325,37 @@ button.story-event {
 .composer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.composer .composer__stop {
+  background: transparent;
+  color: var(--color-bb-yellow);
+  border: 1px solid var(--color-bb-yellow);
+}
+
+.composer .composer__stop:hover {
+  background: rgba(247, 206, 70, 0.16);
+}
+
+/* Scroll-to-latest pill (shown when new messages land while reading up) */
+.chat-panel .chat-scroll-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 8px 16px;
+  border: 1px solid rgba(247, 206, 70, 0.5);
+  border-radius: 999px;
+  background: rgba(7, 12, 16, 0.88);
+  color: var(--color-bb-yellow);
+  font: 700 12px/1 var(--font-sans);
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+}
+
+.chat-panel .chat-scroll-latest:hover {
+  background: rgba(247, 206, 70, 0.18);
 }
 
 /* VoicePlayer — unified button style */
@@ -2297,12 +2390,34 @@ button.story-event {
 
 /* Error box */
 .error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--color-error-bg);
   color: var(--color-error-text);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.error-box__text {
+  flex: 1;
+}
+
+.error-box__dismiss {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.error-box__dismiss:hover {
+  opacity: 1;
 }
 
 /* ==========================================
