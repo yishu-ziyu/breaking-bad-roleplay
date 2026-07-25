@@ -2,7 +2,7 @@
    Connection sheet — BYOK branding UI (platform + multi-preset keys)
    ================================================================= */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { UseConnectionReturn } from '../hooks/useConnection'
 import type { MiniMaxRegion, ProviderId } from '../lib/providerBrands'
 import {
@@ -92,7 +92,28 @@ type Props = {
 }
 
 export function ConnectionSheet({ conn, language }: Props) {
-  if (!conn.sheetOpen) return null
+  const { sheetOpen, setSheetOpen } = conn
+  /* Modal behavior: Esc closes; focus moves into the sheet on open and returns
+     to the opener on close. Lives on the wrapper (not the form) because the
+     form remounts whenever the provider/model selection changes. */
+  useEffect(() => {
+    if (!sheetOpen) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSheetOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    const focusTimer = window.setTimeout(() => {
+      document.querySelector<HTMLElement>('.connection-sheet__close')?.focus()
+    }, 0)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.clearTimeout(focusTimer)
+      previouslyFocused?.focus()
+    }
+  }, [sheetOpen, setSheetOpen])
+
+  if (!sheetOpen) return null
   const formKey = [
     conn.view.providerId,
     conn.view.mode,
@@ -304,7 +325,15 @@ function ConnectionSheetForm({ conn, language }: Props) {
   }
 
   return (
-    <div className="connection-sheet-overlay" role="dialog" aria-modal="true" aria-label={t.title}>
+    <div
+      className="connection-sheet-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.title}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setSheetOpen(false)
+      }}
+    >
       <div className="connection-sheet">
         <header className="connection-sheet__head">
           <div>

@@ -193,9 +193,9 @@ test('TC-IX-2: enter world navigates to app shell', async ({ page }) => {
   await expect(page.locator('.app-shell')).toBeVisible()
   await expect(page.locator('.sidebar')).toBeVisible()
 
-  // Character grid visible
+  // Character grid visible (7-character roster incl. Hank)
   await expect(page.locator('.char-grid')).toBeVisible()
-  await expect(page.locator('.char-card')).toHaveCount(6)
+  await expect(page.locator('.char-card')).toHaveCount(7)
 
   // Default character selected
   await expect(page.locator('.char-card.selected')).toBeVisible()
@@ -316,6 +316,9 @@ test('TC-IX-7: starting story shows connecting indicator', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (err) => errors.push(err.message))
 
+  // Mock the session backend so 'connecting' persists instead of flipping to error.
+  await installMockEventSource(page)
+  await mockSessionCreate(page, 'r1-ix-7')
   await seedStorage(page, {
     abq_character: 'walter',
     abq_language: 'en',
@@ -376,7 +379,8 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
   await page.waitForTimeout(50)
   await expect(page.locator('.story-event--scene_change')).toBeVisible()
 
-  // Emit agent_speak
+  // Emit agent_speak — the stage dwells on the scene card (7s pacing),
+  // so browse to the speak card via the stage nav instead of waiting.
   await emitSSE(page, 'agent_speak', {
     data: {
       character_id: 'Walter White',
@@ -386,7 +390,10 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
     },
   })
   await page.waitForTimeout(50)
+  await page.locator('.story-scene-card__nav button[aria-label="Next card"]').click()
   await expect(page.locator('.story-scene-card__quote')).toContainText('precise')
+  await expect(page.locator('.story-scene-card__live')).toBeVisible()
+  await page.locator('.story-scene-card__live').click()
   await expect(page.locator('.story-event--agent_speak .story-event__summary')).toContainText('precise')
 
   // Continue events to beat_ready
@@ -648,7 +655,7 @@ test('TC-IX-17: chat send button disabled during API call', async ({ page }) => 
     })
   })
 
-  const input = page.locator('.composer input')
+  const input = page.locator('.composer textarea')
   await input.fill('Test message')
 
   const sendBtn = page.locator('.composer button[type="submit"]')
@@ -657,9 +664,11 @@ test('TC-IX-17: chat send button disabled during API call', async ({ page }) => 
   await sendBtn.click()
   await page.waitForTimeout(50)
 
-  // Send button should be disabled during sending
-  await expect(sendBtn).toBeDisabled()
-  await expect(sendBtn).toContainText(/Thinking|生成回应/)
+  // While sending, the submit button is swapped for a stop (abort) button.
+  const stopBtn = page.locator('.composer .composer__stop')
+  await expect(stopBtn).toBeVisible()
+  await expect(stopBtn).toContainText(/Stop|停止/)
+  await expect(sendBtn).toHaveCount(0)
 
   // Wait for response
   await page.waitForTimeout(600)
@@ -728,6 +737,9 @@ test('TC-IX-19: beat-controls buttons have pointer cursor and visible focus', as
    TC-IX-20: Story setStage textarea disabled during connecting
    ================================================================= */
 test('TC-IX-20: story setup inputs not interactive during connecting', async ({ page }) => {
+  // Mock the session backend so 'connecting' persists instead of flipping to error.
+  await installMockEventSource(page)
+  await mockSessionCreate(page, 'r1-ix-20')
   await seedStorage(page, {
     abq_character: 'walter',
     abq_language: 'en',
@@ -759,7 +771,7 @@ test('TC-IX-21: chat input placeholder updates when character changes', async ({
     },
   })
 
-  const input = page.locator('.composer input')
+  const input = page.locator('.composer textarea')
   // Walter placeholder
   await expect(input).toHaveAttribute('placeholder', /Walter/)
 
@@ -856,4 +868,105 @@ test('TC-IX-25: error message clears when story recovers', async ({ page }) => {
   // Error state cleared
   await expect(page.locator('.story-error')).toHaveCount(0)
   await expect(page.locator('.story-setup')).toBeVisible()
+})
+
+/* =================================================================
+   TC-IX-26: Composer IME guard — Enter during composition must not send
+   ================================================================= */
+test('TC-IX-26: IME-composing Enter does not send the chat message', async ({ page }) => {
+  await seedStorage(page, {
+    abq_character: 'walter',
+    abq_language: 'zh',
+    abq_view: 'chat',
+    abq_messages: {
+      walter: [
+        { id: 'opener', sender: 'walter', text: '说话小心点。', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
+      ],
+    },
+  })
+
+  let chatCalls = 0
+  await page.route('**/api/chat', async (route) => {
+    chatCalls += 1
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ reply_text: '嗯。', emotion_state: 'tense', gif_search_query: null }),
+    })
+  })
+
+  const input = page.locator('.composer textarea')
+  await input.fill('老白')
+
+  // Simulate an IME candidate-confirm Enter (keyCode 229 / isComposing).
+  await input.dispatchEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true })
+  await page.waitForTimeout(150)
+
+  // Guard held: no request, no optimistic bubble, draft preserved.
+  expect(chatCalls).toBe(0)
+  await expect(page.locator('.msg--user')).toHaveCount(0)
+  await expect(input).toHaveValue('老白')
+
+  // A genuine Enter still sends normally.
+  await input.press('Enter')
+  await expect.poll(() => chatCalls).toBe(1)
+  await expect(page.locator('.msg--user')).toHaveCount(1)
+})
+
+/* =================================================================
+   TC-IX-27: Failed send — roll back optimistic bubble, restore draft
+   ================================================================= */
+test('TC-IX-27: failed send rolls back the bubble and restores the draft', async ({ page }) => {
+  await seedStorage(page, {
+    abq_character: 'walter',
+    abq_language: 'en',
+    abq_view: 'chat',
+    abq_messages: {
+      walter: [
+        { id: 'opener', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
+      ],
+    },
+  })
+
+  await page.route('**/api/chat', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'Model overloaded' }),
+    })
+  })
+
+  const input = page.locator('.composer textarea')
+  const sendBtn = page.locator('.composer button[type="submit"]')
+  await input.fill('We need to talk about the batch.')
+  await sendBtn.click()
+
+  // Error surfaces in the dismissable box…
+  const errorBox = page.locator('.chat-footer .error-box')
+  await expect(errorBox).toBeVisible()
+  await expect(errorBox).toContainText('Model overloaded')
+
+  // …the optimistic user bubble is rolled back…
+  await expect(page.locator('.msg--user')).toHaveCount(0)
+  await expect(page.locator('.msg--char')).toHaveCount(1)
+
+  // …and the draft is restored so retry is one click.
+  await expect(input).toHaveValue('We need to talk about the batch.')
+  await expect(sendBtn).toBeEnabled()
+
+  // Recovery: next attempt succeeds with the restored draft.
+  await page.unroute('**/api/chat')
+  await page.route('**/api/chat', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ reply_text: 'We always talk.', emotion_state: 'tense', gif_search_query: null }),
+    })
+  })
+  await sendBtn.click()
+
+  await expect(page.locator('.msg--user')).toHaveCount(1)
+  await expect(page.locator('.msg--char')).toHaveCount(2)
+  await expect(input).toHaveValue('')
+  await expect(page.locator('.chat-footer .error-box')).toHaveCount(0)
 })
