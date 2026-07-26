@@ -72,6 +72,32 @@ def golden_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 
+def validate_value_flip_review_schema(case: dict[str, Any]) -> list[str]:
+    """Schema-level checks on the optional ``value_flip_review`` block.
+
+    Runs regardless of polarity verdict so a future fixture that
+    misspells the review object fails fast at the harness boundary.
+
+    Returns a list of stable error codes. Empty list = compliant.
+    Possible codes:
+
+      - ``value_flip_review_not_object`` — review block is not a JSON object
+      - ``value_flip_note_missing``      — ``escape_hatch`` true but ``reviewer_note``
+                                           empty / non-string / missing
+    """
+    review = case.get("value_flip_review")
+    if review is None:
+        return []
+    if not isinstance(review, dict):
+        return ["value_flip_review_not_object"]
+    flag = review.get("escape_hatch")
+    note = review.get("reviewer_note")
+    errors: list[str] = []
+    if flag is True and not (isinstance(note, str) and note.strip()):
+        errors.append("value_flip_note_missing")
+    return errors
+
+
 def _validate_escape(review: dict[str, Any]) -> dict[str, Any]:
     """Validate ``value_flip_review`` for a non-flip case.
 
@@ -113,23 +139,33 @@ def _validate_escape(review: dict[str, Any]) -> dict[str, Any]:
 def evaluate_value_flip(case: dict[str, Any]) -> dict[str, Any]:
     """Decide whether a golden case's ``value_before`` → ``value_after`` flips.
 
-    Three observable outcomes:
+    Four observable outcomes:
 
     * ``flip``      — fixture declared ``value_polarity_before`` and
       ``value_polarity_after`` (both in the closed vocabulary) and they differ.
     * ``escaped``   — polarity tokens are equal AND a valid
       ``value_flip_review`` (escape_hatch=true AND non-empty reviewer_note) is
       present. Counts as a pass.
-    * ``fail``      — polarity tokens are equal without a valid escape hatch.
-      Stable failure code attached.
-    * ``ambiguous`` — insufficient metadata (one or both polarity tokens missing
-      or out of vocabulary). Additive: does NOT fail the case; surfaces a
-      diagnostic so future fixture authors are nudged toward declaring
-      ``value_polarity_*``.
+    * ``fail``      — either (a) polarity tokens are equal without a valid
+      escape hatch, OR (b) ``value_flip_review`` itself is malformed. Stable
+      failure code attached.
+    * ``ambiguous`` — insufficient metadata (one or both polarity tokens
+      missing or out of vocabulary). Additive: does NOT fail the case;
+      surfaces a diagnostic so future fixture authors are nudged toward
+      declaring ``value_polarity_*``.
 
     This function does not mutate the McKee spine or the BeatContract schema;
     fixture-level fields are read off the case dict only.
     """
+    schema_errors = validate_value_flip_review_schema(case)
+    if schema_errors:
+        return {
+            "status": "fail",
+            "code": schema_errors[0],
+            "all_codes": schema_errors,
+            "reason": "schema violation in value_flip_review",
+        }
+
     flip_before = case.get("value_polarity_before")
     flip_after = case.get("value_polarity_after")
     review = case.get("value_flip_review") or {}
