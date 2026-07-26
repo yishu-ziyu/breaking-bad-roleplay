@@ -3,37 +3,167 @@
 Loads adjudicated samples and runs:
   1) hard World Validator
   2) soft Narrative Critic (when both candidates hard-pass)
+  3) value-flip polarity gate (Loop 13; evaluation-only, additive)
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agents.narrative_contracts import (
+# Make `agents` and `scenes` resolvable when this module is invoked as
+# `python -m backend.eval.golden_harness` from the repo root (Commit 3).
+# We only add the backend/ directory itself; this is a no-op for the legacy
+# `cd backend && python -m eval.golden_harness` invocation.
+_BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
+from agents.narrative_contracts import (  # noqa: E402
     ActionProposal,
     TurnProposal,
     try_parse_beat_contract,
 )
-from scenes.critic import prefer_turn, score_turn
-from scenes.validator import validate_world_turn
-from scenes.world_mode import WorldMode, parse_world_mode
+from scenes.critic import prefer_turn, score_turn  # noqa: E402
+from scenes.validator import validate_world_turn  # noqa: E402
+from scenes.world_mode import WorldMode, parse_world_mode  # noqa: E402
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden_beats"
+
+# Closed polarity vocabulary for the value-flip gate (Loop 13).
+# Evaluation-only — never written into the McKee spine / BeatContract.
+VALUE_FLIP_POLARITY_VOCAB: frozenset[str] = frozenset(
+    {
+        "stability",
+        "threat",
+        "trust",
+        "control",
+        "hope",
+        "denial",
+        "fear",
+        "exposure",
+        "leverage",
+        "dominance",
+        "doubt",
+        "guilt",
+        "alliance",
+        "isolation",
+    }
+)
 
 
 @dataclass
 class GoldenCaseResult:
     case_id: str
     ok: bool
-    errors: list[str]
-    details: dict[str, Any]
+    errors: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 def golden_dir() -> Path:
     return GOLDEN_DIR
+
+
+# ---------------------------------------------------------------------------
+# Value-flip polarity gate (Loop 13) — additive, evaluation-only
+# ---------------------------------------------------------------------------
+
+
+def _validate_escape(review: dict[str, Any]) -> dict[str, Any]:
+    """Validate ``value_flip_review`` for a non-flip case.
+
+    Stable failure codes (additive; do not collide with validator codes):
+      - ``value_flip_note_missing``   — ``escape_hatch`` true but ``reviewer_note`` empty
+      - ``value_flip_flag_missing``   — ``reviewer_note`` non-empty but ``escape_hatch`` not True
+      - ``value_flip_missing_escape`` — neither flag nor note supplied
+    """
+    flag = review.get("escape_hatch")
+    note = review.get("reviewer_note")
+    has_note = isinstance(note, str) and note.strip() != ""
+
+    if flag is True and has_note:
+        return {
+            "status": "escaped",
+            "code": "value_flip_ok",
+            "reason": "equal polarity, escape hatch approved",
+            "reviewer_note": note,
+        }
+    if flag is True and not has_note:
+        return {
+            "status": "fail",
+            "code": "value_flip_note_missing",
+            "reason": "escape_hatch=true requires non-empty reviewer_note",
+        }
+    if has_note and flag is not True:
+        return {
+            "status": "fail",
+            "code": "value_flip_flag_missing",
+            "reason": "non-empty reviewer_note requires escape_hatch=true",
+        }
+    return {
+        "status": "fail",
+        "code": "value_flip_missing_escape",
+        "reason": "polarity equal, no escape hatch provided",
+    }
+
+
+def evaluate_value_flip(case: dict[str, Any]) -> dict[str, Any]:
+    """Decide whether a golden case's ``value_before`` → ``value_after`` flips.
+
+    Three observable outcomes:
+
+    * ``flip``      — fixture declared ``value_polarity_before`` and
+      ``value_polarity_after`` (both in the closed vocabulary) and they differ.
+    * ``escaped``   — polarity tokens are equal AND a valid
+      ``value_flip_review`` (escape_hatch=true AND non-empty reviewer_note) is
+      present. Counts as a pass.
+    * ``fail``      — polarity tokens are equal without a valid escape hatch.
+      Stable failure code attached.
+    * ``ambiguous`` — insufficient metadata (one or both polarity tokens missing
+      or out of vocabulary). Additive: does NOT fail the case; surfaces a
+      diagnostic so future fixture authors are nudged toward declaring
+      ``value_polarity_*``.
+
+    This function does not mutate the McKee spine or the BeatContract schema;
+    fixture-level fields are read off the case dict only.
+    """
+    flip_before = case.get("value_polarity_before")
+    flip_after = case.get("value_polarity_after")
+    review = case.get("value_flip_review") or {}
+    if not isinstance(review, dict):
+        review = {}
+
+    has_before = isinstance(flip_before, str) and flip_before.strip() != ""
+    has_after = isinstance(flip_after, str) and flip_after.strip() != ""
+
+    if has_before and has_after:
+        b = flip_before.strip().lower()
+        a = flip_after.strip().lower()
+        in_vocab = b in VALUE_FLIP_POLARITY_VOCAB and a in VALUE_FLIP_POLARITY_VOCAB
+        if in_vocab:
+            if b == a:
+                return _validate_escape(review)
+            return {
+                "status": "flip",
+                "code": "value_flip_ok",
+                "before": b,
+                "after": a,
+                "reason": "polarity tokens differ within vocabulary",
+            }
+        return {
+            "status": "ambiguous",
+            "code": "value_flip_ambiguous",
+            "reason": "polarity tokens outside closed vocabulary",
+        }
+
+    return {
+        "status": "ambiguous",
+        "code": "value_flip_ambiguous",
+        "reason": "polarity tokens not declared on fixture",
+    }
 
 
 def load_golden_cases(directory: Path | None = None) -> list[dict[str, Any]]:
@@ -85,6 +215,12 @@ def evaluate_case(case: dict[str, Any]) -> GoldenCaseResult:
             errors=["invalid_beat_contract"],
             details={},
         )
+
+    # --- Loop 13 value-flip polarity gate (additive, evaluation-only) ----
+    flip = evaluate_value_flip(case)
+    details["value_flip"] = flip
+    if flip["status"] == "fail":
+        errors.append(f"{flip['code']}:{flip.get('reason','')}")
 
     board = case.get("context", {}).get("board") if isinstance(case.get("context"), dict) else None
     if board is None:
