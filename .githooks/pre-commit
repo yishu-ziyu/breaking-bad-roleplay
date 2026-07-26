@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Loop 13 Commit 3 — pre-commit hook.
+# Runs the deterministic 10-case smoke of the golden harness.
+# Failures block the commit; pass-through is silent.
+#
+# Setup (one-time, per clone):
+#   git config core.hooksPath .githooks
+#
+# Scope: backend only. Skipped when the staged diff has no backend/eval,
+# backend/tests, or backend/agents files touched, so commits to src/ or
+# materials/ do not incur the smoke cost.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Scope check: only run when eval / harness / tests / agents change.
+if git diff --cached --name-only | grep -qE '^(backend/eval/|backend/tests/.*golden|backend/tests/.*harness|backend/agents/narrative_contracts\.py|backend/scenes/)'; then
+  : # fall through
+else
+  exit 0
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "pre-commit: uv not found on PATH; install uv (https://docs.astral.sh/uv/) to run the golden harness smoke." >&2
+  exit 1
+fi
+
+cd backend
+echo "pre-commit: running golden harness smoke (10 deterministic cases)..."
+# Note: from inside backend/, the module is `eval.golden_harness` (not
+# `backend.eval.golden_harness`) because backend/ is a namespace package
+# only when the cwd is the repo root. The brief's literal
+# `python -m backend.eval.golden_harness` works only from repo root; this
+# is the working form for the hook.
+uv run python -m eval.golden_harness --smoke
