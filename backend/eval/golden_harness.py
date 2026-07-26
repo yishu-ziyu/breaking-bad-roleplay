@@ -22,6 +22,19 @@ _BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+# Load backend/.env when invoked as a CLI from repo root, so the brief's
+# literal `python -m backend.eval.golden_harness --smoke` works without
+# requiring `cd backend` first. Tests already load .env from cwd, so this
+# is a harmless re-load.
+_env_path = _BACKEND_DIR / ".env"
+if _env_path.exists():
+    try:
+        from dotenv import load_dotenv as _load_dotenv
+
+        _load_dotenv(_env_path)
+    except ImportError:
+        pass
+
 from agents.narrative_contracts import (  # noqa: E402
     ActionProposal,
     TurnProposal,
@@ -342,10 +355,167 @@ def run_all(directory: Path | None = None) -> list[GoldenCaseResult]:
 
 def summary(results: list[GoldenCaseResult]) -> dict[str, Any]:
     failed = [r for r in results if not r.ok]
+    flip_counts: dict[str, int] = {}
+    for r in results:
+        st = r.details.get("value_flip", {}).get("status", "none")
+        flip_counts[st] = flip_counts.get(st, 0) + 1
     return {
         "total": len(results),
         "passed": len(results) - len(failed),
         "failed": len(failed),
         "failed_ids": [r.case_id for r in failed],
         "failures": {r.case_id: r.errors for r in failed},
+        "value_flip_status_counts": flip_counts,
     }
+
+
+# ---------------------------------------------------------------------------
+# Smoke subset (Loop 13 Commit 3)
+# ---------------------------------------------------------------------------
+#
+# Deterministic 10-case smoke run. IDs are matched by prefix against the
+# fixture's ``id`` field, so future file renames (gb_001_*.json → gb_001.json)
+# still resolve. Order is stable: prefix order matches the literal list.
+# Coverage intent:
+#   gb_001 progressive   Walter/Saul leverage  — soft-rank exemplar
+#   gb_005 progressive   Mike discipline       — both-hard-pass, soft-only
+#   gb_010 progressive   empty turn            — empty_turn edge case
+#   gb_012 crisis        Walter precision      — crisis soft preference
+#   gb_017 progressive   Hank friendly probe   — knowledge-bound warn
+#   gb_021 progressive   dead-actor block      — hard-fail scenario
+#   gb_025 crisis        Mike calm ok          — crisis both-pass
+#   gb_035 progressive   Skyler empty          — soft edge case
+#   gb_042 progressive   Walter absent         — actor-not-present edge
+#   gb_051 crisis        Walter money quit     — recent S1 era pack
+SMOKE_ID_PREFIXES: tuple[str, ...] = (
+    "gb_001",
+    "gb_005",
+    "gb_010",
+    "gb_012",
+    "gb_017",
+    "gb_021",
+    "gb_025",
+    "gb_035",
+    "gb_042",
+    "gb_051",
+)
+
+
+def _select_smoke_cases(directory: Path | None = None) -> list[dict[str, Any]]:
+    """Return golden cases whose ``id`` starts with one of ``SMOKE_ID_PREFIXES``.
+
+    Order is fixed (prefix order); missing prefixes are skipped (a warning is
+    emitted via stderr so the failure mode is visible but the smoke run still
+    completes against the cases that exist).
+    """
+    import sys
+
+    cases = load_golden_cases(directory)
+    selected: list[dict[str, Any]] = []
+    for prefix in SMOKE_ID_PREFIXES:
+        match = next(
+            (c for c in cases if str(c.get("id", "")).startswith(prefix)), None
+        )
+        if match is None:
+            print(
+                f"warning: smoke prefix {prefix!r} not found in corpus",
+                file=sys.stderr,
+            )
+            continue
+        selected.append(match)
+    return selected
+
+
+def _format_text_summary(s: dict[str, Any], *, label: str) -> str:
+    lines = [
+        f"=== Golden harness: {label} ===",
+        f"total   : {s['total']}",
+        f"passed  : {s['passed']}",
+        f"failed  : {s['failed']}",
+        f"value_flip status counts: {s.get('value_flip_status_counts', {})}",
+    ]
+    if s["failed"]:
+        lines.append(f"failed_ids: {s['failed_ids']}")
+        for cid, errs in s["failures"].items():
+            lines.append(f"  - {cid}:")
+            for e in errs:
+                lines.append(f"      {e}")
+    return "\n".join(lines)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+    import json as _json
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="backend.eval.golden_harness",
+        description=(
+            "Adjudicated golden-beat evaluator. Default: full run over all "
+            "51 on-disk cases. --smoke runs the deterministic 10-case subset."
+        ),
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="run only the 10 deterministic smoke cases (Loop 13 Commit 3)",
+    )
+    parser.add_argument(
+        "--ids",
+        type=str,
+        default=None,
+        help="comma-separated id prefixes to run (mutually exclusive with --smoke)",
+    )
+    parser.add_argument(
+        "--list-ids",
+        action="store_true",
+        help="print the smoke id list and exit",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the summary as a single JSON line on stdout",
+    )
+    args = parser.parse_args(argv)
+
+    if args.list_ids:
+        for prefix in SMOKE_ID_PREFIXES:
+            print(prefix)
+        return 0
+
+    if args.smoke and args.ids:
+        print("error: --smoke and --ids are mutually exclusive", file=sys.stderr)
+        return 2
+
+    if args.smoke:
+        cases = _select_smoke_cases()
+        label = f"--smoke ({len(cases)} cases)"
+    elif args.ids:
+        prefixes = [p.strip() for p in args.ids.split(",") if p.strip()]
+        all_cases = load_golden_cases()
+        ordered: list[dict[str, Any]] = []
+        for p in prefixes:
+            for c in all_cases:
+                if str(c.get("id", "")).startswith(p) and c not in ordered:
+                    ordered.append(c)
+        cases = ordered
+        label = f"--ids ({len(cases)} cases)"
+    else:
+        cases = load_golden_cases()
+        label = "full run"
+
+    results = [evaluate_case(c) for c in cases]
+    s = summary(results)
+
+    if args.json:
+        print(_json.dumps(s, separators=(",", ":"), ensure_ascii=False))
+    else:
+        print(_format_text_summary(s, label=label))
+
+    return 0 if s["failed"] == 0 else 1
+
+
+if __name__ == "__main__":
+    import sys as _sys
+
+    raise SystemExit(_main(_sys.argv[1:]))
