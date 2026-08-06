@@ -1,4 +1,4 @@
-export type RoleAssetCharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank'
+export type RoleAssetCharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank' | 'marie'
 
 export type RoleGifTag =
   | 'default'
@@ -449,6 +449,17 @@ export const roleAssets: Record<RoleAssetCharacterId, RoleAssetRegistryEntry> = 
         copyrightNotes: platformCopyrightNote,
       },
     ],
+  },
+  marie: {
+    characterId: 'marie',
+    displayName: 'Marie',
+    usageNotes:
+      'Empty GIF pool for Loop 14. Safe portrait fallback only — no licensed still until first-frame audit loop fills the catalog.',
+    safetyNotes:
+      'Do not introduce unlicensed or AI-generated Marie imagery. Keep selection tied to fictional household observation and relationship pressure.',
+    copyrightNotes:
+      'No licensed GIFs or stills in this loop; silhouette / initial fallback is the only rendering path until the GIF catalog lands.',
+    gifPools: [],
   },
 }
 

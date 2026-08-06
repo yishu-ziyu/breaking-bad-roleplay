@@ -171,6 +171,16 @@ export function buildStreamQuery(opts: {
   if (opts.accessToken && opts.accessToken.trim()) {
     parts.push(`access_token=${encodeURIComponent(opts.accessToken.trim())}`)
   }
+  // A/B blind-test switch: propagate ?zh_guard=0 from the page URL so the
+  // backend can skip the Chinese-expression guard for this Story session.
+  // Only appended when the page URL actually carries the param; a plain
+  // visit (no param) keeps the current default behavior unchanged.
+  if (typeof window !== 'undefined' && window.location) {
+    const pageZhGuard = new URLSearchParams(window.location.search).get('zh_guard')
+    if (pageZhGuard != null) {
+      parts.push(`zh_guard=${encodeURIComponent(pageZhGuard)}`)
+    }
+  }
   return `?${parts.join('&')}`
 }
 

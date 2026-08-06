@@ -19,6 +19,11 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    # Supabase transaction pooler (Supavisor) does not support asyncpg's
+    # named prepared statements. Connection reuse re-prepares the same
+    # `__asyncpg_stmt_N__` and blows up with DuplicatePreparedStatementError.
+    # Disable the statement cache so every query is a fresh unnamed statement.
+    connect_args={"statement_cache_size": 0},
 )
 
 async_session_factory = async_sessionmaker(

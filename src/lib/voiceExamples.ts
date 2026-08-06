@@ -74,6 +74,14 @@ export const voiceExamples: VoiceExampleMap = {
     'friend of the family':
       '我把你当自己人。自己人要是藏事，我会先当它是误会——然后我会问到它不再是误会。',
   },
+  marie: {
+    'Skyler sister-in-law':
+      'Skyler 总是告诉我她能处理。但她最近的「处理」听起来，越来越像在替别人善后。',
+    'Hank spouse':
+      '你今天又少接了两个电话。我不追问，但家里好像从来没有这么安静过。',
+    'supportive but uncomprehending':
+      '我不知道你在忙什么，我也不打算猜。但你要知道，我比你更在乎这间屋子还像不像一个家。',
+  },
 }
 
 /**

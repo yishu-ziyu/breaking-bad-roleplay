@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 from agents.provider import ModelResult
 from agents.director import (
     _latin_letter_ratio,
+    _language_directive,
     _needs_zh_rewrite,
     _norm_lang,
     _status_message,
@@ -256,3 +257,138 @@ class TestStoryModeLanguageInjection:
         assert "害怕" in (thinks[0].data.get("thought_content") or "")
         assert "靠" in (acts[0].data.get("action") or "") or "椅" in (acts[0].data.get("action") or "")
         assert "leans" not in (acts[0].data.get("action") or "").lower()
+
+
+# ===================================================================
+# A/B blind-test switch: zh_guard toggles the 中文表达守则 injection only.
+# Default (no param) must keep the exact current behavior.
+# ===================================================================
+
+class TestZhGuardSwitch:
+
+    def test_directive_default_includes_guard(self):
+        """Unchanged default: zh directive carries the 母语者表达守则 block."""
+        assert "中文表达守则" in _language_directive("zh")
+        assert "中文母语者思维" in _language_directive("zh")
+
+    def test_directive_disabled_strips_guard_keeps_rest(self):
+        """zh_guard=False removes only the 表达守则 block, not the language rule."""
+        d = _language_directive("zh", zh_guard=False)
+        assert "中文表达守则" not in d
+        assert "中文母语者思维" not in d
+        assert "简体中文" in d
+        assert "角色中文名" in d
+
+    def test_english_directive_untouched_by_switch(self):
+        """The switch is zh-only; English directive is byte-identical."""
+        assert _language_directive("en", zh_guard=False) == _language_directive("en")
+
+    async def test_outline_prompt_includes_guard_by_default(
+        self, director, mock_provider
+    ):
+        mock_provider.call_model = AsyncMock(return_value="1. RV\n2. Lab")
+        await director._generate_outline("cook meth", language="zh")
+        prompt = mock_provider.call_model.call_args.args[0][-1]["content"]
+        assert "中文表达守则" in prompt
+
+    async def test_outline_prompt_skips_guard_when_disabled(
+        self, director, mock_provider
+    ):
+        mock_provider.call_model = AsyncMock(return_value="1. RV\n2. Lab")
+        await director._generate_outline("cook meth", language="zh", zh_guard=False)
+        prompt = mock_provider.call_model.call_args.args[0][-1]["content"]
+        assert "中文表达守则" not in prompt
+        assert "简体中文" in prompt
+
+    async def test_beat_speak_skips_guard_when_disabled(
+        self, director, mock_provider
+    ):
+        """Character sub-agent prompt drops the 母语者思维 guard under zh_guard=False."""
+        mock_provider.call_model = AsyncMock(
+            return_value=json.dumps([
+                {
+                    "type": "agent_speak",
+                    "data": {
+                        "character_id": "Walter White",
+                        "content": "Sit down.",
+                        "emotion_state": "tense",
+                        "gif_search_query": "walter white tense",
+                    },
+                },
+            ])
+        )
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(json.dumps({
+                "reply_text": "Sit down. We need to be precise.",
+                "emotion_state": "tense",
+                "gif_search_query": "walter white tense",
+                "thinking": "He needs control.",
+                "tool_executed": None,
+                "tool_log": None,
+            }))
+        )
+
+        async for _ in director._generate_beat(
+            task="cook meth",
+            outline="1. RV\n2. Lab",
+            beat_index=0,
+            context={"previous_scene": "", "current_scene": "RV"},
+            scene_desc="RV in the desert",
+            language="zh",
+            zh_guard=False,
+        ):
+            pass
+
+        calls = mock_provider.call_model_with_tools.call_args_list
+        assert len(calls) >= 1, "Character sub-agent should be called"
+        user_msg = calls[0].args[0][-1]["content"]
+        assert "用中文母语者思维" not in user_msg, (
+            f"Guard should be stripped under zh_guard=False. Got: {user_msg[:200]}"
+        )
+        assert "简体中文" in user_msg, (
+            f"Language directive must remain. Got: {user_msg[:200]}"
+        )
+
+    async def test_beat_speak_includes_guard_by_default(
+        self, director, mock_provider
+    ):
+        """Default (zh_guard=True) keeps the 母语者思维 guard in the sub-agent prompt."""
+        mock_provider.call_model = AsyncMock(
+            return_value=json.dumps([
+                {
+                    "type": "agent_speak",
+                    "data": {
+                        "character_id": "Walter White",
+                        "content": "Sit down.",
+                        "emotion_state": "tense",
+                        "gif_search_query": "walter white tense",
+                    },
+                },
+            ])
+        )
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(json.dumps({
+                "reply_text": "Sit down. We need to be precise.",
+                "emotion_state": "tense",
+                "gif_search_query": "walter white tense",
+                "thinking": "He needs control.",
+                "tool_executed": None,
+                "tool_log": None,
+            }))
+        )
+
+        async for _ in director._generate_beat(
+            task="cook meth",
+            outline="1. RV\n2. Lab",
+            beat_index=0,
+            context={"previous_scene": "", "current_scene": "RV"},
+            scene_desc="RV in the desert",
+            language="zh",
+        ):
+            pass
+
+        calls = mock_provider.call_model_with_tools.call_args_list
+        user_msg = calls[0].args[0][-1]["content"]
+        assert "用中文母语者思维" in user_msg, (
+            f"Guard must be present by default. Got: {user_msg[:200]}"
+        )

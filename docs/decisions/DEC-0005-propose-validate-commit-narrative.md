@@ -155,7 +155,7 @@ Player surfaces never show McKee craft scaffolding or validator internals.
 | **P3** | Soft Narrative Critic (symbolic weights) | Scores on speak meta; golden soft-rank when both hard-pass ✅ |
 | **PR5** | Golden Beats harness (50 cases) | hard + soft prefer checks ✅ |
 | **P3** | Narrative Critic + optional second candidate | Soft scores drive pick |
-| **P4** | State Reducer sole Continuity writer | No free-text world mutation from LLM as truth |
+| **P4** | State Reducer sole Continuity writer | No free-text world mutation from LLM as truth ☑ |
 | **PR3** | Blender Stage Kit (Saul office) | Anchors/cameras/animations in GLB extras |
 | **PR4** | React 3D runtime | Load GLB, CueRunner, camera |
 | **PR5** | Evaluation harness | 50 golden beats, hard tests, A/B report |
@@ -177,6 +177,15 @@ Player surfaces never show McKee craft scaffolding or validator internals.
 - Knowledge hard fail clears monologue; removed actors cannot speak
 - Validated turns feed Continuity Board via reducer (alongside legacy deltas)
 - Golden harness: preferred must hard-pass; losers must hit listed error codes
+- **P4 (Loop 12)** — `backend/tests/scenes/test_sole_writer.py` is a static AST
+  walker that freezes the sole-writer invariant: zero `apply_delta_facts`
+  references and zero direct writes to `shared_facts` / `present_cast` /
+  `updated_at_beat` / `irreversible_costs` outside `backend/scenes/state_reducer.py`.
+  The LLM-side helper `apply_delta_facts` was renamed to
+  `record_llm_proposed_deltas` (advisory-only — returns proposed facts for
+  observability, never mutates the board). Director still emits the
+  `world_state_delta` SSE event for visibility, but the board ignores it.
+  Golden harness: 52/52 cases pass; full backend suite (323 tests) green.
 
 ## Consequences
 

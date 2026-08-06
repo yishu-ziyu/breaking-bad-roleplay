@@ -7,7 +7,12 @@ from agents.narrative_contracts import (
     BeatContract,
     TurnProposal,
 )
-from scenes.critic import prefer_turn, score_turn, WEIGHTS
+from scenes.critic import (
+    check_visual_gate,
+    prefer_turn,
+    score_turn,
+    WEIGHTS,
+)
 
 
 def _contract(**kw) -> BeatContract:
@@ -60,6 +65,10 @@ def test_strong_policy_outranks_volume_dump():
     sb = score_turn(contract, weak)
     assert sa.weighted_total > sb.weighted_total
     assert prefer_turn(contract, strong, weak) == "a"
+    # DramaBench canonical fields
+    assert sa.character_consistency > sb.character_consistency
+    assert sa.format_standards >= sb.format_standards
+    # Legacy aliases still work
     assert sa.intentionality > sb.intentionality
     assert sa.visual_executability >= sb.visual_executability
 

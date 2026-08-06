@@ -1,0 +1,30 @@
+# Promptfoo CI gate for Breaking Bad Roleplay — Golden Beats Evaluation
+#
+# Runs the full golden beats harness (52 adjudicated cases) and enforces
+# a 90% pass-rate threshold.  The `exec` provider delegates to
+# backend/eval/promptfoo_runner.py which exits non-zero when the
+# threshold is not met.
+#
+# Usage:
+#   npx promptfoo eval
+#   npx promptfoo check --threshold 0.9
+
+description: "Breaking Bad Roleplay - Golden Beats Evaluation"
+
+prompts:
+  - "Run golden beats evaluation"
+
+providers:
+  - id: exec
+    config:
+      command: cd backend && uv run python -m eval.promptfoo_runner
+
+tests:
+  - vars:
+      suite: "golden_beats"
+
+outputPath: .promptfoo/results.json
+
+evaluateOptions:
+  maxConcurrency: 1
+  showProgressBar: false

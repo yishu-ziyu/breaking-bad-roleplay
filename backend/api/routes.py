@@ -67,7 +67,7 @@ def _quota_http_exception(decision) -> HTTPException:
     return HTTPException(status_code=decision.http_status, detail=detail)
 
 
-def _require_platform_quota(
+async def _require_platform_quota(
     request: Request,
     *,
     action: str,
@@ -76,7 +76,7 @@ def _require_platform_quota(
     guest_id: str | None = None,
     access_token: str | None = None,
 ):
-    decision = enforce_platform_quota(
+    decision = await enforce_platform_quota(
         request=request,
         action=action,
         mode=mode,
@@ -461,7 +461,7 @@ async def get_quota(
 ):
     """Return remaining free credits (guest 8 / logged-in 80 / BYOK unlimited)."""
     gid = _guest_id_from_request(request, guest_id)
-    snap = read_quota_snapshot(
+    snap = await read_quota_snapshot(
         request=request,
         guest_id=gid,
         connection_session_id=connection_session,
@@ -514,7 +514,7 @@ async def synthesize_tts(
     provider: ProviderFacade = Depends(get_provider),
 ):
     """Synthesize speech for a cloned character voice. Returns audio/mpeg."""
-    snap = _require_platform_quota(
+    snap = await _require_platform_quota(
         request,
         action="tts",
         connection_session_id=payload.connectionSessionId,
@@ -741,6 +741,7 @@ async def stream_session(
     connection_session: str | None = Query(default=None),
     guest_id: str | None = Query(default=None),
     access_token: str | None = Query(default=None),
+    zh_guard: str | None = Query(default=None),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -787,7 +788,7 @@ async def stream_session(
 
     # Charge only after the session is known valid (do not bill 404s).
     # SSE cannot set custom headers; guest_id / access_token go in the query.
-    _require_platform_quota(
+    await _require_platform_quota(
         request,
         action="story_beat",
         connection_session_id=connection_session,
@@ -825,6 +826,7 @@ async def stream_session(
                     session_id=resolved_session_id,
                     voice_example=voice_example,
                     language=language,
+                    zh_guard=zh_guard != "0",
                 ):
                     # Stop-signal check: POST /session/{id}/action with
                     # action=stop flips session.status to "paused" in a
@@ -1041,6 +1043,9 @@ class ChatRequest(BaseModel):
     modelId: str | None = None
     voiceExample: str | None = None
     connectionSessionId: str | None = None
+    # Optional experiment path: Agent Harness pipeline instead of director.
+    # Default False keeps production chat unchanged.
+    useHarness: bool = False
 
 
 class ChatResponseDirect(BaseModel):
@@ -1060,6 +1065,58 @@ class ChatResponseCrew(BaseModel):
     debate_logs: list[dict] = []
 
 
+def _map_harness_to_chat_direct(harness_out: dict) -> dict:
+    """Map AgentHarnessService.run() dict → ChatResponseDirect-shaped dict."""
+    steps = harness_out.get("steps") or []
+    if not isinstance(steps, list):
+        steps = []
+
+    emotion_state = "tense"
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("tool_name") == "set_emotion":
+            args = step.get("args") or {}
+            if isinstance(args, dict):
+                em = args.get("emotion")
+                if isinstance(em, str) and em.strip():
+                    emotion_state = em.strip()
+                    break
+
+    tool_executed: str | None = None
+    tool_log: str | None = None
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        name = step.get("tool_name")
+        if isinstance(name, str) and name:
+            tool_executed = name
+            content = step.get("content")
+            tool_log = str(content)[:800] if content is not None else None
+            break
+
+    status_bar = harness_out.get("status_bar")
+    memory_preview = harness_out.get("memory_preview")
+    thinking: str | None = None
+    if isinstance(status_bar, str) and status_bar.strip():
+        thinking = status_bar.strip()
+    elif isinstance(memory_preview, str) and memory_preview.strip():
+        thinking = memory_preview.strip()[:400]
+
+    reply = harness_out.get("reply")
+    reply_text = reply if isinstance(reply, str) else str(reply or "")
+
+    return {
+        "reply_text": reply_text,
+        "emotion_state": emotion_state,
+        "gif_search_query": None,
+        "thinking": thinking,
+        "tool_executed": tool_executed,
+        "tool_log": tool_log,
+        "updated_relationship_state": None,
+    }
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
@@ -1071,7 +1128,7 @@ async def chat(
 
     Request body:
       { characterId, userInput, relation, mode, history, language,
-        llmProvider, voiceExample }
+        llmProvider, voiceExample, useHarness? }
 
     Direct mode response:
       { reply_text, emotion_state, gif_search_query, thinking,
@@ -1079,6 +1136,9 @@ async def chat(
 
     Crew mode response:
       { participants, scene_goal, tension_note, debate_logs }
+
+    When useHarness=true, always returns ChatResponseDirect shape via
+    Agent Harness (same chat quota; production default remains false).
     """
     if not payload.userInput.strip():
         raise HTTPException(status_code=400, detail="userInput is required.")
@@ -1089,12 +1149,70 @@ async def chat(
             detail=f"Invalid mode '{payload.mode}'. Expected 'direct' or 'crew'.",
         )
 
-    snap = _require_platform_quota(
+    snap = await _require_platform_quota(
         request,
         action="chat",
         mode=payload.mode,
         connection_session_id=payload.connectionSessionId,
     )
+
+    # Optional harness path: same quota, no director rewrite.
+    if payload.useHarness:
+        try:
+            from agents.harness.service import get_harness_service
+        except Exception:
+            logger.exception("harness service import failed (chat useHarness)")
+            raise HTTPException(status_code=503, detail="Agent harness unavailable.")
+
+        # Harness on /api/chat prefers offline tools+memory path for reliability.
+        # Live LLM is attempted only when platform keys exist; hard model failures
+        # fall back to offline so the try surface never returns a raw provider 400.
+        live = _live_provider_available(request)
+        provider = getattr(request.app.state, "provider", None) if live else None
+        mode = payload.mode if payload.mode in ("direct", "crew") else "direct"
+
+        try:
+            harness_out = await get_harness_service().run(
+                payload.userInput.strip(),
+                character_id=payload.characterId or "walter",
+                mode=mode,
+                language=payload.language or "en",
+                model_route=payload.modelId,
+                session_id=payload.connectionSessionId,
+                use_multi_agent=mode == "crew",
+                provider=provider,
+                offline=not live,
+            )
+            reply_text = str(harness_out.get("reply") or "")
+            if live and (
+                reply_text.startswith("Model call failed")
+                or harness_out.get("meta", {}).get("stopped_reason") == "error"
+            ):
+                harness_out = await get_harness_service().run(
+                    payload.userInput.strip(),
+                    character_id=payload.characterId or "walter",
+                    mode=mode,
+                    language=payload.language or "en",
+                    model_route=None,
+                    session_id=payload.connectionSessionId,
+                    use_multi_agent=mode == "crew",
+                    provider=None,
+                    offline=True,
+                )
+            result = _map_harness_to_chat_direct(harness_out)
+            if not snap.byok:
+                result = {**result, "quotaRemaining": snap.remaining}
+            return result
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception(
+                "Chat harness path failed for character %s", payload.characterId
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error.",
+            )
 
     bind_override = _resolve_override_from_session(payload.connectionSessionId)
     # Prefer provider from bind when present
@@ -1134,3 +1252,189 @@ async def chat(
             status_code=500,
             detail="Internal server error.",
         )
+
+
+# ---------------------------------------------------------------------------
+# Agent Harness surface (ai-agent-book → ABQ)
+# Guest offline mode always allowed; live provider only when keys + offline=false.
+# ---------------------------------------------------------------------------
+
+class AgentRunRequest(BaseModel):
+    message: str
+    character_id: str = "walter"
+    mode: str = "direct"  # direct|crew|story
+    language: str = "zh"
+    model_route: str | None = None
+    use_multi_agent: bool = False
+    session_id: str | None = None
+    offline: bool = True
+
+
+def _live_provider_available(request: Request) -> bool:
+    """True when app has a provider and at least one platform key is configured."""
+    provider = getattr(request.app.state, "provider", None)
+    if provider is None:
+        return False
+    try:
+        from config import settings as _settings
+        return bool(
+            getattr(_settings, "minimax_api_key", None)
+            or getattr(_settings, "stepfun_api_key", None)
+            or getattr(_settings, "cli_proxy_api_key", None)
+        )
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@router.get("/agent/capabilities")
+async def agent_capabilities():
+    """Capability map + harness module import status (no auth)."""
+    try:
+        from agents.harness.service import capabilities_payload
+        return capabilities_payload()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("agent capabilities failed")
+        return {
+            "formula": "Agent = Model + Harness",
+            "modules": {"service": f"error:{type(exc).__name__}"},
+            "endpoints": [
+                "GET /api/agent/capabilities",
+                "POST /api/agent/run",
+                "GET /api/agent/trajectories",
+                "GET /api/agent/lessons",
+                "GET /api/agent/stats",
+            ],
+            "error": str(exc),
+        }
+
+
+@router.post("/agent/run")
+async def agent_run(request: Request, payload: AgentRunRequest):
+    """Run the BB Agent Harness pipeline (offline by default for guests)."""
+    if not (payload.message or "").strip():
+        raise HTTPException(status_code=400, detail="message is required.")
+
+    mode = (payload.mode or "direct").strip().lower()
+    if mode not in ("direct", "crew", "story"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid mode '{payload.mode}'. Expected direct|crew|story.",
+        )
+
+    try:
+        from agents.harness.service import AgentHarnessService, get_harness_service
+    except Exception:
+        logger.exception("harness service import failed")
+        raise HTTPException(status_code=503, detail="Agent harness unavailable.")
+
+    use_offline = bool(payload.offline) or not _live_provider_available(request)
+    provider = None
+    if not use_offline:
+        provider = getattr(request.app.state, "provider", None)
+
+    service = get_harness_service()
+    try:
+        result = await service.run(
+            payload.message.strip(),
+            character_id=payload.character_id or "walter",
+            mode=mode,
+            language=payload.language or "zh",
+            model_route=payload.model_route,
+            session_id=payload.session_id,
+            use_multi_agent=bool(payload.use_multi_agent) or mode == "crew",
+            provider=provider,
+            offline=use_offline,
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("agent/run failed")
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+
+@router.get("/agent/trajectories")
+async def agent_trajectories(limit: int = Query(10, ge=1, le=100)):
+    """List recent harness trajectories (in-memory + optional JSONL)."""
+    try:
+        from agents.harness.trajectory import get_trajectory_store
+        store = get_trajectory_store()
+        items = store.list_recent(n=limit)
+        out = []
+        for t in items:
+            if hasattr(t, "to_dict"):
+                out.append(t.to_dict())
+            elif isinstance(t, dict):
+                out.append(t)
+            else:
+                out.append({"run_id": getattr(t, "run_id", None)})
+        # Newest first for API consumers
+        out = list(reversed(out))
+        return {"trajectories": out, "count": len(out)}
+    except Exception:
+        logger.exception("agent trajectories failed")
+        return {"trajectories": [], "count": 0}
+
+
+@router.get("/agent/lessons")
+async def agent_lessons(limit: int = Query(50, ge=1, le=200)):
+    """List lessons extracted from trajectories."""
+    try:
+        from agents.harness.evolution import get_lesson_store
+
+        store = get_lesson_store()
+        lessons = store.list_lessons(limit=limit)
+        out = []
+        for lesson in lessons:
+            if hasattr(lesson, "to_dict"):
+                out.append(lesson.to_dict())
+            elif isinstance(lesson, dict):
+                out.append(lesson)
+            else:
+                out.append({"content": str(lesson)})
+        return {"lessons": out, "count": len(out)}
+    except Exception:
+        logger.exception("agent lessons failed")
+        return {"lessons": [], "count": 0}
+
+
+@router.get("/agent/stats")
+async def agent_stats():
+    """Lightweight harness observability snapshot (read-only, no auth)."""
+    try:
+        from agents.harness.evolution import get_lesson_store
+        from agents.harness.service import capabilities_payload
+        from agents.harness.skills import get_skill_registry
+        from agents.harness.trajectory import get_trajectory_store
+
+        traj_store = get_trajectory_store()
+        # Large n ≈ full in-memory set; list_recent is newest-last.
+        all_recent = traj_store.list_recent(n=10_000)
+        # Newest first for API consumers (same convention as /agent/trajectories).
+        recent_run_ids = [
+            t.run_id if hasattr(t, "run_id") else t.get("run_id")
+            for t in reversed(all_recent[-5:])
+        ]
+        recent_run_ids = [rid for rid in recent_run_ids if rid]
+
+        lesson_store = get_lesson_store()
+        lessons = lesson_store.list_lessons()
+        skills = get_skill_registry().all_skills()
+        modules = capabilities_payload().get("modules") or {}
+
+        return {
+            "trajectory_count": len(all_recent),
+            "lesson_count": len(lessons),
+            "skill_count": len(skills),
+            "modules": modules,
+            "recent_run_ids": recent_run_ids,
+        }
+    except Exception:
+        logger.exception("agent stats failed")
+        return {
+            "trajectory_count": 0,
+            "lesson_count": 0,
+            "skill_count": 0,
+            "modules": {},
+            "recent_run_ids": [],
+        }
