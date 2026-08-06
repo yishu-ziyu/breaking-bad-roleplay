@@ -252,4 +252,16 @@
   --scene-overlay-fade: var(--duration-slow) var(--ease-dramatic);
   --scene-overlay-tint: rgba(8, 11, 8, 0.12);
   --scene-overlay-tint-2: rgba(8, 11, 8, 0.25);
+
+  /* -----------------------------------------------------------------
+     15. Shared night world (F01 / D01 — cold open + story shell)
+        One warm soot night. Cold open and Story must share this family.
+        #0c0a08 = rgb(12, 10, 8); #161210 = rgb(22, 18, 16)
+     ----------------------------------------------------------------- */
+  --night-bg: #0c0a08;                 /* warm soot plate */
+  --night-bg-2: #161210;               /* mid lift / gradient stop */
+  --paper: var(--color-surface-paper); /* #fff8ea reading plate */
+  --paper-ink: #f2efe6;                /* cream ink on night */
+  --chrome-border: rgba(196, 154, 58, 0.35); /* single dust-gold edge */
+  --accent-gold: var(--color-bb-yellow);     /* #f7ce46 — one CTA gold */
 }
