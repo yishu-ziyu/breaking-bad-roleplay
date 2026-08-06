@@ -22,6 +22,7 @@ from agents.beat_json import (
     parse_preview,
 )
 from agents.speak_sanitize import sanitize_speak_content
+from agents.dubbing_rewrite import rewrite_dubbing_in_events
 from agents.narrative_contracts import (
     ActionProposal,
     BeatContract,
@@ -33,12 +34,11 @@ from agents.narrative_contracts import (
     validate_turn_against_contract_basic,
 )
 from scenes.action_ontology import map_action_verb
-from scenes.critic import score_turn
 from scenes.state_reducer import apply_validated_turn
 from scenes.validator import validate_world_turn
 from scenes.world_mode import parse_world_mode
 from models.schemas import AgentEvent
-from agents.memory import update_dossiers
+from agents.memory import failed_delta_count, update_dossiers
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,12 @@ LANG_DIRECTIVE = {
         "以及 world_state_delta 的 field/old_value/new_value。\n"
         "禁止英文舞台指示或英文内心独白"
         "（例如 leans back / fingers steepled / He is terrified）。\n"
+        "中文表达守则（用中文母语者思维生成，不要从英文翻译）：\n"
+        "- 起句用中文母语者习惯，禁止「一想到X就Y」「当X的时候」这类英文直译骨架。\n"
+        "- 意象必须是中文已有的、人物会自然长出来的；禁止「抽象名词+具体名词」的硬拼"
+        "（如「秩序的玻璃」）。\n"
+        "- 短句、直接、带停顿；宁可少说，不说废话；表达要像中文母语者在说话。\n"
+        "- 内心独白（thought_content）同样遵守，禁止书面翻译腔。\n"
         "角色中文名必须用下列固定译名（禁止音译乱写）：\n"
         "Mike/Mike Ehrmantraut → 麦克（禁止「米克」）；\n"
         "Walter/Walter White → 沃尔特；Jesse/Jesse Pinkman → 杰西；\n"
@@ -103,6 +109,28 @@ STATUS_I18N = {
 }
 
 
+# A/B blind-test switch (request-level): the "中文母语者表达守则" block.
+# When ``zh_guard`` is disabled (``?zh_guard=0``) these lines are stripped
+# from the zh directive so we can compare 译制腔 output with vs. without the
+# guard. Default (guard enabled) keeps the exact current behavior.
+ZH_EXPRESSION_GUARD = (
+    "中文表达守则（用中文母语者思维生成，不要从英文翻译）：\n"
+    "- 起句用中文母语者习惯，禁止「一想到X就Y」「当X的时候」这类英文直译骨架。\n"
+    "- 意象必须是中文已有的、人物会自然长出来的；禁止「抽象名词+具体名词」的硬拼"
+    "（如「秩序的玻璃」）。\n"
+    "- 短句、直接、带停顿；宁可少说，不说废话；表达要像中文母语者在说话。\n"
+    "- 内心独白（thought_content）同样遵守，禁止书面翻译腔。\n"
+)
+
+# Character sub-agent (speak) variant of the same guard.
+ZH_SPEAK_GUARD = (
+    "用中文母语者思维说话，不要从英文翻译：短句、直接、带停顿；"
+    "禁止「一想到X就Y」「当X的时候」等英文直译骨架；"
+    "禁止「抽象名词+具体名词」的硬拼意象（如「秩序的玻璃」）；"
+    "台词和 thinking 都要像中文母语者在说话，禁止书面翻译腔。"
+)
+
+
 def _norm_lang(lang: str | None) -> str:
     """Normalize UI language codes to en|zh."""
     if not lang:
@@ -110,8 +138,12 @@ def _norm_lang(lang: str | None) -> str:
     return "zh" if str(lang).lower().startswith("zh") else "en"
 
 
-def _language_directive(lang: str) -> str:
-    return LANG_DIRECTIVE[_norm_lang(lang)]
+def _language_directive(lang: str, zh_guard: bool = True) -> str:
+    norm = _norm_lang(lang)
+    if norm != "zh" or zh_guard:
+        return LANG_DIRECTIVE[norm]
+    # zh + guard disabled: drop the 中文表达守则 block, keep everything else.
+    return LANG_DIRECTIVE["zh"].replace(ZH_EXPRESSION_GUARD, "")
 
 
 def _status_message(key: str, lang: str = "en", **kwargs) -> str:
@@ -510,6 +542,7 @@ class DirectorAgent:
         db: Any = None,
         voice_example: str | None = None,
         language: str = "en",
+        zh_guard: bool = True,
     ) -> AsyncIterator[AgentEvent]:
         """
         Main entry point.  Consumes a task description and yields
@@ -529,7 +562,9 @@ class DirectorAgent:
             type="status", data={"message": _status_message("analysing", language)}
         )
         # ---- Step 1: generate the outline -----------------------------------
-        outline_text = await self._generate_outline(task, language=language)
+        outline_text = await self._generate_outline(
+            task, language=language, zh_guard=zh_guard
+        )
         if outline_text is None:
             yield AgentEvent(
                 type="error",
@@ -574,6 +609,7 @@ class DirectorAgent:
                 active_character_id=active_character_id,
                 voice_example=voice_example,
                 language=language,
+                zh_guard=zh_guard,
             ):
                 yield event
             # Wait for player to continue (unless this is the last beat)
@@ -594,7 +630,9 @@ class DirectorAgent:
                         return
                     elif act_type == "redirect":
                         task = signal.get("prompt", task)
-                        new_outline = await self._generate_outline(task, language=language)
+                        new_outline = await self._generate_outline(
+                            task, language=language, zh_guard=zh_guard
+                        )
                         if new_outline is None:
                             yield AgentEvent(
                                 type="status",
@@ -662,6 +700,7 @@ class DirectorAgent:
                             existing_scenes=scenes,
                             branch_goal=branch_goal,
                             language=language,
+                            zh_guard=zh_guard,
                         )
                         if next_outline is None:
                             yield AgentEvent(
@@ -708,6 +747,7 @@ class DirectorAgent:
                             scenes=scenes,
                             branch_goal=branch_goal,
                             language=language,
+                            zh_guard=zh_guard,
                         )
                         if branch_outline is None:
                             yield AgentEvent(
@@ -774,6 +814,7 @@ class DirectorAgent:
         session_id: str,
         voice_example: str | None = None,
         language: str = "en",
+        zh_guard: bool = True,
     ) -> AsyncIterator[AgentEvent]:
         """Render one persisted story beat without cross-request memory.
 
@@ -812,6 +853,7 @@ class DirectorAgent:
                 task,
                 language=language,
                 active_character=active_for_spine,
+                zh_guard=zh_guard,
             )
             if outline_text is None:
                 yield AgentEvent(
@@ -889,6 +931,7 @@ class DirectorAgent:
             active_character_id=active_character_id,
             voice_example=voice_example,
             language=language,
+            zh_guard=zh_guard,
         ):
             if event.type == "beat_ready":
                 ready_event = event
@@ -935,9 +978,10 @@ class DirectorAgent:
         language: str = "en",
         *,
         active_character: str | None = None,
+        zh_guard: bool = True,
     ) -> str | None:
         """Call the LLM to produce a McKee-structured Breaking Bad outline."""
-        lang_directive = _language_directive(language)
+        lang_directive = _language_directive(language, zh_guard)
         user_body = mckee_story.build_outline_user_prompt(
             task, language, active_character=active_character
         )
@@ -1032,6 +1076,7 @@ class DirectorAgent:
         existing_scenes: list[str],
         branch_goal: str | None = None,
         language: str = "en",
+        zh_guard: bool = True,
     ) -> str | None:
         """Generate the next chapter's outline as a continuation.
 
@@ -1039,7 +1084,7 @@ class DirectorAgent:
         ``_generate_outline``). Scenes from this outline are concatenated
         onto the existing list — beats are never re-numbered.
         """
-        lang_directive = _language_directive(language)
+        lang_directive = _language_directive(language, zh_guard)
         user_body = mckee_story.build_followup_user_prompt(
             base_task,
             prior_outline,
@@ -1071,6 +1116,7 @@ class DirectorAgent:
         scenes: list[str],
         branch_goal: str | None = None,
         language: str = "en",
+        zh_guard: bool = True,
     ) -> str | None:
         """Generate a new outline for everything AFTER the branch beat.
 
@@ -1078,7 +1124,7 @@ class DirectorAgent:
         the rest with the LLM's output. Output is a plain-text numbered
         list (continuing the prior outline's tone, not duplicating beats).
         """
-        lang_directive = _language_directive(language)
+        lang_directive = _language_directive(language, zh_guard)
         user_body = mckee_story.build_branch_user_prompt(
             base_task,
             prior_outline,
@@ -1196,6 +1242,7 @@ class DirectorAgent:
         active_character_id: str | None = None,
         voice_example: str | None = None,
         language: str = "en",
+        zh_guard: bool = True,
     ) -> AsyncIterator[AgentEvent]:
         """
         Generate a single narrative beat with fine-grained events.
@@ -1242,7 +1289,7 @@ class DirectorAgent:
         # Ask Director LLM to plan this beat's events.
         # Language directive MUST be on this prompt: agent_think / agent_act
         # are written here, not by character sub-agents.
-        lang_directive = _language_directive(language)
+        lang_directive = _language_directive(language, zh_guard)
         beat_prompt = (
             f"{lang_directive}\n\n"
             f"Task: {task}\n\n"
@@ -1459,10 +1506,11 @@ class DirectorAgent:
         # Continuity Board: shared room memory so later speakers continue
         # from what already happened, and only receive facts they would know.
         from agents.continuity_board import (
-            apply_delta_facts,
+            advance_clock,
             filter_board_for_character,
             format_board_prompt,
             load_or_init_session_board,
+            record_llm_proposed_deltas,
             save_session_board,
             set_location,
         )
@@ -1575,7 +1623,8 @@ class DirectorAgent:
                         "物理动作必须写在 action.verb（封闭词表），禁止写进台词。"
                         "thinking 必须是该角色私密内心（1-3 句），从面具底下写，"
                         "禁止旁白腔、禁止解说剧情功能。"
-                        "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
+                        + (ZH_SPEAK_GUARD if zh_guard else "")
+                        + "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
                         "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯、"
                         "Hank→汉克、Todd→托德（禁托霍）、Jack Welker→杰克·维尔克"
                         "（禁杰克·托霍）、Tuco→图科。"
@@ -1617,7 +1666,7 @@ class DirectorAgent:
                     sub_result = await character_agent.respond_structured(
                         context=peer_context,
                         user_message=(
-                            f"{_language_directive(language)}\n\n"
+                            f"{_language_directive(language, zh_guard)}\n\n"
                             f"{speak_lang_note}\n"
                             f"{prior_note}"
                             f"{contract_note}"
@@ -1757,27 +1806,8 @@ class DirectorAgent:
                         "world_mode": world_mode,
                         "action_source": "character_policy",
                     }
-                    # Soft critic (P3): score only; hard fail already applied above.
-                    if v_ok:
-                        try:
-                            critic = score_turn(
-                                beat_contract, turn, board=continuity_board
-                            )
-                            evt_data["critic_score"] = {
-                                "weighted_total": critic.weighted_total,
-                                "intentionality": critic.intentionality,
-                                "causal_relevance": critic.causal_relevance,
-                                "continuity": critic.continuity,
-                                "dramatic_value": critic.dramatic_value,
-                                "visual_executability": critic.visual_executability,
-                                "notes": critic.notes or None,
-                            }
-                        except Exception:
-                            logger.debug(
-                                "Soft critic failed for %s beat %s",
-                                character_id,
-                                beat_index + 1,
-                            )
+                    # Soft critic scoring was removed: critic_score was emitted
+                    # but never read anywhere (dead field), so the call is gone.
                     # Character Policy action overwrites/inserts agent_act.
                     events, i = upsert_agent_act_from_turn(
                         events,
@@ -1839,6 +1869,20 @@ class DirectorAgent:
                     {"character_id": character_id, "content": content}
                 )
             i += 1
+
+        # ------------------------------------------------------------------
+        # Dubbing guard (detect→rewrite) — only fires on zh "译制腔" hits.
+        # Runs AFTER the character sub-agent pass so agent_speak.content is
+        # final; placement here means the rewrite is what gets yielded AND
+        # persisted. Cheap-first: clean/suspicious never trigger an LLM call.
+        # ------------------------------------------------------------------
+        if _norm_lang(language) == "zh":
+            events = await rewrite_dubbing_in_events(
+                events,
+                provider=self.provider,
+                model_route=beat_model_route,
+                language=language,
+            )
 
         # ------------------------------------------------------------------
         # Phase 2 — yield enriched events (think already Character-bound)
@@ -1912,9 +1956,20 @@ class DirectorAgent:
                     beat_model_route=beat_model_route,
                 )
             if deltas:
+                # World clock probe: advance the clock only when a beat produced
+                # state deltas, and surface it on the event so the frontend can
+                # show a world that keeps moving. (No deltas -> no time passes.)
+                world_clock = None
+                if continuity_board is not None:
+                    continuity_board = advance_clock(continuity_board)
+                    world_clock = continuity_board.get("world_clock")
                 yield AgentEvent(
                     type="world_state_delta",
-                    data={"deltas": deltas, "model_route": beat_model_route},
+                    data={
+                        "deltas": deltas,
+                        "model_route": beat_model_route,
+                        "world_clock": world_clock,
+                    },
                 )
         # Append beat deltas onto Continuity Board and persist (memory, not judgment).
         if continuity_board is not None:
@@ -1937,7 +1992,11 @@ class DirectorAgent:
                 ]
                 known_by = speakers or list(continuity_board.get("present_cast") or [])
                 if delta_payload:
-                    continuity_board = apply_delta_facts(
+                    # Advisory only — LLM-proposed deltas are surfaced for
+                    # traceability but do NOT write the board. The reducer
+                    # path through `apply_validated_turn` (above) is the sole
+                    # writer of Continuity Board truth (DEC-0005 P4).
+                    record_llm_proposed_deltas(
                         continuity_board,
                         deltas=delta_payload,
                         known_by=known_by,
@@ -2209,6 +2268,12 @@ class DirectorAgent:
                 provider=self.provider,
                 model_route=beat_model_route,
             )
+            if failed_delta_count() > 0:
+                logger.warning(
+                    "%d failed delta(s) awaiting retry for session %s",
+                    failed_delta_count(),
+                    session_id,
+                )
             return deltas
         except Exception:
             logger.exception(

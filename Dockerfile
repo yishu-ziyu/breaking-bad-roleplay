@@ -3,9 +3,13 @@ FROM node:20-slim AS frontend-build
 
 WORKDIR /app
 
-# Install frontend dependencies first for better Docker layer caching.
-COPY package.json package-lock.json ./
-RUN npm config set registry https://registry.npmmirror.com && npm ci --no-audit --no-fund
+# Install frontend dependencies. Do NOT copy package-lock.json here:
+# it was generated on macOS and only records the darwin-arm64 rolldown binding
+# (see npm/cli#4828). Building inside the Linux container must resolve the
+# platform-specific native binding (@rolldown/binding-linux-*) fresh, otherwise
+# `vite build` fails with "Cannot find native binding".
+COPY package.json ./
+RUN npm config set registry https://registry.npmmirror.com && npm install --no-audit --no-fund
 
 # Copy only the files needed to build the Vite frontend.
 COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./

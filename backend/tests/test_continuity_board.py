@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from agents.continuity_board import (
     CHARACTER_ID_ALIASES,
-    apply_delta_facts,
+    advance_clock,
     default_era_id,
     eras_dir,
     filter_board_for_character,
     format_board_prompt,
     load_era_pack,
     new_session_board,
+    record_llm_proposed_deltas,
 )
 
 
@@ -37,6 +38,40 @@ def test_new_session_board_copies_era_seed():
     assert board["era"] == "s3_mid"
     assert board["updated_at_beat"] == 0
     assert len(board["shared_facts"]) >= 1
+    # world_clock should default to (0, "afternoon", "clear")
+    assert isinstance(board["world_clock"], tuple) or isinstance(board["world_clock"], list)
+    assert len(board["world_clock"]) == 3
+
+
+def test_advance_clock_advances_day_on_wrap():
+    board = new_session_board(session_id="clock-test", era="s3_mid")
+    # default is day 0, afternoon
+    assert board["world_clock"] == (0, "afternoon", "clear")
+    b1 = advance_clock(board)
+    # 0 → 0 (day unchanged), afternoon → evening
+    assert b1["world_clock"][0] == 0
+    assert b1["world_clock"][1] == "evening"
+    # wrap two more times
+    b2 = advance_clock(b1)
+    b3 = advance_clock(b2)
+    # after evening → night → morning (wrap, increment day)
+    assert b3["world_clock"][0] == 1
+    assert b3["world_clock"][1] == "morning"
+
+
+def test_advance_clock_handles_malformed_clock():
+    # malformed clock should be fixed to default
+    board = new_session_board(session_id="bad-clock", era="s3_mid")
+    del board["world_clock"]
+    fixed = advance_clock(board)
+    assert fixed["world_clock"] == (0, "afternoon", "clear")
+
+def test_format_board_includes_world_clock_line():
+    board = new_session_board(session_id="format-test", era="s3_mid")
+    # default clock included in prompt
+    prompt = format_board_prompt(board, character_id="walter")
+    assert "World clock:" in prompt
+    assert "day 0, afternoon, clear" in prompt
 
 
 def test_filter_hides_facts_character_should_not_know():
@@ -72,10 +107,18 @@ def test_format_board_prompt_lists_only_known_facts():
     assert "household story is incomplete" not in text
 
 
-def test_apply_delta_facts_appends_and_marks_knowers():
+def test_record_llm_proposed_deltas_returns_proposals_without_mutation():
+    """DEC-0005 P4: the LLM-side helper is advisory-only.
+
+    Returns a list of proposal dicts (one per delta) that mirrors the shape
+    a fact on the board would have, but does NOT mutate the input board.
+    The sole writer of board truth is ``scenes.state_reducer.apply_validated_turn``.
+    """
     board = new_session_board(session_id="s", era="s3_mid")
     before = len(board["shared_facts"])
-    board2 = apply_delta_facts(
+    initial_updated_at_beat = board["updated_at_beat"]
+
+    proposals = record_llm_proposed_deltas(
         board,
         deltas=[
             {
@@ -89,13 +132,35 @@ def test_apply_delta_facts_appends_and_marks_knowers():
         beat_index=2,
         irreversible=False,
     )
-    assert len(board2["shared_facts"]) == before + 1
-    assert board2["updated_at_beat"] == 2
-    # immutability: original board unchanged
+
+    # Returns a non-empty list of proposal entries, one per usable delta.
+    assert isinstance(proposals, list)
+    assert len(proposals) == 1
+
+    proposal = proposals[0]
+    assert proposal["source"] == "llm_advisory"
+    assert proposal["source_beat"] == 2
+    assert proposal["irreversible"] is False
+    assert "walter" in proposal["known_by"]
+    assert "gus" in proposal["known_by"]
+
+    # Crucial: the input board is unchanged.
     assert len(board["shared_facts"]) == before
-    newest = board2["shared_facts"][-1]
-    assert "walter" in newest["known_by"]
-    assert newest["source_beat"] == 2
+    assert board["updated_at_beat"] == initial_updated_at_beat
+    assert board["irreversible_costs"] == []
+
+
+def test_record_llm_proposed_deltas_drops_empty_deltas():
+    """Deltas with empty target/field/new_value are skipped, not written."""
+    board = new_session_board(session_id="s", era="s3_mid")
+    proposals = record_llm_proposed_deltas(
+        board,
+        deltas=[{}, {"target": "", "field": "", "new_value": ""}, "not-a-dict"],
+        known_by=[],
+        beat_index=0,
+    )
+    assert proposals == []
+    assert board["updated_at_beat"] == 0
 
 
 def test_default_era_is_s3_mid():

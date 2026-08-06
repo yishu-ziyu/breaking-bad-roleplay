@@ -69,7 +69,7 @@ Success looks like:
   - `materials/breaking-bad/voice-archetypes/samples` (huge)
   - `node_modules`, `backend/.venv`, reports, caches
 - Do not put secrets in the client bundle.
-- `vercel.json` routes `/api/*` -> `api/index.py`. Full FastAPI parity is **not** guaranteed on Vercel; treat VM as the real backend home for quota, TTS, long streams, etc.
+- `vercel.json` rewrites `/api/*` -> `https://bb.yishuziyu.cn/api/$1` (Vercel 边缘代理到 VM)。Full FastAPI parity is **not** guaranteed on Vercel serverless; treat VM as the real backend home for quota, TTS, long streams, etc. 移除 route 中的 API 条目后，所有 `/api/*` 请求通过 Vercel 边缘网络代理到 VM，无需在 Vercel 上运行 Python serverless。
 
 ### When Vercel fails
 
@@ -146,6 +146,19 @@ docker inspect bb-roleplay --format '{{json .HostConfig.PortBindings}}'
 - `docker system prune -a` without checking other containers on the shared VM.
 - Commit `.env` or production keys.
 
+### Docker build pitfalls（2026-08-04 踩坑）
+
+这两个坑会让 `docker build` 在 VM 上失败，但本地整天 `npm run dev` / `uvicorn` 都看不出来——只在 Docker 干净构建时暴露：
+
+1. **不要携带平台相关的 `package-lock.json` 进前端构建阶段。**
+   lockfile 在 macOS 上生成，只记录 `binding-darwin-arm64` 这一个 rolldown 原生绑定条目；Linux 的 `@rolldown/binding-linux-*` 没有独立包条目。`npm ci` 严格按 lockfile 装，Linux 容器里就缺 binding，`vite build` 报 `Cannot find native binding`（npm/cli#4828）。
+   **解法**：Dockerfile 的 frontend-build 阶段只 `COPY package.json ./`，用 `npm install`（不是 `npm ci`），让 npm 在容器内按当前平台解析绑定。`.dockerignore`/构建上下文里照常排除 `node_modules`。
+2. **`backend/requirements.txt` 里的 `face_recognition` 是死依赖，不要因为它"看起来在第 12 行"就保留。**
+   它拖进 `dlib`，需要 cmake 源码编译，在 `python:3.12-slim` 里必挂（`Failed building wheel for dlib`）。之前线上能跑只是 Docker 缓存把那次编译结果盖住了；Dockerfile 一改缓存失效就暴露。
+   **解法**：后端代码从未 `import face_recognition`，直接删掉 `requirements.txt` 和 `pyproject.toml` 里的 `face_recognition` 声明即可。若以后真需要人脸识别，再在 Dockerfile 里预装 cmake + build-essential 并显式加入。
+
+**验证信号**：重建后 `docker build` 全绿，`curl -sS http://127.0.0.1:8080/api/health` 返回 `{"status":"ok"}`；随后在 `https://bb.yishuziyu.cn` 走一次 Story 创建（填简报 → 开始任务），确认 `POST /api/session/create` 返回 200 而非 500。
+
 ---
 
 ## 5. Dual-path reality (do not "fix one, forget the other")
@@ -160,6 +173,32 @@ docker inspect bb-roleplay --format '{{json .HostConfig.PortBindings}}'
 DNS: `bb.yishuziyu.cn` **A record points at the VM** (`121.89.90.68`). That is what users actually load.
 
 Critical: `vercel --prod` printing `Aliased: https://bb.yishuziyu.cn` does **not** mean the live site is Vercel. For this project the user-facing domain is Nginx on the VM. **Frontend-only fixes still require a Docker rebuild** if you want them on `bb.yishuziyu.cn`.
+
+### Vercel Rewrites 双轨策略（P2 简化）
+
+`vercel.json` 中的 `rewrites` 配置将所有 `/api/*` 请求从 Vercel 边缘网络代理到 VM：
+
+```
+/api/*  →  Vercel edge  →  rewrites  →  https://bb.yishuziyu.cn/api/$1  →  VM Nginx  →  FastAPI
+```
+
+**工作方式**：
+- Vercel 部署时只上传前端静态文件（`dist/`），不再上传或运行 `api/index.py` serverless function。
+- 所有 `/api/*` 请求到达 Vercel 边缘节点后，由 `rewrites` 直接代理到 VM 的 `https://bb.yishuziyu.cn`。
+- 前端静态文件（`/assets/*`、`/index.html` 等）由 Vercel 的 filesystem handler 直接 serve。
+- SPA 路由回退：`/(.*)` → `/index.html` 由 `routes` 处理。
+
+**优势**：
+1. 前端部署只需 `vercel --prod --yes`，无需担心 API 层一致性。
+2. VM 只需 serve 后端 API，静态文件由 Vercel CDN 处理，减轻 VM 负载。
+3. 前端改动（UI、GIF、CSS）只需部署 Vercel，无需重建 Docker 容器。
+4. Vercel 边缘网络就近代理，延迟比直接请求 VM 的 `/api/` 更低。
+
+**注意事项**：
+- VM 的 `ALLOWED_ORIGINS` 必须包含 Vercel 域名（`https://*.vercel.app`）以及 `https://bb.yishiziyu.cn`。
+- 当用户直接访问 `https://bb.yishiziyu.cn`（DNS 指向 VM）时，请求不经过 Vercel rewrites，走的是 VM Nginx → FastAPI 的完整路径。
+- 两种路径的行为必须一致。如果发现 VM 直连和 Vercel 代理路径表现不同，优先排查 VM 端的 CORS / 环境变量配置。
+- `vercel.json` 中保留了 `functions.api/index.py` 的配置，但 `routes` 中已移除对应的 API 路由。如需回退到 Vercel serverless API，只需在 `routes` 中添加 `{ "src": "/api/(.*)", "dest": "/api/index.py" }` 即可。
 
 Local machines often lack `rsync`; use tar + scp:
 

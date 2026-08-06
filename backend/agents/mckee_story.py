@@ -387,7 +387,13 @@ def parse_spine_meta(outline_text: str | None) -> dict[str, str]:
 
 
 def validate_outline_structure(scenes: list[str]) -> list[str]:
-    """Return human-readable warnings (empty list = structurally OK enough)."""
+    """Return human-readable warnings (empty list = structurally OK enough).
+
+    Hard rules (from McKee value-charge research):
+    1. Every beat MUST carry a value turn (``value: X→Y``).
+    2. The story MUST contain at least one explicit value-charge flip
+       between consecutive beats (deterministic polarity detection).
+    """
     warnings: list[str] = []
     if not scenes:
         return ["no playable beats"]
@@ -403,25 +409,42 @@ def validate_outline_structure(scenes: list[str]) -> list[str]:
         warnings.append("missing inciting beat")
     if "climax" not in role_set and "climax" not in inferred:
         warnings.append("missing climax beat")
-    missing_value = sum(1 for s in scenes if "value" not in s.lower())
-    if missing_value > len(scenes) // 2:
-        warnings.append("many beats missing value: turn")
+
+    # Hard rule 1: every beat must carry a value turn
+    beats_without_value = [i for i, s in enumerate(scenes) if "value" not in s.lower()]
+    if beats_without_value:
+        missing = ", ".join(str(i + 1) for i in beats_without_value)
+        warnings.append(f"hard: beats [{missing}] missing value: turn (every beat must carry value)")
+
+    # Hard rule 2: detect at least one value-charge flip between consecutive beats
+    poles = [extract_value_end_polarity(s) for s in scenes]
+    known = [(i, p) for i, p in enumerate(poles) if p is not None]
+    flip_detected = False
+    for i in range(1, len(known)):
+        if known[i][1] != known[i - 1][1]:
+            flip_detected = True
+            break
+    if not flip_detected and len(known) >= 2:
+        warnings.append(
+            "hard: no value-charge flip detected between consecutive beats "
+            "(story must contain at least one polarity flip in the spine)"
+        )
+
+    # Soft: flag long same-polarity runs (diminishing returns)
+    same_run = 0
+    for i in range(1, len(known)):
+        if known[i][1] == known[i - 1][1]:
+            same_run += 1
+    if same_run >= 3 and len(known) >= 5:
+        warnings.append("value polarity may not alternate enough (diminishing returns)")
+
+    # Soft: missing gap / risk
     missing_gap = sum(1 for s in scenes if "gap" not in s.lower())
     if missing_gap > len(scenes) // 2:
         warnings.append("many beats missing gap:")
     missing_risk = sum(1 for s in scenes if "risk" not in s.lower())
     if missing_risk > len(scenes) // 2:
         warnings.append("many beats missing risk:")
-    # polarity alternation soft check
-    poles = [extract_value_end_polarity(s) for s in scenes]
-    known = [(i, p) for i, p in enumerate(poles) if p is not None]
-    same_run = 0
-    for i in range(1, len(known)):
-        if known[i][1] == known[i - 1][1]:
-            same_run += 1
-    # Soft: only flag long same-polarity runs (McKee often deepens negative mid-arc).
-    if same_run >= 3 and len(known) >= 5:
-        warnings.append("value polarity may not alternate enough (diminishing returns)")
     return warnings
 
 

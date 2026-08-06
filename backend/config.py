@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Salt for hashing client IPs in quota identity (not a secret key material).
     quota_ip_salt: str = "abq-quota-v1"
 
+    # Redis URL for distributed quota store (multi-instance support).
+    # Falls back to in-process memory store when not set or unavailable.
+    redis_url: str = ""
+
     # Supabase Auth (optional). Required to grant logged-in free_credits_user.
     # Use the same project URL + publishable/anon key as the frontend.
     supabase_url: str = ""

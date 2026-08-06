@@ -6,14 +6,16 @@ Security goals:
 - BYOK bind sessions skip this meter (user pays their own provider).
 - Identity is guest_id (UUID) + IP hash; guest rotation is limited by IP rate limits.
 
-Persistence: in-process with optional Postgres mirror so Docker restarts lose
-less state when DB is available. Vercel multi-instance is imperfect without a
-shared store; Postgres upsert is the shared path when DATABASE_URL works.
+Persistence: Redis-backed token bucket (``RedisQuotaStore``) for multi-instance
+consistency. Falls back to in-process ``_MemoryQuotaStore`` when Redis is
+unavailable.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
 import re
 import threading
 import time
@@ -23,6 +25,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 # Action costs (platform free pool)
 COST_CHAT_DIRECT = 1
@@ -215,7 +219,168 @@ class _MemoryQuotaStore:
             return True
 
 
-_store = _MemoryQuotaStore()
+class RedisQuotaStore:
+    """Redis-backed quota store, atomic across multi-instance.
+
+    Falls back to ``_MemoryQuotaStore`` when Redis is unavailable.
+    Redis keys are namespaced as ``quota:{day}:{identity}`` for per-identity
+    usage and ``quota:{day}:global`` for site-wide daily budget. Rate-limit
+    sliding windows use ``rl:{ip_hash}`` sorted sets.
+    """
+
+    _TRY_CONSUME_LUA = """
+local used = tonumber(redis.call('GET', KEYS[1]) or 0)
+local g_used = tonumber(redis.call('GET', KEYS[2]) or 0)
+if (g_used + tonumber(ARGV[1]) > tonumber(ARGV[3])) then
+    return {0, used, g_used, 'global_budget_exhausted'}
+end
+if (used + tonumber(ARGV[1]) > tonumber(ARGV[2])) then
+    return {0, used, g_used, 'free_quota_exhausted'}
+end
+redis.call('INCRBY', KEYS[1], ARGV[1])
+redis.call('INCRBY', KEYS[2], ARGV[1])
+redis.call('EXPIRE', KEYS[1], 86400)
+redis.call('EXPIRE', KEYS[2], 86400)
+return {1, used + tonumber(ARGV[1]), g_used + tonumber(ARGV[1]), ''}
+"""
+
+    _RATE_LIMIT_LUA = """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, tonumber(ARGV[1]) - tonumber(ARGV[2]))
+local count = redis.call('ZCARD', KEYS[1])
+if count >= tonumber(ARGV[3]) then
+    return {0}
+end
+redis.call('ZADD', KEYS[1], ARGV[1], ARGV[1] .. ':' .. math.random())
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+return {1}
+"""
+
+    def __init__(self, memory_fallback: _MemoryQuotaStore | None = None):
+        self._memory = memory_fallback or _MemoryQuotaStore()
+        self._redis_client: Any = None
+        self._redis_available = False
+
+    async def _ensure_redis(self) -> bool:
+        """Try to connect to Redis. Returns True if successful."""
+        if self._redis_available:
+            return True
+        try:
+            import redis.asyncio as aioredis
+
+            redis_url = getattr(settings, "redis_url", None) or os.environ.get("REDIS_URL", "")
+            if not redis_url:
+                return False
+            self._redis_client = aioredis.from_url(
+                redis_url,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=True,
+            )
+            await self._redis_client.ping()
+            self._redis_available = True
+            logger.info("RedisQuotaStore: connected to Redis")
+            return True
+        except Exception as e:
+            self._redis_available = False
+            self._redis_client = None
+            logger.warning("RedisQuotaStore: Redis unavailable, using memory fallback: %s", e)
+            return False
+
+    async def snapshot(
+        self, identity: str, day: str, limit: int, global_limit: int
+    ) -> QuotaSnapshot:
+        if not await self._ensure_redis():
+            return self._memory.snapshot(identity, day, limit, global_limit)
+
+        identity_key = f"quota:{day}:{identity}"
+        global_key = f"quota:{day}:global"
+        try:
+            used = int(await self._redis_client.get(identity_key) or 0)  # type: ignore[union-attr]
+            g_used = int(await self._redis_client.get(global_key) or 0)  # type: ignore[union-attr]
+        except Exception:
+            return self._memory.snapshot(identity, day, limit, global_limit)
+
+        return QuotaSnapshot(
+            identity=identity,
+            day=day,
+            used=used,
+            limit=limit,
+            remaining=max(0, limit - used),
+            global_used=g_used,
+            global_limit=global_limit,
+            global_remaining=max(0, global_limit - g_used),
+        )
+
+    async def try_consume(
+        self,
+        identity: str,
+        day: str,
+        cost: int,
+        limit: int,
+        global_limit: int,
+    ) -> QuotaDecision:
+        if not await self._ensure_redis():
+            return self._memory.try_consume(identity, day, cost, limit, global_limit)
+
+        identity_key = f"quota:{day}:{identity}"
+        global_key = f"quota:{day}:global"
+        try:
+            result = await self._redis_client.eval(  # type: ignore[union-attr]
+                self._TRY_CONSUME_LUA,
+                3,
+                identity_key,
+                global_key,
+                day,
+                cost,
+                limit,
+                global_limit,
+            )
+            # result is a list: [allowed, used, g_used, reason]
+            allowed = bool(result[0])
+            used = int(result[1])
+            g_used = int(result[2])
+            reason = result[3] or None
+        except Exception:
+            return self._memory.try_consume(identity, day, cost, limit, global_limit)
+
+        snap = QuotaSnapshot(
+            identity=identity,
+            day=day,
+            used=used,
+            limit=limit,
+            remaining=max(0, limit - used),
+            global_used=g_used,
+            global_limit=global_limit,
+            global_remaining=max(0, global_limit - g_used),
+        )
+        return QuotaDecision(
+            allowed=allowed,
+            reason=reason,
+            snapshot=snap,
+            http_status=402 if not allowed and reason == "free_quota_exhausted" else 429,
+        )
+
+    async def check_rate_limit(self, ip: str, max_hits: int, window_sec: int) -> bool:
+        if not await self._ensure_redis():
+            return self._memory.check_rate_limit(ip, max_hits, window_sec)
+
+        key = f"rl:{ip_hash(ip)}"
+        now = time.time()
+        try:
+            result = await self._redis_client.eval(  # type: ignore[union-attr]
+                self._RATE_LIMIT_LUA,
+                1,
+                key,
+                int(now),
+                window_sec,
+                max_hits,
+            )
+            return bool(result[0])
+        except Exception:
+            return self._memory.check_rate_limit(ip, max_hits, window_sec)
+
+
+_store = RedisQuotaStore()
 
 
 def guest_daily_limit() -> int:
@@ -265,7 +430,7 @@ def byok_snapshot() -> QuotaSnapshot:
     )
 
 
-def enforce_platform_quota(
+async def enforce_platform_quota(
     *,
     request: Any,
     action: str,
@@ -294,10 +459,10 @@ def enforce_platform_quota(
     limit = daily_limit_for(user_id=resolved_user_id)
     tier = "user" if resolved_user_id else "guest"
 
-    if not _store.check_rate_limit(ip, rate_limit_max(), 3600):
+    if not await _store.check_rate_limit(ip, rate_limit_max(), 3600):
         day = utc_day()
         ident = identity_key(guest_id=guest_id, ip=ip, user_id=resolved_user_id)
-        snap = _store.snapshot(ident, day, limit, global_daily_limit())
+        snap = await _store.snapshot(ident, day, limit, global_daily_limit())
         snap.tier = tier
         return QuotaDecision(
             allowed=False,
@@ -308,7 +473,7 @@ def enforce_platform_quota(
 
     cost = action_cost(action, mode=mode)
     ident = identity_key(guest_id=guest_id, ip=ip, user_id=resolved_user_id)
-    decision = _store.try_consume(
+    decision = await _store.try_consume(
         ident,
         utc_day(),
         cost,
@@ -319,7 +484,7 @@ def enforce_platform_quota(
     return decision
 
 
-def read_quota_snapshot(
+async def read_quota_snapshot(
     *,
     request: Any,
     guest_id: str | None = None,
@@ -344,7 +509,7 @@ def read_quota_snapshot(
     ip = client_ip(request)
     limit = daily_limit_for(user_id=resolved_user_id)
     ident = identity_key(guest_id=guest_id, ip=ip, user_id=resolved_user_id)
-    snap = _store.snapshot(ident, utc_day(), limit, global_daily_limit())
+    snap = await _store.snapshot(ident, utc_day(), limit, global_daily_limit())
     snap.tier = "user" if resolved_user_id else "guest"
     return snap
 

@@ -37,3 +37,10 @@ dist/
 
 # Voice clone raw samples (local only)
 materials/breaking-bad/voice-archetypes/samples/
+
+# Promptfoo evaluation results (CI-generated, not committed)
+.promptfoo/results.json
+
+# Agent harness runtime (local trials)
+backend/agents/harness/data/lessons.json
+backend/agents/harness/data/trajectories.jsonl

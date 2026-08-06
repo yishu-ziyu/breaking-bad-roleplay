@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any
 from datetime import datetime, timezone
 
@@ -23,6 +24,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import CharacterDossier
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Failed Delta Tracking — P7 memory write-read consistency
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FailedDelta:
+    """Record of a dossier delta that failed to compute."""
+    session_id: str | None
+    beat_summary: str
+    beat_events: list[dict]
+    model_route: str
+    error: str
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    retry_count: int = 0
+
+
+_failed_delta_queue: list[FailedDelta] = []
 
 
 # ---------------------------------------------------------------------------
@@ -96,10 +116,17 @@ async def compute_dossier_delta(
     beat_summary: str,
     beat_events: list[dict[str, Any]],
     model_route: str = "stepfun/step-3.7-flash",
+    *,
+    session_id: str | None = None,
+    beat_summary_raw: str = "",
 ) -> dict[str, Any]:
     """
     Ask the LLM to analyze what changed in character relationships
     during this beat, return structured deltas.
+
+    Callers may pass *session_id* and *beat_summary_raw* (the original
+    beat summary before it was embedded in the prompt) so that failures
+    are recorded in ``_failed_delta_queue`` for later retry.
     """
     dossier_summary = json.dumps(dossiers, ensure_ascii=False, indent=2)
     events_summary = json.dumps(beat_events, ensure_ascii=False, indent=2)
@@ -120,9 +147,70 @@ async def compute_dossier_delta(
     try:
         response = await provider.call_model(messages, model_route)
         return _extract_json(response)
-    except Exception:
+    except Exception as e:
         logger.exception("compute_dossier_delta failed")
+        _failed_delta_queue.append(
+            FailedDelta(
+                session_id=session_id,
+                beat_summary=beat_summary_raw or beat_summary,
+                beat_events=beat_events,
+                model_route=model_route,
+                error=str(e),
+            )
+        )
         return {"deltas": []}
+
+
+async def retry_failed_deltas(
+    provider: Any,
+    db: AsyncSession,
+    max_retries: int = 3,
+) -> list[dict]:
+    """Retry all failed deltas. Returns list of successfully applied deltas."""
+    global _failed_delta_queue
+    if not _failed_delta_queue:
+        return []
+
+    success: list[dict] = []
+    remaining: list[FailedDelta] = []
+
+    for delta in _failed_delta_queue:
+        if delta.retry_count >= max_retries:
+            logger.warning(
+                "Failed delta exceeded max retries (%d): %s",
+                max_retries,
+                delta.error,
+            )
+            continue
+
+        try:
+            delta.retry_count += 1
+            result = await update_dossiers(
+                db=db,
+                session_id=delta.session_id,
+                beat_summary=delta.beat_summary,
+                beat_events=delta.beat_events,
+                provider=provider,
+                model_route=delta.model_route,
+            )
+            if result:
+                success.extend(result)
+                logger.info(
+                    "Retry succeeded for delta after %d attempt(s)",
+                    delta.retry_count,
+                )
+        except Exception as e:
+            delta.error = str(e)
+            remaining.append(delta)
+            logger.warning("Retry failed for delta: %s", e)
+
+    _failed_delta_queue = remaining
+    return success
+
+
+def failed_delta_count() -> int:
+    """Return the number of deltas awaiting retry."""
+    return len(_failed_delta_queue)
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +326,8 @@ async def update_dossiers(
         beat_summary=beat_summary,
         beat_events=beat_events,
         model_route=model_route,
+        session_id=session_id,
+        beat_summary_raw=beat_summary,
     )
 
     deltas = delta_result.get("deltas", [])

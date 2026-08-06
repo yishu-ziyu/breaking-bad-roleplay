@@ -87,4 +87,4 @@ def test_s1_money_quit_soft_prefers_family_mask_over_felina():
     sb = score_turn(contract, s5_bleed, board=board)
     assert sa.weighted_total > sb.weighted_total
     assert prefer_turn(contract, s1, s5_bleed, board=board) == "a"
-    assert sa.intentionality > sb.intentionality
+    assert sa.character_consistency > sb.character_consistency

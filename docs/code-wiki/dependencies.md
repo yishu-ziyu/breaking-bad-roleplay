@@ -1,310 +1,115 @@
-# Dependencies
+# 依赖清单
 
-本文记录项目的包依赖、外部服务依赖和内部模块依赖关系。具体版本以 [package.json](../../package.json)、[package-lock.json](../../package-lock.json)、[backend/pyproject.toml](../../backend/pyproject.toml)、[backend/uv.lock](../../backend/uv.lock) 为准。
+## 前端依赖 (npm)
 
-## Frontend npm Dependencies
+### 生产依赖
 
-### Runtime
+| 包名 | 版本 | 说明 |
+|------|------|------|
+| `react` | ^19.2.6 | 前端框架 |
+| `react-dom` | ^19.2.6 | React DOM 渲染 |
+| `@supabase/supabase-js` | ^2.108.2 | Supabase 客户端 SDK |
+| `@supabase/ssr` | ^0.12.0 | Supabase SSR 支持 |
 
-| Package | 用途 |
-|---|---|
-| `react` | UI runtime |
-| `react-dom` | DOM rendering |
-| `@supabase/ssr` | Browser Supabase client helper |
-| `@supabase/supabase-js` | Supabase Auth / database client |
+### 开发依赖
 
-### Dev / Build / Test
+| 包名 | 版本 | 说明 |
+|------|------|------|
+| `vite` | ^8.0.12 | 构建工具 |
+| `@vitejs/plugin-react` | ^6.0.1 | Vite React 插件 |
+| `typescript` | ~6.0.2 | TypeScript 编译器 |
+| `tsx` | ^4.22.0 | TypeScript 执行器 (测试用) |
+| `eslint` | ^10.3.0 | 代码检查 |
+| `@eslint/js` | ^10.0.1 | ESLint JS 配置 |
+| `typescript-eslint` | ^8.59.2 | TS ESLint 支持 |
+| `eslint-plugin-react-hooks` | ^7.1.1 | React Hooks ESLint 规则 |
+| `eslint-plugin-react-refresh` | ^0.5.2 | React Refresh ESLint 规则 |
+| `globals` | ^17.6.0 | 全局变量定义 |
+| `@types/react` | ^19.2.14 | React 类型定义 |
+| `@types/react-dom` | ^19.2.3 | React DOM 类型定义 |
+| `@types/node` | ^24.12.3 | Node 类型定义 |
+| `@playwright/test` | ^1.49.0 | E2E 测试框架 |
 
-| Package | 用途 |
-|---|---|
-| `vite` | 本地 dev server 和生产构建 |
-| `@vitejs/plugin-react` | Vite React 插件 |
-| `typescript` | TypeScript 编译 |
-| `tsx` | Node/TS 测试运行 |
-| `eslint` | lint |
-| `typescript-eslint` | TypeScript lint rules |
-| `eslint-plugin-react-hooks` | React hooks lint |
-| `eslint-plugin-react-refresh` | React refresh lint |
-| `@playwright/test` | E2E 测试 |
-| `@types/*` | Type definitions |
+## 后端依赖 (Python)
 
-### npm scripts
+### 生产依赖 (requirements.txt / pyproject.toml)
 
-```json
-{
-  "dev": "vite",
-  "build": "tsc -b && vite build",
-  "lint": "eslint .",
-  "test": "tsx --test 'tests/*.spec.ts' 'test/**/*.test.js' 'src/**/*.test.ts'",
-  "preview": "vite preview",
-  "e2e": "playwright test",
-  "e2e:ui": "playwright test --ui"
-}
+| 包名 | 版本 | 说明 |
+|------|------|------|
+| `fastapi` | >=0.110.0 | Web 框架 |
+| `uvicorn[standard]` | >=0.29.0 | ASGI 服务器 |
+| `sqlalchemy[asyncio]` | >=2.0.0 | ORM (异步) |
+| `asyncpg` | >=0.29.0 | PostgreSQL 异步驱动 |
+| `httpx` | >=0.27.0 | HTTP 客户端 (LLM 调用) |
+| `pydantic-settings` | >=2.0.0 | Pydantic 配置管理 |
+| `python-dotenv` | >=1.0.0 | .env 文件加载 |
+| `alembic` | >=1.18.5 | 数据库迁移 |
+| `psycopg2-binary` | >=2.9.12 | PostgreSQL 同步驱动 (Alembic 用) |
+
+### 开发依赖
+
+| 包名 | 说明 |
+|------|------|
+| `pytest-asyncio` | 异步测试支持 |
+| `ruff` | Python linter |
+
+## 工具链
+
+| 工具 | 版本 | 说明 |
+|------|------|------|
+| Node.js | 20 (slim) | 前端构建 + 运行时 |
+| Python | 3.12 (slim) | 后端运行时 |
+| uv | — | Python 包管理器 (替代 pip) |
+| Docker | — | 容器化部署 |
+| Alembic | 1.18+ | 数据库迁移 |
+| Playwright | 1.49+ | E2E 测试 |
+| ESLint | 10.x | 前端 Lint |
+| Ruff | — | 后端 Lint |
+
+## 外部服务
+
+| 服务 | 用途 |
+|------|------|
+| **Supabase** | PostgreSQL 数据库托管 + Auth 认证 |
+| **MiniMax** | LLM 提供商 (M3 模型) + TTS 语音合成 |
+| **StepFun** | LLM 提供商 (step-3.7-flash) |
+| **Giphy** | 角色 GIF 表情托管 |
+| **Vercel** | 前端静态文件托管 (可选) |
+| **Docker VM** (121.89.90.68) | 主生产服务器 |
+| **Let's Encrypt** | TLS 证书 |
+
+## 依赖关系图
+
+```mermaid
+flowchart LR
+    subgraph Frontend["前端 (React SPA)"]
+        RE[react / react-dom<br/>UI 框架]
+        SU[<br/>@supabase/supabase-js<br/>认证 + 数据库]
+        VT[vite / typescript<br/>构建 & 类型检查]
+    end
+
+    subgraph Backend["后端 (FastAPI)"]
+        FA[fastapi / uvicorn<br/>Web 服务器]
+        SA[sqlalchemy / asyncpg<br/>数据库 ORM + 驱动]
+        AL[alembic / psycopg2-binary<br/>迁移工具]
+        HT[httpx<br/>LLM 提供商 HTTP 调用]
+        PS[pydantic-settings<br/>配置管理]
+    end
+
+    subgraph LLM["外部 LLM 提供商"]
+        MM[MiniMax<br/>minimax/]
+        SF[StepFun<br/>stepfun/]
+        CP[CLI Proxy<br/>cliproxy/]
+    end
+
+    DB[(PostgreSQL<br/>Supabase 托管)]
+
+    Frontend --> Backend
+    Backend --> LLM
+    Backend --> DB
+    SA --> DB
+    AL --> DB
+    HT --> MM
+    HT --> SF
+    HT --> CP
 ```
-
-## Backend Python Dependencies
-
-Runtime dependencies from [backend/pyproject.toml](../../backend/pyproject.toml):
-
-| Package | 用途 |
-|---|---|
-| `fastapi` | API framework |
-| `uvicorn[standard]` | ASGI server |
-| `sqlalchemy[asyncio]` | ORM + async engine |
-| `asyncpg` | PostgreSQL async driver |
-| `httpx` | Async LLM HTTP client |
-| `pydantic-settings` | `.env`/env settings |
-| `python-dotenv` | dotenv support |
-| `alembic` | DB migrations |
-| `psycopg2-binary` | PostgreSQL tooling compatibility |
-
-Dev dependency group:
-
-| Package | 用途 |
-|---|---|
-| `pytest-asyncio` | async pytest support |
-| `ruff` | Python lint/format checks |
-
-## External Services
-
-| 服务 | 用途 | 配置 |
-|---|---|---|
-| MiniMax | LLM，Anthropic-compatible messages API | `MINIMAX_API_KEY`, route `minimax/MiniMax-M3` |
-| StepFun | LLM，OpenAI-compatible chat completions API | `STEPFUN_API_KEY`, route `stepfun/step-3.7-flash` |
-| CLIProxy | 本地/私有 Anthropic-compatible proxy | `CLI_PROXY_BASE_URL`, `CLI_PROXY_API_KEY`, `CLI_PROXY_DEFAULT_MODEL` |
-| PostgreSQL | 后端 Story session/messages/dossiers | `DATABASE_URL` |
-| Supabase | Auth + 前端普通聊天云同步 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` |
-| Giphy-hosted GIFs | 角色情绪卡片 | URLs in `src/roleAssets.ts` |
-| Browser Web Speech API | 本地语音播放 | `globalThis.speechSynthesis` |
-
-## Environment Variables
-
-### Backend
-
-| Env | Required | 说明 |
-|---|---|---|
-| `DATABASE_URL` | yes | PostgreSQL URL；`postgresql://` 会自动转换为 `postgresql+asyncpg://` |
-| `MINIMAX_API_KEY` | conditional | 至少一个 LLM key 必须存在 |
-| `STEPFUN_API_KEY` | conditional | 至少一个 LLM key 必须存在 |
-| `CLI_PROXY_API_KEY` | conditional | 至少一个 LLM key 必须存在；为空时可从本机 CLIProxy config 读取 |
-| `CLI_PROXY_BASE_URL` | no | 默认 `http://127.0.0.1:8317` |
-| `CLI_PROXY_DEFAULT_MODEL` | no | 默认 `gemini-pro-agent` |
-| `APP_ENV` | no | `development` / `production` |
-| `ALLOWED_ORIGINS` | no | CORS origin list；生产应显式设置 |
-| `LOG_LEVEL` | no | 默认 `INFO` |
-| `PORT` | deploy | `start.py` 读取，默认 `8080` |
-
-### Frontend
-
-| Env | Required | 说明 |
-|---|---|---|
-| `VITE_SUPABASE_URL` | no | Supabase URL；缺失时 guest mode 仍可用 |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | no | Supabase publishable key；缺失时 `createClient()` 返回 null |
-
-## Internal Module Dependencies
-
-### Frontend
-
-```text
-src/main.tsx
-  -> src/App.tsx
-      -> hooks/useAuth
-          -> lib/supabaseClient
-      -> hooks/useCharacterMemory
-      -> hooks/useStoryStream
-      -> lib/persistedState
-      -> lib/voiceExamples
-      -> lib/supabasePersistence
-          -> lib/supabaseClient
-      -> lib/sceneBackgrounds
-      -> lib/gifResolver
-          -> roleAssets
-      -> lib/silhouette
-      -> components/AuthSection
-      -> components/GifCard
-      -> components/VoicePlayer
-          -> lib/voicePlayerHelpers
-      -> roleProfiles
-```
-
-### Backend
-
-```text
-backend/main.py
-  -> config.settings
-  -> api.routes.router
-  -> db.models                       # registers Base metadata
-  -> db.session.engine
-  -> agents.provider.ProviderFacade  # lifespan singleton
-  -> agents.director.DirectorAgent   # lifespan singleton
-
-backend/api/routes.py
-  -> db.session.get_db / async_session_factory
-  -> db.models.Session / Message
-  -> agents.provider.ProviderFacade
-  -> agents.director.DirectorAgent
-  -> models.schemas
-
-backend/agents/director.py
-  -> agents.provider.ProviderFacade
-  -> agents.characters.*
-  -> agents.memory.update_dossiers
-  -> models.schemas.AgentEvent
-
-backend/agents/characters/base.py
-  -> agents.provider.ProviderFacade
-
-backend/agents/memory.py
-  -> db.models.CharacterDossier / CharacterState / Session
-  -> ProviderFacade-compatible provider
-
-backend/db/session.py
-  -> config.settings
-  -> db.url.render_engine_url
-```
-
-## Runtime Calling Chains
-
-### Direct Chat
-
-```text
-App.handleSend
-  -> fetch('/api/chat')
-  -> routes.chat
-  -> DirectorAgent.handle_chat_message
-  -> DirectorAgent._handle_direct_chat
-  -> character_cls(self.provider).respond_structured
-  -> ProviderFacade.call_model
-  -> provider-specific HTTP API
-```
-
-### Crew Chat
-
-```text
-App.handleSend
-  -> fetch('/api/chat')
-  -> routes.chat
-  -> DirectorAgent._handle_crew_chat
-  -> ProviderFacade.call_model
-  -> DirectorAgent._parse_crew_debate_logs
-  -> App appends debate logs
-```
-
-### Story SSE
-
-```text
-useStoryStream.startStory
-  -> POST /api/session/create
-  -> EventSource('/api/session/{id}/stream')
-  -> routes.stream_session
-  -> DirectorAgent.process
-      -> _generate_outline
-      -> _generate_beat
-          -> ProviderFacade.call_model                 # Director planner
-          -> BaseCharacter.respond_structured          # character dialogue
-          -> _persist_beat_writes
-              -> db.models.Message
-              -> update_dossiers
-                  -> compute_dossier_delta
-                  -> ProviderFacade.call_model         # relationship analysis
-```
-
-### Story Action
-
-```text
-BeatControls
-  -> useStoryStream.sendAction
-  -> POST /api/session/{id}/action
-  -> routes.session_action
-      -> update Session row
-      -> optionally put signal in _session_queues[session_id]
-  -> DirectorAgent.process consumes action_queue
-```
-
-## Provider-Specific Dependencies
-
-### MiniMax
-
-Endpoint:
-
-```text
-https://api.minimaxi.com/anthropic/v1/messages
-```
-
-Headers:
-
-```text
-Content-Type: application/json
-anthropic-version: 2023-06-01
-x-api-key: MINIMAX_API_KEY
-```
-
-Response parser:
-
-- expects `content` list
-- concatenates text blocks with `type == "text"`
-
-### StepFun
-
-Endpoint:
-
-```text
-https://api.stepfun.com/v1/chat/completions
-```
-
-Headers:
-
-```text
-Authorization: Bearer STEPFUN_API_KEY
-Content-Type: application/json
-```
-
-Response parser:
-
-- expects `choices[0].message.content`
-
-### CLIProxy
-
-Endpoint:
-
-```text
-{CLI_PROXY_BASE_URL}/v1/messages
-```
-
-Headers:
-
-```text
-Content-Type: application/json
-anthropic-version: 2023-06-01
-x-api-key: CLI_PROXY_API_KEY
-```
-
-Request transform:
-
-- system messages are concatenated into Anthropic `system`
-- user/assistant messages stay in `messages`
-
-Response parser:
-
-- reads content blocks with `type in ("text", "thinking")`
-- concatenates `text` or `thinking`
-
-## Test Dependencies
-
-| Area | Command |
-|---|---|
-| Frontend unit/integration | `npm test` |
-| Frontend lint | `npm run lint` |
-| Frontend build | `npm run build` |
-| Playwright E2E | `npm run e2e` |
-| Backend tests | `cd backend && uv run pytest` |
-| Backend lint | `cd backend && uv run ruff check .` |
-
-## Dependency Risks
-
-- Frontend Vite build expects all referenced public assets to exist. `sceneBackgrounds.ts` references `/backgrounds/blue-desert-rv.jpg`; verify the file exists before relying on that background.
-- StepFun is supported by backend but not exposed in current model dropdown.
-- CLIProxy local default will fail unless the proxy is running and a key is configured.
-- Giphy GIFs are externally hosted and can disappear or fail regionally; `GifCard` hides broken images but UX degrades.
-- Supabase not configured is valid guest mode; auth-related code should keep treating it as optional.
-- Backend cannot import settings without `DATABASE_URL`; tests set env defaults in test modules/conftest.

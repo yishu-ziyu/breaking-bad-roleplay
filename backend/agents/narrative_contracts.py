@@ -183,19 +183,30 @@ class ValidationResult(BaseModel):
 class CriticScore(BaseModel):
     """Soft quality scores from Narrative Critic (P3). Higher is better.
 
-    Primary axes (weighted in ``scenes.critic``):
-      intentionality 30%, causal_relevance 25%, continuity 20%,
-      dramatic_value 15%, visual_executability 10%.
+    DramaBench-aligned primary axes (weighted in ``scenes.critic``):
+      character_consistency 25%, narrative_efficiency 20%,
+      dramatic_tension 20%, emotional_resonance 15%,
+      thematic_depth 10%, format_standards 10%.
 
-    Legacy aliases (voice_fit / tension / …) remain for older callers.
+    Legacy aliases (intentionality / causal_relevance / …) remain for
+    backward compatibility — populated from the canonical fields.
     """
 
+    # DramaBench canonical dimensions
+    character_consistency: float = Field(ge=0.0, le=1.0, default=0.5)
+    narrative_efficiency: float = Field(ge=0.0, le=1.0, default=0.5)
+    dramatic_tension: float = Field(ge=0.0, le=1.0, default=0.5)
+    emotional_resonance: float = Field(ge=0.0, le=1.0, default=0.5)
+    thematic_depth: float = Field(ge=0.0, le=1.0, default=0.5)
+    format_standards: float = Field(ge=0.0, le=1.0, default=0.5)
+    # Hard gate: false = turn is not stageable (rejected before weighted scoring)
+    visual_executable: bool = True
+    # Legacy aliases (deprecated, populated from canonical fields)
     intentionality: float = Field(ge=0.0, le=1.0, default=0.5)
     causal_relevance: float = Field(ge=0.0, le=1.0, default=0.5)
     continuity: float = Field(ge=0.0, le=1.0, default=0.5)
     dramatic_value: float = Field(ge=0.0, le=1.0, default=0.5)
     visual_executability: float = Field(ge=0.0, le=1.0, default=0.5)
-    # Legacy aliases
     voice_fit: float = Field(ge=0.0, le=1.0, default=0.5)
     tension: float = Field(ge=0.0, le=1.0, default=0.5)
     knowledge_discipline: float = Field(ge=0.0, le=1.0, default=0.5)
@@ -205,16 +216,17 @@ class CriticScore(BaseModel):
 
     @property
     def total(self) -> float:
-        """Prefer weighted product score; fall back to legacy mean."""
+        """Prefer weighted product score; fall back to DramaBench mean."""
         if self.weighted_total and self.weighted_total != 0.5:
             return self.weighted_total
         return (
-            self.intentionality
-            + self.causal_relevance
-            + self.continuity
-            + self.dramatic_value
-            + self.visual_executability
-        ) / 5.0
+            self.character_consistency
+            + self.narrative_efficiency
+            + self.dramatic_tension
+            + self.emotional_resonance
+            + self.thematic_depth
+            + self.format_standards
+        ) / 6.0
 
 
 # ---------------------------------------------------------------------------

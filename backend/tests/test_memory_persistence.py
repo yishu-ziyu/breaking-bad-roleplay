@@ -6,13 +6,18 @@ import json
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from db.models import CharacterDossier
 from agents.director import DirectorAgent
 from agents.memory import (
     MAX_KNOWLEDGE_ENTRIES,
     MAX_RELATIONSHIP_NOTES_CHARS,
+    FailedDelta,
     _apply_dossier_delta,
     compute_dossier_delta,
+    failed_delta_count,
+    retry_failed_deltas,
     update_dossiers,
 )
 
@@ -367,3 +372,150 @@ class TestCycle46_RelationshipNotesGrowthCap:
         assert short_notes in dossier.relationship_notes
         assert "second note" in dossier.relationship_notes
         assert len(dossier.relationship_notes) <= MAX_RELATIONSHIP_NOTES_CHARS
+
+
+# ---------------------------------------------------------------------------
+# P7 — Failed delta tracking and retry
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_failed_delta_queue():
+    """Reset the global queue before each test so tests don't leak state."""
+    import agents.memory as _m
+    _m._failed_delta_queue.clear()
+    yield
+
+
+async def test_failed_delta_is_queued_on_provider_failure():
+    """P7: provider failure queues a FailedDelta instead of silent discard."""
+    import agents.memory as _m
+
+    provider = MagicMock()
+    provider.call_model = AsyncMock(side_effect=RuntimeError("network timeout"))
+
+    assert failed_delta_count() == 0
+
+    result = await compute_dossier_delta(
+        provider=provider,
+        dossiers={},
+        beat_summary="RV argument",
+        beat_events=[],
+        model_route="stepfun/step-3.7-flash",
+        session_id="session-p7",
+        beat_summary_raw="RV argument",
+    )
+
+    assert result == {"deltas": []}
+    assert failed_delta_count() == 1
+    entry = _m._failed_delta_queue[0]
+    assert entry.session_id == "session-p7"
+    assert entry.beat_summary == "RV argument"
+    assert entry.model_route == "stepfun/step-3.7-flash"
+    assert "network timeout" in entry.error
+    assert entry.retry_count == 0
+
+
+async def test_retry_failed_deltas_retries_successfully():
+    """P7: retry_failed_deltas replays queued deltas through update_dossiers."""
+    import agents.memory as _m
+
+    # Seed a failed delta
+    _m._failed_delta_queue.append(
+        FailedDelta(
+            session_id="session-retry",
+            beat_summary="lab conversation",
+            beat_events=[{"type": "agent_speak", "data": {"character_id": "Walter White"}}],
+            model_route="stepfun/step-3.7-flash",
+            error="original timeout",
+        )
+    )
+    assert failed_delta_count() == 1
+
+    db = _DbStub()
+    provider = _provider_with_delta(
+        {
+            "owner": "Walter White",
+            "subject": "Jesse Pinkman",
+            "trust_delta": 1,
+            "new_knowledge": "Jesse is reliable.",
+            "new_notes": "Trust increased slightly.",
+        }
+    )
+
+    success = await retry_failed_deltas(provider=provider, db=db, max_retries=3)
+
+    assert len(success) == 1
+    assert success[0]["owner"] == "walter_white"
+    assert success[0]["trust_delta"] == 1
+    # Queue should be empty after successful retry
+    assert failed_delta_count() == 0
+
+
+async def test_failed_delta_count():
+    """P7: failed_delta_count returns the correct queue size."""
+    import agents.memory as _m
+
+    assert failed_delta_count() == 0
+    assert len(_m._failed_delta_queue) == 0
+
+    _m._failed_delta_queue.append(
+        FailedDelta(
+            session_id="s1",
+            beat_summary="beat1",
+            beat_events=[],
+            model_route="route-a",
+            error="err1",
+        )
+    )
+    assert failed_delta_count() == 1
+    assert len(_m._failed_delta_queue) == 1
+
+    _m._failed_delta_queue.append(
+        FailedDelta(
+            session_id="s2",
+            beat_summary="beat2",
+            beat_events=[],
+            model_route="route-b",
+            error="err2",
+        )
+    )
+    assert failed_delta_count() == 2
+
+    _m._failed_delta_queue.clear()
+    assert failed_delta_count() == 0
+
+
+async def test_failed_delta_max_retries_exhausted():
+    """P7: deltas that exceed max_retries are dropped, not retried."""
+    import agents.memory as _m
+
+    _m._failed_delta_queue.append(
+        FailedDelta(
+            session_id="session-exhaust",
+            beat_summary="cook scene",
+            beat_events=[],
+            model_route="stepfun/step-3.7-flash",
+            error="persistent failure",
+            retry_count=3,  # already at max
+        )
+    )
+    assert failed_delta_count() == 1
+
+    db = _DbStub()
+    provider = _provider_with_delta(
+        {
+            "owner": "Walter White",
+            "subject": "Jesse Pinkman",
+            "trust_delta": 1,
+            "new_knowledge": "test",
+            "new_notes": "test",
+        }
+    )
+
+    success = await retry_failed_deltas(provider=provider, db=db, max_retries=3)
+
+    # Should not retry — already exhausted
+    assert success == []
+    # Queue should be empty (dropped after exceeding max retries)
+    assert failed_delta_count() == 0

@@ -261,6 +261,22 @@ def score_response(reply_text: str, expected: dict[str, list[str]]) -> dict[str,
     return scores
 
 
+def _strip_keywords(reply: str, expected: dict[str, list[str]]) -> str:
+    """Strip expected keywords from a good reply to simulate a degraded prompt.
+
+    A good prompt includes instructions for signature phrases, so it produces
+    replies that include those phrases. A degraded prompt lacks those instructions,
+    so it's unlikely to produce the expected phrases. This models that by
+    replacing the phrases with generic filler, then asks: can the rubric tell
+    the difference between the good and degraded?
+    """
+    out = reply
+    for _, keywords in expected.items():
+        for kw in keywords:
+            out = out.replace(kw, "some generic words")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Good replies — constructed to include each probe's expected keywords
 # ---------------------------------------------------------------------------
@@ -526,3 +542,80 @@ class TestRubricQuality:
         good_score = score_response(good, expected)["signature_elements"]
         bad_score = score_response(bad, expected)["signature_elements"]
         assert good_score > bad_score, "Good and bad responses should score differently"
+
+
+# ---------------------------------------------------------------------------
+# Probe: Two-prompt discrimination test for evaluation-evolution loop
+#
+# This is the cheap probe for gap 3: does our rubric consistently
+# distinguish between a good prompt version and a degraded (bad) version?
+# If it cannot, the whole evaluation-evolution loop has no foundation.
+# ---------------------------------------------------------------------------
+
+class TestEvaluationEvolutionDiscrimination:
+    """Probe: verify rubric can tell good from bad character prompts.
+
+    This is the cheap probe for gap 3 (evaluation-evolution loop). It does
+    NOT call the LLM. Instead it models the two prompt versions at the reply
+    level: a good prompt produces a keyword-rich reply (the GOOD_REPLIES
+    corpus), a degraded prompt produces the same reply with the expected
+    keywords stripped out. If the rubric cannot separate these two, then the
+    whole evaluation loop has no foundation — the grader literally cannot
+    tell "improved" from "worse".
+
+    Scope boundary (read before trusting this as proof of the loop):
+    This test exercises the *keyword-counting rubric proxy* (score_response),
+    not the production prompt-evaluation path, and its "good > degraded"
+    separation is guaranteed by construction — stripping a keyword can only
+    lower (or keep) its count. It is a regression sentinel that catches a
+    broken scorer, NOT evidence that the loop handles a genuinely degraded
+    prompt (which produces wholly different prose, not a stripped copy).
+    Real-degradation validation requires an LLM run and is out of scope here.
+    """
+
+    async def test_good_vs_degraded_walter_scores_distinguishable(self):
+        """Every Walter probe's degraded reply must score lower than the good one."""
+        probes = CHARACTER_PROBES["walter"]
+        good_replies = GOOD_REPLIES["walter"]
+
+        for probe_idx, (prompt, expected) in enumerate(probes):
+            good_reply = good_replies[probe_idx]
+            bad_reply = _strip_keywords(good_reply, expected)
+
+            good_scores = score_response(good_reply, expected)
+            bad_scores = score_response(bad_reply, expected)
+
+            # Every dimension with keywords must not be higher in the degraded reply.
+            for dim, keywords in expected.items():
+                if keywords:
+                    assert good_scores[dim] >= bad_scores[dim], (
+                        f"walter probe {probe_idx}, dim {dim}: "
+                        f"good={good_scores[dim]} degraded={bad_scores[dim]} "
+                        f"— rubric cannot discriminate prompt quality"
+                    )
+
+            assert sum(good_scores.values()) > sum(bad_scores.values()), (
+                f"walter probe {probe_idx}: "
+                f"good_total={sum(good_scores.values())} "
+                f"degraded_total={sum(bad_scores.values())} "
+                f"— rubric shows no separation between good and degraded prompt"
+            )
+
+    async def test_discrimination_across_characters_stable(self):
+        """Discrimination must hold across characters, not just Walter."""
+        failures: list[str] = []
+        for char_id in ("jesse", "saul", "hank"):
+            probes = CHARACTER_PROBES[char_id]
+            good_replies = GOOD_REPLIES[char_id]
+            for probe_idx, (prompt, expected) in enumerate(probes):
+                good_reply = good_replies[probe_idx]
+                bad_reply = _strip_keywords(good_reply, expected)
+                good_total = sum(score_response(good_reply, expected).values())
+                bad_total = sum(score_response(bad_reply, expected).values())
+                if not good_total > bad_total:
+                    failures.append(
+                        f"{char_id} probe {probe_idx}: good={good_total} degraded={bad_total}"
+                    )
+        assert not failures, (
+            "Discrimination failed on some probes:\n" + "\n".join(failures)
+        )
