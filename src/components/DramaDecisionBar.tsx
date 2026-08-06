@@ -23,7 +23,10 @@ export type DramaDecisionBarProps = {
   freeValue: string
   onFreeChange: (v: string) => void
   onPick: (s: DramaSuggestion) => void
+  /** ONLY called when freeValue trimmed is non-empty */
   onFreeSubmit: () => void
+  /** Primary continue path (no free text required) */
+  onContinue: () => void
   placeholder?: string
 }
 
@@ -33,22 +36,27 @@ const KIND_CLASS: Record<DramaSuggestion['kind'], string> = {
   observe: 'drama-decision__observe',
 }
 
-const copy = {
+/** UI copy for the decision bar - exported for unit tests. */
+export const DRAMA_DECISION_COPY = {
   en: {
     title: 'Your move',
+    continue: 'Continue →',
     freeSubmit: 'Decide',
     freePlaceholder: 'Or type what you say, do, or notice…',
     kindSay: 'Say',
     kindDo: 'Do',
     kindObserve: 'Observe',
+    unfolding: 'The scene is unfolding…',
   },
   zh: {
     title: '你的决定',
+    continue: '继续推进 →',
     freeSubmit: '决定',
     freePlaceholder: '或自由输入：你要说、做、或观察到什么…',
     kindSay: '说',
     kindDo: '做',
     kindObserve: '观察',
+    unfolding: '局面展开中…',
   },
 } as const
 
@@ -201,6 +209,52 @@ export function buildColdOpenSuggestions(
   }
 
   if (choiceId === 'call_saul') {
+    const isSaul = opts?.characterId === 'saul'
+    // Cast as Saul: receive the call, don't dial yourself
+    if (isSaul) {
+      return zh
+        ? [
+            {
+              id: 'cold-saul-say-answer',
+              kind: 'say',
+              label: '接电话',
+              payload: '我接起电话，先稳住对方：说，出什么事了？别急，先告诉我你在哪。',
+            },
+            {
+              id: 'cold-saul-do-price',
+              kind: 'do',
+              label: '谈价',
+              payload: '我一边听一边盘算价码，先把律师费和风险费谈清楚再答应下一步。',
+            },
+            {
+              id: 'cold-saul-observe-cover',
+              kind: 'observe',
+              label: '编说辞',
+              payload: '我听对方的口气，同时在脑子里编一套能过关的说辞——等会儿怎么跟DEA、怎么跟客户圆。',
+            },
+          ]
+        : [
+            {
+              id: 'cold-saul-say-answer',
+              kind: 'say',
+              label: 'Answer the call',
+              payload: "I pick up and steady them: Talk to me. What happened? Where are you? Don't panic.",
+            },
+            {
+              id: 'cold-saul-do-price',
+              kind: 'do',
+              label: 'Negotiate price',
+              payload: 'I listen and start pricing the mess — lawyer fee, risk fee — before I commit to the next move.',
+            },
+            {
+              id: 'cold-saul-observe-cover',
+              kind: 'observe',
+              label: 'Invent cover story',
+              payload: "I read their voice and invent a cover story that can hold — for the DEA, for the client, for whoever's listening.",
+            },
+          ]
+    }
+    // Not Saul: dial Saul chips
     return zh
       ? [
           {
@@ -377,6 +431,23 @@ export function buildColdOpenSuggestions(
 }
 
 /**
+ * Cold-open crisis chips only on beat 0.
+ * beatIndex >= 1 always uses beat-pause suggestions so answered actions
+ * (e.g. 接电话 after call_saul) do not linger on later pauses.
+ */
+export function dramaSuggestionsForBeat(
+  beatIndex: number,
+  language: 'zh' | 'en',
+  coldOpts: ColdOpenSuggestionOpts,
+  pauseHint: string,
+): DramaSuggestion[] {
+  if (beatIndex === 0) {
+    return buildColdOpenSuggestions(language, coldOpts)
+  }
+  return buildBeatPauseSuggestions(language, pauseHint)
+}
+
+/**
  * Generic pressure choices for mid-beat pauses.
  * Optional contextHint is woven into payloads when provided.
  */
@@ -443,6 +514,14 @@ export function buildBeatPauseSuggestions(
   ]
 }
 
+/**
+ * Pure guard for free-text submit: only true when trimmed text is non-empty and not disabled.
+ * Parent must use onContinue for empty / advance-without-text path.
+ */
+export function canSubmitFreeText(freeValue: string, disabled = false): boolean {
+  return freeValue.trim().length > 0 && !disabled
+}
+
 export function DramaDecisionBar({
   language,
   suggestions,
@@ -451,10 +530,11 @@ export function DramaDecisionBar({
   onFreeChange,
   onPick,
   onFreeSubmit,
+  onContinue,
   placeholder,
 }: DramaDecisionBarProps) {
-  const t = copy[language]
-  const canSubmitFree = freeValue.trim().length > 0 && !disabled
+  const t = DRAMA_DECISION_COPY[language]
+  const canSubmitFree = canSubmitFreeText(freeValue, disabled)
 
   const handleFreeSubmit = (e?: FormEvent) => {
     e?.preventDefault()
@@ -478,7 +558,21 @@ export function DramaDecisionBar({
     >
       <div className="drama-decision__head">
         <span className="drama-decision__title">{t.title}</span>
+        <button
+          type="button"
+          className="drama-decision__continue"
+          disabled={disabled}
+          onClick={() => onContinue()}
+        >
+          {t.continue}
+        </button>
       </div>
+
+      {disabled && (
+        <p className="drama-decision__status" role="status" aria-live="polite">
+          {t.unfolding}
+        </p>
+      )}
 
       <div className="drama-decision__suggestions" role="group" aria-label={t.title}>
         {suggestions.map((s) => (

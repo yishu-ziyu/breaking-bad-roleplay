@@ -29,6 +29,8 @@ export type ColdOpenLandingProps = {
   onLanguageChange?: (lang: ColdOpenLanguage) => void
   /** True while parent is starting a story session (blocks double-submit). */
   starting?: boolean
+  /** Connection / start failure message (connection-gate). Shown as alert banner. */
+  error?: string | null
 }
 
 /** Story seed text per cold-open choice. Parent may also import this map. */
@@ -57,11 +59,23 @@ export const COLD_OPEN_PROMPTS: Record<
 const CRISIS_COPY: Record<ColdOpenLanguage, { stamp: string; body: string }> = {
   en: {
     stamp: 'New Mexico · 2:13 a.m.',
-    body: 'The RV back door is open. Jesse is gone. Half the cash is missing.',
+    body: 'RV back door open. Jesse gone. Half the cash missing.',
   },
   zh: {
     stamp: '新墨西哥 · 凌晨 2:13',
-    body: '房车后门开着。杰西不见了。桌上的钱少了一半。',
+    body: '房车后门开着。杰西不见了。钱少了一半。',
+  },
+}
+
+/** Diegetic beat while the session starts — not a SaaS spinner. */
+const ENTERING_COPY: Record<ColdOpenLanguage, { diegetic: string; secondary: string }> = {
+  en: {
+    diegetic: 'Half a bag of cash still in the RV.',
+    secondary: 'Entering…',
+  },
+  zh: {
+    diegetic: '房车里还剩半袋现金。',
+    secondary: '进入中…',
   },
 }
 
@@ -96,7 +110,11 @@ const UI_COPY: Record<
     back: string
     settings: string
     continueAs: string
-    entering: string
+    chosenPrefix: string
+    /** Hint on non-Saul faces when the crisis choice already called Saul. */
+    recommended: string
+    /** Quiet hint on Saul face when Call Saul was already chosen. */
+    saulAlready: string
   }
 > = {
   en: {
@@ -104,18 +122,22 @@ const UI_COPY: Record<
     castTitle: 'You enter as who?',
     castHint: 'Pick a face for this night.',
     back: 'Back to choices',
-    settings: 'Settings',
+    settings: 'Line',
     continueAs: 'Enter as',
-    entering: 'Entering…',
+    chosenPrefix: 'You chose:',
+    recommended: 'Recommended',
+    saulAlready: 'Already on the line',
   },
   zh: {
     brand: '冷开场',
     castTitle: '你以谁的身份进入？',
     castHint: '为这一夜选一张脸。',
     back: '返回选择',
-    settings: '设置',
+    settings: '线路',
     continueAs: '进入角色',
-    entering: '进入中…',
+    chosenPrefix: '你已选：',
+    recommended: '推荐',
+    saulAlready: '已在线上',
   },
 }
 
@@ -143,6 +165,7 @@ export function ColdOpenLanding({
   onOpenSettings,
   onLanguageChange,
   starting = false,
+  error = null,
 }: ColdOpenLandingProps) {
   const [phase, setPhase] = useState<Phase>('crisis')
   const [selectedChoice, setSelectedChoice] = useState<ColdOpenChoiceId | null>(null)
@@ -151,6 +174,11 @@ export function ColdOpenLanding({
   const zh = language === 'zh'
   const ui = UI_COPY[language]
   const crisis = CRISIS_COPY[language]
+  /** When player already chose Call Saul, de-emphasize casting as Saul (still selectable). */
+  const deemphasizeSaul = phase === 'casting' && selectedChoice === 'call_saul'
+  const castFocusIndex = deemphasizeSaul
+    ? Math.max(0, COLD_OPEN_CAST.findIndex((m) => m.id !== 'saul'))
+    : 0
 
   const handleChoice = useCallback((choiceId: ColdOpenChoiceId) => {
     if (starting) return
@@ -230,6 +258,12 @@ export function ColdOpenLanding({
         </div>
       )}
 
+      {error ? (
+        <div className="cold-open__error" role="alert">
+          {error}
+        </div>
+      ) : null}
+
       <div className="cold-open__content">
         {phase === 'crisis' ? (
           <div className="cold-open__stage cold-open__stage--crisis" key="crisis">
@@ -296,7 +330,11 @@ export function ColdOpenLanding({
 
             {selectedChoice && (
               <p className="cold-open__chosen" aria-live="polite">
-                {CHOICE_COPY[selectedChoice][language].label}
+                <span className="cold-open__chosen-prefix">{ui.chosenPrefix}</span>
+                {' '}
+                <span className="cold-open__chosen-label">
+                  {CHOICE_COPY[selectedChoice][language].label}
+                </span>
               </p>
             )}
 
@@ -306,9 +344,14 @@ export function ColdOpenLanding({
             <p className="cold-open__cast-hint">{ui.castHint}</p>
 
             {starting && (
-              <p className="cold-open__entering" role="status" aria-live="polite">
-                {ui.entering}
-              </p>
+              <div className="cold-open__entering" role="status" aria-live="polite">
+                <p className="cold-open__entering-diegetic">
+                  {ENTERING_COPY[language].diegetic}
+                </p>
+                <p className="cold-open__entering-secondary">
+                  {ENTERING_COPY[language].secondary}
+                </p>
+              </div>
             )}
 
             <div
@@ -318,17 +361,41 @@ export function ColdOpenLanding({
             >
               {COLD_OPEN_CAST.map((member, index) => {
                 const displayName = member.name[language]
+                const isSaulDeemphasized = deemphasizeSaul && member.id === 'saul'
+                const isRecommended = deemphasizeSaul && member.id !== 'saul'
                 return (
                   <button
                     key={member.id}
                     type="button"
-                    className="cold-open__cast-member"
+                    className={[
+                      'cold-open__cast-member',
+                      isSaulDeemphasized ? 'cold-open__cast-member--deemphasized' : '',
+                      isRecommended ? 'cold-open__cast-member--recommended' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
                     style={{ '--cast-accent': member.accent } as CSSProperties}
                     onClick={() => handleCast(member.id)}
-                    autoFocus={index === 0}
+                    autoFocus={index === castFocusIndex}
                     disabled={starting}
-                    aria-label={`${ui.continueAs} ${displayName}`}
+                    aria-label={
+                      isSaulDeemphasized
+                        ? `${ui.continueAs} ${displayName} (${ui.saulAlready})`
+                        : isRecommended
+                          ? `${ui.continueAs} ${displayName} (${ui.recommended})`
+                          : `${ui.continueAs} ${displayName}`
+                    }
                   >
+                    {isRecommended && (
+                      <span className="cold-open__cast-badge" aria-hidden="true">
+                        {ui.recommended}
+                      </span>
+                    )}
+                    {isSaulDeemphasized && (
+                      <span className="cold-open__cast-hint-soft" aria-hidden="true">
+                        {ui.saulAlready}
+                      </span>
+                    )}
                     <span className="cold-open__cast-avatar">
                       <Silhouette
                         characterId={member.id}
