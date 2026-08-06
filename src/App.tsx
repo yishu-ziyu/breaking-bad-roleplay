@@ -18,6 +18,13 @@ import { AuthSection } from './components/AuthSection'
 import { GifCard } from './components/GifCard'
 import { PlotGraphPanel } from './components/PlotGraphPanel'
 import { AgentHarnessPanel } from './components/AgentHarnessPanel'
+import { ColdOpenLanding, type ColdOpenStartPayload } from './components/ColdOpenLanding'
+import {
+  DramaDecisionBar,
+  buildColdOpenSuggestions,
+  buildBeatPauseSuggestions,
+  type DramaSuggestion,
+} from './components/DramaDecisionBar'
 import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
 import { useConnection } from './hooks/useConnection'
@@ -245,6 +252,18 @@ function formatEmotionLabel(raw: string | null | undefined, lang: Language): str
   if (!raw) return ''
   const key = raw.trim().toLowerCase()
   return EMOTION_LABELS[key]?.[lang] ?? raw
+}
+
+/** Sanitize emotion_state for CSS class hooks (alphanumeric + hyphen only). */
+function emotionStageClass(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const safe = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+  return safe || null
 }
 
 function truncateText(text: string, maxLen: number): string {
@@ -861,11 +880,22 @@ function App() {
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
   const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
 
-  const [view, setView] = usePersistedState<View>('view', 'chat')
+  const [view, setView] = usePersistedState<View>('view', 'story')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
   const connection = useConnection()
   const auth = useAuth()
   const quota = useQuota(connection.connectionSessionId, auth.user?.id ?? null)
+  /** Agent harness is lab-only (?lab=1 or /lab) — not part of the drama surface. */
+  const showAgentLab = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      if (sp.get('lab') === '1') return true
+      return window.location.pathname.includes('/lab')
+    } catch {
+      return false
+    }
+  }, [])
 
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
@@ -887,10 +917,14 @@ function App() {
   /** Position within stage-card indices (not raw event index). */
   const [stageCardPos, setStageCardPos] = useState(0)
   const stageShownAtRef = useRef<number | null>(null)
-  /** Narrow beat rail open by default; user can fold to give stage full width. */
-  const [timelineRailOpen, setTimelineRailOpen] = useState(true)
-  /** GIF on stage can be muted so paper text stays primary. */
-  const [storyGifHidden, setStoryGifHidden] = useState(false)
+  /** Beat rail closed by default — stage + dialogue + decision first. */
+  const [timelineRailOpen, setTimelineRailOpen] = useState(false)
+  /** GIF off by default — film stills / stage text, not meme GIFs. */
+  const [storyGifHidden, setStoryGifHidden] = useState(true)
+  /** Free-text line for DramaDecisionBar (beat pause). */
+  const [decisionFree, setDecisionFree] = useState('')
+  /** Cold-open choice id so first-beat chips match the crisis the player picked. */
+  const [coldOpenChoiceId, setColdOpenChoiceId] = useState<string | null>(null)
   /** Situation map is opt-in only - never auto-pop on complete. */
   const [plotMapOpen, setPlotMapOpen] = useState(false)
 
@@ -1160,7 +1194,7 @@ function App() {
   const showSavePrompt = !auth.user && userTurnCount >= 3
 
   /* ---- Story start ---- */
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
 
   // Playing story: collapse global archive sidebar to a thin handle (layout blueprint).
   useEffect(() => {
@@ -1208,13 +1242,66 @@ function App() {
     }
   }, [storyTask, story, selectedCharId, relation, language, connection])
 
-  /* ---- Enter world from landing screen ---- */
-  const handleEnterWorld = useCallback(() => {
+  /* ---- Cold open → cast → Story (default product surface) ----
+   * Always seed storyTask first so free/prescribed choices share one path:
+   * if connection is blocked, story stays idle and story-setup shows the
+   * cold-open prompt prefilled for a manual start after the user connects.
+   *
+   * Double-click / double-tap guard: ref is sync (blocks re-entry before
+   * React re-renders); state drives ColdOpenLanding disabled UI.
+   */
+  const coldOpenStartingRef = useRef(false)
+  const [coldOpenStarting, setColdOpenStarting] = useState(false)
+
+  const handleColdOpenStart = useCallback(async (payload: ColdOpenStartPayload) => {
+    if (coldOpenStartingRef.current) return
+    if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
+    coldOpenStartingRef.current = true
+    setColdOpenStarting(true)
+
+    const charId = payload.characterId as CharacterId
+    setSelectedCharId(charId)
+    setColdOpenChoiceId(payload.choiceId)
     setHasEnteredWorld(true)
-    setView('chat')
-    setStoryTask(defaultStoryPrompt(language))
-    story.reset()
-  }, [setHasEnteredWorld, setView, story, language])
+    setView('story')
+    setSidebarCollapsed(true)
+    setStoryTask(payload.storyPrompt)
+    setError(null)
+    try {
+      if (!connection.view.canStart) {
+        connection.setSheetOpen(true)
+        setError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
+        return
+      }
+      const bindId = await connection.ensureBound()
+      if (connection.view.mode === 'byok' && !bindId) {
+        connection.setSheetOpen(true)
+        setError(
+          language === 'zh'
+            ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
+            : 'Key session is not ready. Re-save your key in Model line.',
+        )
+        return
+      }
+      story.setConnectionSessionId(bindId)
+      const cast = characters.find(c => c.id === charId)
+      const rel = relationByChar[charId] ?? cast?.relationOptions[0] ?? relation
+      await story.startStory(
+        payload.storyPrompt,
+        charId,
+        getVoiceExample(charId, rel) ?? null,
+        language,
+        bindId,
+      )
+      // Match handleStartStory: clear seed once the connection actually started.
+      setStoryTask('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      coldOpenStartingRef.current = false
+      setColdOpenStarting(false)
+    }
+  }, [connection, language, relation, relationByChar, setHasEnteredWorld, setSelectedCharId, setView, story])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -1439,6 +1526,9 @@ function App() {
 
   const handleReturnToLanding = useCallback(() => {
     story.reset()
+    setStoryTask('')
+    setError(null)
+    setColdOpenChoiceId(null)
     setHasEnteredWorld(false)
   }, [story, setHasEnteredWorld])
 
@@ -1458,11 +1548,13 @@ function App() {
   }, [story.connectionState, story.events.length])
 
   useEffect(() => {
+    // New session: reset stage pacing only. Do NOT force-open GIF or beat rail
+    // (drama default: GIF off, timeline folded so stage/dialogue/decision win).
     queueMicrotask(() => {
       setPinnedStoryEventIndex(null)
       setOutlineExpanded(false)
-      setTimelineRailOpen(true)
-      setStoryGifHidden(false)
+      setTimelineRailOpen(false)
+      setStoryGifHidden(true)
       setStageCardPos(0)
       stageShownAtRef.current = null
     })
@@ -1607,11 +1699,20 @@ function App() {
     : t.currentBeat
   const currentStoryTitle = currentStoryEvent ? getEventTitle(currentStoryEvent, language) : t.currentBeat
   const currentStoryHeading = getStoryCardHeading(currentStoryEvent, currentStoryTitle)
-  const currentStorySpeakerId = currentStoryEvent?.type === 'agent_speak'
-    ? DISPLAY_NAME_TO_ID[currentStoryEvent.data.character_id as string]
+  const currentStoryEventType = currentStoryEvent?.type ?? 'empty'
+  const isSpeakCard = currentStoryEventType === 'agent_speak'
+  const isThinkCard = currentStoryEventType === 'agent_think'
+  const isActCard = currentStoryEventType === 'agent_act'
+  const isSceneCard = currentStoryEventType === 'scene_change'
+  const storyEmotionClass = emotionStageClass(
+    (currentStoryEvent?.data?.emotion_state as string | undefined)
+      ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined),
+  )
+  const currentStorySpeakerId = isSpeakCard
+    ? DISPLAY_NAME_TO_ID[currentStoryEvent!.data.character_id as string]
     : null
-  const currentStorySpeakerText = currentStoryEvent?.type === 'agent_speak'
-    ? ((currentStoryEvent.data.content as string) ?? '')
+  const currentStorySpeakerText = isSpeakCard
+    ? ((currentStoryEvent!.data.content as string) ?? '')
     : ''
   const latestWorldDelta = useMemo(
     () => findLastStoryEvent(story.events, evt => evt.type === 'world_state_delta'),
@@ -1677,36 +1778,29 @@ function App() {
     await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
-  /* ---- Render ---- */
+  /* ---- Cold open (crisis first; cast after choice) ---- */
   if (!hasEnteredWorld) {
     return (
-      <div className="landing-screen">
-        {/* Loop 10: separate bg layer so Ken-Burns can drift without moving type */}
-        <div className="landing-screen__bg" aria-hidden="true" />
-        <div className="landing-screen__content">
-          <h1 className="landing-screen__title">
-            BREAKING BAD
-            <span className="landing-screen__title-accent">World Lines</span>
-          </h1>
-          <p className="landing-screen__description">{t.landingSubtitle}</p>
-          <div className="landing-screen__divider" />
-          {/* Loop 10 Gap 2: one in-character voice line (original, not a show quote) */}
-          <p className="landing-screen__voice">{t.landingVoice}</p>
-          <button className="landing-screen__enter" onClick={handleEnterWorld} type="button" autoFocus>
-            {t.enterWorld}
-            <span className="landing-screen__enter-arrow">&rarr;</span>
-          </button>
-        </div>
-        {/* Loop 10 Gap 3: muted chat-bubble preview of what the CTA opens into */}
-        <div className="landing-screen__preview" aria-hidden="true">
-          <div className="landing-preview-bubble">
-            <span className="landing-preview-bubble__name">Walter</span>
-            <span className="landing-preview-bubble__text">{t.landingPreview}</span>
-          </div>
-        </div>
-      </div>
+      <>
+        <ColdOpenLanding
+          language={language}
+          onStart={handleColdOpenStart}
+          onOpenSettings={() => connection.setSheetOpen(true)}
+          onLanguageChange={(lang) => setLanguage(lang)}
+          starting={coldOpenStarting}
+        />
+        <ConnectionSheet conn={connection} language={language} />
+      </>
     )
   }
+
+  const dramaSuggestions: DramaSuggestion[] =
+    story.beatIndex <= 2
+      ? buildColdOpenSuggestions(language, {
+          choiceId: coldOpenChoiceId ?? undefined,
+          characterId: selectedCharId,
+        })
+      : buildBeatPauseSuggestions(language, latestWorldDeltaText || currentStoryText.slice(0, 80))
 
   return (
     <>
@@ -1742,7 +1836,7 @@ function App() {
         </div>
       )}
       <main
-        className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}`}
+        className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}${view === 'story' && sidebarCollapsed ? ' app-shell--story-focus' : ''}`}
         lang={language === 'zh' ? 'zh-CN' : 'en'}
       >
         <div className={`sidebar-wrapper ${sidebarCollapsed ? 'sidebar-wrapper--collapsed' : ''}`}>
@@ -1793,61 +1887,62 @@ function App() {
           </div>
         </section>
 
-        {/* Language */}
-        <section>
-          <span className="field-label">{t.language}</span>
-          <div className="seg-control">
-            <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>{t.langEn}</button>
-            <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>{t.langZh}</button>
-          </div>
-        </section>
-
-        {/* View toggle */}
-        <section>
-          <span className="field-label">{t.view}</span>
-          <div className="seg-control">
-            <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>{t.chat}</button>
-            <button className={view === 'story' ? 'active' : ''} onClick={() => setView('story')}>{t.story}</button>
-          </div>
-        </section>
-
-        {/* Relation */}
-        <section>
-          <label htmlFor="relation">{t.relation}</label>
-          <select
-            id="relation"
-            value={relation}
-            onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
-          >
-            {selectedChar.relationOptions.map(opt => (
-              <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
-            ))}
-          </select>
-        </section>
-
-        {/* Mode (chat only) */}
-        {view === 'chat' && (
+        {/* Settings drawer: language, view, relation, mode, model/quota — off the stage */}
+        <details className="archive-settings">
+          <summary className="archive-settings__summary">
+            {language === 'zh' ? '设置' : 'Settings'}
+          </summary>
           <section>
-            <span className="field-label">{t.mode}</span>
+            <span className="field-label">{t.language}</span>
             <div className="seg-control">
-              <button className={mode === 'direct' ? 'active' : ''} onClick={() => setMode('direct')}>{t.direct}</button>
-              <button className={mode === 'crew' ? 'active' : ''} onClick={() => setMode('crew')}>{t.crew}</button>
+              <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>{t.langEn}</button>
+              <button className={language === 'zh' ? 'active' : ''} onClick={() => setLanguage('zh')} aria-pressed={language === 'zh'}>{t.langZh}</button>
             </div>
           </section>
-        )}
 
-        {/* Model line - BYOK branding entry + free credits */}
-        <section className="connection-sidebar-block">
-          <span className="field-label">{t.model}</span>
-          <ConnectionChip conn={connection} language={language} />
-          <p className={`quota-pill${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
-            {quota.byok
-              ? (language === 'zh' ? '自备密钥 · 不占平台额度' : 'Your key · not metered')
-              : (language === 'zh'
-                ? `${quota.tier === 'user' ? '登录福利' : '游客'} ${quota.remaining}/${quota.limit} 分`
-                : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}/${quota.limit}`)}
-          </p>
-        </section>
+          <section>
+            <span className="field-label">{t.view}</span>
+            <div className="seg-control">
+              <button className={view === 'story' ? 'active' : ''} onClick={() => setView('story')}>{t.story}</button>
+              <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>{t.chat}</button>
+            </div>
+          </section>
+
+          <section>
+            <label htmlFor="relation">{t.relation}</label>
+            <select
+              id="relation"
+              value={relation}
+              onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
+            >
+              {selectedChar.relationOptions.map(opt => (
+                <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
+              ))}
+            </select>
+          </section>
+
+          {view === 'chat' && (
+            <section>
+              <span className="field-label">{t.mode}</span>
+              <div className="seg-control">
+                <button className={mode === 'direct' ? 'active' : ''} onClick={() => setMode('direct')}>{t.direct}</button>
+                <button className={mode === 'crew' ? 'active' : ''} onClick={() => setMode('crew')}>{t.crew}</button>
+              </div>
+            </section>
+          )}
+
+          <section className="connection-sidebar-block">
+            <span className="field-label">{t.model}</span>
+            <ConnectionChip conn={connection} language={language} />
+            <p className={`quota-pill${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
+              {quota.byok
+                ? (language === 'zh' ? '自备密钥 · 不占平台额度' : 'Your key · not metered')
+                : (language === 'zh'
+                  ? `${quota.tier === 'user' ? '登录福利' : '游客'} ${quota.remaining}/${quota.limit} 分`
+                  : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}/${quota.limit}`)}
+            </p>
+          </section>
+        </details>
           </aside>
         </div>
 
@@ -1856,8 +1951,8 @@ function App() {
       {/* ===================== MAIN PANEL ===================== */}
       {view === 'story' ? (
         /* ---------- Story View ---------- */
-        <section className="story-panel">
-          <header className="story-header story-hud">
+        <section className="story-panel story-panel--drama">
+          <header className="story-header story-hud story-hud--minimal">
             <div className="story-hud__brand">
               <span className="brand-icon" aria-hidden="true" />
               <div>
@@ -1879,18 +1974,25 @@ function App() {
               <span>{t.tension}</span>
               <strong title={storyTensionLabel}>{storyTensionLabel}</strong>
             </div>
-            <div className="story-hud__metric story-hud__connection">
-              <span>{t.model}</span>
-              <ConnectionChip conn={connection} language={language} compact />
-              <small className={`quota-pill quota-pill--compact${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
-                {quota.byok
-                  ? (language === 'zh' ? '自备密钥' : 'BYOK')
-                  : (language === 'zh'
+            {/* Model/quota only when credits are low — not permanent HUD chrome. */}
+            {!quota.byok && quota.remaining <= 2 && (
+              <div className="story-hud__metric story-hud__connection story-hud__connection--low">
+                <span>{t.model}</span>
+                <ConnectionChip conn={connection} language={language} compact />
+                <small className="quota-pill quota-pill--compact is-low">
+                  {language === 'zh'
                     ? `${quota.tier === 'user' ? '登录' : '游客'} ${quota.remaining}`
-                    : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}`)}
-              </small>
-            </div>
-            <button type="button" onClick={() => setView('chat')}>{t.switchToChat}</button>
+                    : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}`}
+                </small>
+              </div>
+            )}
+            <button
+              type="button"
+              className="story-hud__chat-link"
+              onClick={() => setView('chat')}
+            >
+              {t.switchToChat}
+            </button>
           </header>
 
           {/* Idle: task input */}
@@ -1981,13 +2083,22 @@ function App() {
 
               {/* Stage (~70%) first, narrow beat rail (~25%) second - blueprint. */}
               <div className="story-board__grid">
-                <section className={`story-scene-card story-scene-card--${currentStoryEvent?.type ?? 'empty'}`}>
+                <section
+                  className={[
+                    'story-scene-card',
+                    `story-scene-card--${currentStoryEventType}`,
+                    storyEmotionClass ? `story-scene-card--emotion-${storyEmotionClass}` : '',
+                  ].filter(Boolean).join(' ')}
+                >
                   <div className="story-scene-card__paper">
                     <div className="story-scene-card__meta">
-                      <span className={`story-scene-card__chip story-scene-card__chip--${currentStoryEvent?.type ?? 'empty'}`}>
+                      <span className={`story-scene-card__chip story-scene-card__chip--${currentStoryEventType}`}>
                         {currentStoryTypeChip}
                       </span>
-                      {currentStoryHeading && currentStoryHeading !== currentStoryTypeChip && (
+                      {/* Think/act: character stays in meta; speak uses a dialogue heading below. */}
+                      {!isSpeakCard
+                        && currentStoryHeading
+                        && currentStoryHeading !== currentStoryTypeChip && (
                         <span className="story-scene-card__speaker">{currentStoryHeading}</span>
                       )}
                       {stageCardIndices.length > 1 && (
@@ -2026,11 +2137,21 @@ function App() {
                         {storyGifHidden ? t.gifToggleShow : t.gifToggleHide}
                       </button>
                     </div>
+                    {/* Disco Elysium weight: character name is the dialogue heading. */}
+                    {isSpeakCard && currentStoryHeading && (
+                      <h3 className="story-scene-card__name">{currentStoryHeading}</h3>
+                    )}
+                    {isSceneCard && (
+                      <p className="story-scene-card__scene-label">
+                        {language === 'zh' ? '场景转换' : 'Scene'}
+                      </p>
+                    )}
                     <p className={[
                       'story-scene-card__quote',
-                      currentStoryEvent?.type === 'agent_think' ? 'is-thought' : '',
-                      currentStoryEvent?.type === 'agent_act' ? 'is-stage-dir' : '',
-                      currentStoryEvent?.type === 'agent_speak' ? 'is-speak' : '',
+                      isThinkCard ? 'is-thought' : '',
+                      isActCard ? 'is-stage-dir' : '',
+                      isSpeakCard ? 'is-speak' : '',
+                      isSceneCard ? 'is-scene' : '',
                     ].filter(Boolean).join(' ')}>
                       {currentStoryText}
                     </p>
@@ -2154,18 +2275,49 @@ function App() {
                 </div>
               )}
 
-              {/* Decision bar: only when paused, sticky bottom. */}
+              {/* Decision layer: say / do / observe + free text (AI Dungeon grammar). */}
               {story.connectionState === 'beat_paused' && (
-                <div className="beat-paused">
-                  <p>{t.directorDecision}</p>
-                  <BeatControls
-                    t={t}
-                    characters={characters}
-                    onContinue={() => story.sendAction('continue', undefined, selectedCharId)}
-                    onStop={() => story.sendAction('stop', undefined, selectedCharId)}
-                    onRedirect={(prompt) => story.sendAction('redirect', { redirect_prompt: prompt }, selectedCharId)}
-                    onSwitchPerspective={(charId) => story.sendAction('switch_perspective', { target_character: charId }, selectedCharId)}
+                <div className="beat-paused beat-paused--drama">
+                  <DramaDecisionBar
+                    language={language}
+                    suggestions={dramaSuggestions}
+                    freeValue={decisionFree}
+                    onFreeChange={setDecisionFree}
+                    onPick={(s) => {
+                      void story.sendAction(
+                        'redirect',
+                        { redirect_prompt: s.payload },
+                        selectedCharId,
+                      )
+                      setDecisionFree('')
+                    }}
+                    onFreeSubmit={() => {
+                      const text = decisionFree.trim()
+                      if (!text) {
+                        void story.sendAction('continue', undefined, selectedCharId)
+                        return
+                      }
+                      void story.sendAction(
+                        'redirect',
+                        { redirect_prompt: text },
+                        selectedCharId,
+                      )
+                      setDecisionFree('')
+                    }}
                   />
+                  <details className="beat-paused__advanced">
+                    <summary>
+                      {language === 'zh' ? '更多导演控制' : 'More director controls'}
+                    </summary>
+                    <BeatControls
+                      t={t}
+                      characters={characters}
+                      onContinue={() => story.sendAction('continue', undefined, selectedCharId)}
+                      onStop={() => story.sendAction('stop', undefined, selectedCharId)}
+                      onRedirect={(prompt) => story.sendAction('redirect', { redirect_prompt: prompt }, selectedCharId)}
+                      onSwitchPerspective={(charId) => story.sendAction('switch_perspective', { target_character: charId }, selectedCharId)}
+                    />
+                  </details>
                 </div>
               )}
 
@@ -2173,21 +2325,28 @@ function App() {
                 <div className="story-complete">
                   <p>🎬 {t.storyComplete}</p>
                   <div className="story-complete__actions">
-                    <button type="button" onClick={handleContinueChapter}>{t.continueChapter}</button>
-                    <button type="button" onClick={handleBranchStory}>{t.branchStory}</button>
-                    <button type="button" onClick={handleReplayBeat}>{t.replayBeat}</button>
-                    <button type="button" onClick={story.reset}>{t.startAgain}</button>
+                    {/* Plot map is the primary complete action — review the spine before branching. */}
                     {story.sessionId && (
                       <button
                         type="button"
-                        className="story-complete__map"
+                        className="story-complete__map story-complete__map--primary"
                         onClick={() => setPlotMapOpen(true)}
                       >
                         {t.plotNetShow}
                       </button>
                     )}
+                    <button type="button" onClick={handleContinueChapter}>{t.continueChapter}</button>
+                    <button type="button" onClick={handleBranchStory}>{t.branchStory}</button>
+                    <button type="button" onClick={handleReplayBeat}>{t.replayBeat}</button>
+                    <button type="button" onClick={story.reset}>{t.startAgain}</button>
                   </div>
-                  <p className="story-complete__hint">{t.storyCompleteHint}</p>
+                  <p className="story-complete__hint">
+                    {story.sessionId
+                      ? (language === 'zh'
+                        ? '先打开局面地图回看因果与未明之处，再选下一章或分叉。'
+                        : 'Open the situation map first — see what landed and what is still fog — then start the next chapter or branch.')
+                      : t.storyCompleteHint}
+                  </p>
                 </div>
               )}
 
@@ -2328,8 +2487,8 @@ function App() {
         }}
       />
 
-      {/* Book-aligned Agent Harness try surface (floating; independent of chat/story). */}
-      <AgentHarnessPanel language={language} />
+      {/* Agent Harness: lab only (?lab=1 or /lab). Users deal with lies, not agent logs. */}
+      {showAgentLab && <AgentHarnessPanel language={language} />}
     </main>
     </>
   )
