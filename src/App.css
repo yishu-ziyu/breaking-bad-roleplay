@@ -14,6 +14,9 @@
   --space-md: 12px;
   --space-lg: 16px;
   --space-xl: 24px;
+  /* Story / drama motion language */
+  --drama-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --drama-dur: 200ms;
 }
 
 /* ==========================================
@@ -260,9 +263,12 @@ textarea:focus-visible {
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  /* Warm soot night (F01) — same hue family as .cold-open; no cool blue stops */
   background:
-    linear-gradient(90deg, rgba(9, 15, 18, 0.92) 0%, rgba(12, 26, 42, 0.76) 38%, rgba(7, 12, 16, 0.86) 100%),
-    linear-gradient(180deg, rgba(247, 206, 70, 0.08) 0%, rgba(10, 18, 26, 0.74) 100%),
+    radial-gradient(ellipse 90% 70% at 50% 18%, rgba(62, 42, 24, 0.28), transparent 58%),
+    radial-gradient(ellipse 70% 55% at 78% 78%, rgba(36, 24, 14, 0.32), transparent 55%),
+    linear-gradient(90deg, rgba(12, 10, 8, 0.92) 0%, rgba(22, 18, 16, 0.78) 38%, rgba(12, 10, 8, 0.88) 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-gold) 8%, transparent) 0%, rgba(12, 10, 8, 0.76) 100%),
     url('/backgrounds/blue-desert-rv.jpg') center / cover fixed no-repeat;
   color: var(--color-text-ink);
 }
@@ -337,7 +343,8 @@ textarea:focus-visible {
   border-right: 1px solid rgba(255, 247, 208, 0.12);
 }
 
-/* Always available so archive can re-collapse during play. */
+/* Always available so archive can re-collapse during play.
+   Chrome only: matte charcoal outline + cream whisper — never filled gold (D02/F02). */
 .sidebar__toggle {
   display: flex;
   position: sticky;
@@ -346,10 +353,10 @@ textarea:focus-visible {
   width: 28px;
   height: 28px;
   margin: 12px 12px 0 auto;
-  border: 1px solid var(--color-border-soft-3);
+  border: 1px solid rgba(255, 247, 208, 0.18);
   border-radius: 999px;
-  background: var(--color-bb-yellow);
-  color: var(--color-bb-ink);
+  background: rgba(12, 14, 12, 0.72);
+  color: rgba(255, 247, 208, 0.55);
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
@@ -357,8 +364,20 @@ textarea:focus-visible {
   justify-content: center;
   padding: 0;
   line-height: 1;
-  transition: opacity 0.15s;
+  box-shadow: none;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, opacity 0.15s;
   align-self: end;
+}
+
+.sidebar__toggle:hover {
+  border-color: rgba(255, 247, 208, 0.35);
+  color: rgba(255, 247, 208, 0.85);
+  background: rgba(12, 14, 12, 0.85);
+}
+
+.sidebar__toggle:focus-visible {
+  outline: 2px solid rgba(255, 247, 208, 0.45);
+  outline-offset: 2px;
 }
 
 /* P0-3: mobile default to collapsed sidebar */
@@ -659,12 +678,12 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* ~15% lower shell contrast: lighter scrim so desert shows through more */
+  /* Warm soot scrim (F01) — same night family as cold-open; desert photo graded warm */
   background:
-    linear-gradient(180deg, rgba(10, 14, 16, 0.48) 0%, rgba(12, 16, 18, 0.58) 100%),
-    linear-gradient(90deg, rgba(10, 14, 16, 0.5) 0%, rgba(18, 26, 32, 0.28) 48%, rgba(10, 14, 16, 0.5) 100%),
+    linear-gradient(180deg, rgba(12, 10, 8, 0.48) 0%, rgba(12, 10, 8, 0.62) 100%),
+    linear-gradient(90deg, rgba(12, 10, 8, 0.5) 0%, rgba(26, 20, 16, 0.28) 48%, rgba(12, 10, 8, 0.5) 100%),
     url('/backgrounds/blue-desert-rv.jpg') center / cover no-repeat;
-  color: var(--color-text-on-dark);
+  color: var(--paper-ink);
 }
 
 .story-panel::before {
@@ -784,13 +803,26 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+/* HUD buttons are chrome, not primary CTAs — quiet cream text, no gold border (D02/F02). */
 .story-hud > button {
   align-self: center;
   margin: 12px 18px;
-  border: 1px solid rgba(247, 206, 70, 0.7);
-  background: rgba(247, 206, 70, 0.1);
-  color: var(--color-bb-yellow);
+  border: none;
+  background: transparent;
+  color: rgba(255, 247, 208, 0.4);
   border-radius: 8px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.story-hud > button:hover {
+  color: rgba(255, 247, 208, 0.85);
+  background: transparent;
+  border-color: transparent;
 }
 
 .story-setup {
@@ -936,6 +968,71 @@ textarea {
   -webkit-backdrop-filter: blur(14px) saturate(0.85);
 }
 
+/* Outline strip: less chrome than status/error/paused cards. */
+.story-outline {
+  padding: 10px 12px;
+  border-color: rgba(255, 254, 246, 0.06);
+  border-radius: 10px;
+  background: rgba(5, 10, 14, 0.36);
+  backdrop-filter: blur(8px) saturate(0.7);
+  -webkit-backdrop-filter: blur(8px) saturate(0.7);
+  box-shadow: none;
+}
+
+/* Diegetic status: soft parchment breath — not a chat spinner. */
+.story-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-color: rgba(196, 154, 58, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 247, 208, 0.07), rgba(14, 12, 10, 0.78)),
+    rgba(16, 13, 10, 0.82);
+  color: rgba(255, 247, 208, 0.68);
+  animation: storyStatusBreath 2.8s var(--drama-ease) infinite alternate;
+}
+
+.story-status p {
+  margin: 0;
+  color: rgba(255, 247, 208, 0.62);
+  font: 600 13px/1.4 var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+.story-status .typing {
+  padding: 0;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  align-self: center;
+}
+
+.story-status .typing .dot {
+  width: 3px;
+  height: 3px;
+  background: rgba(196, 154, 58, 0.42);
+  animation: storyStatusDot 1.8s var(--drama-ease) infinite;
+  opacity: 0.55;
+}
+
+.story-status .typing .dot:nth-child(2) { animation-delay: 0.22s; }
+.story-status .typing .dot:nth-child(3) { animation-delay: 0.44s; }
+
+@keyframes storyStatusBreath {
+  from { opacity: 0.78; border-color: rgba(196, 154, 58, 0.12); }
+  to   { opacity: 1;    border-color: rgba(196, 154, 58, 0.22); }
+}
+
+@keyframes storyStatusDot {
+  0%, 100% { opacity: 0.28; transform: translateY(0); }
+  50%      { opacity: 0.7;  transform: translateY(-1px); }
+}
+
+/* .story-status--pulse: App.tsx class hook; motion lives on .story-status */
+
 .story-board__brief {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -944,46 +1041,52 @@ textarea {
 }
 
 .story-board__brief .story-outline {
-  background:
-    linear-gradient(180deg, rgba(255, 247, 208, 0.08), rgba(5, 10, 14, 0.76)),
-    rgba(5, 10, 14, 0.76);
+  background: rgba(5, 10, 14, 0.32);
 }
 
 .story-outline__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+}
+
+.story-outline__header strong {
+  color: rgba(255, 247, 208, 0.42);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .story-outline__toggle {
   flex-shrink: 0;
-  padding: 6px 10px;
-  border: 1px solid rgba(247, 206, 70, 0.28);
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 247, 208, 0.1);
   border-radius: 999px;
-  background: rgba(247, 206, 70, 0.1);
-  color: var(--color-surface-yellow-soft);
-  font: 800 11px/1 var(--font-sans);
-  letter-spacing: 0.04em;
+  background: transparent;
+  color: rgba(255, 247, 208, 0.4);
+  font: 600 10px/1 var(--font-sans);
+  letter-spacing: 0.03em;
   cursor: pointer;
 }
 
 .story-outline__toggle:hover {
-  border-color: rgba(247, 206, 70, 0.5);
-  background: rgba(247, 206, 70, 0.16);
+  border-color: rgba(255, 247, 208, 0.2);
+  background: rgba(255, 247, 208, 0.04);
+  color: rgba(255, 247, 208, 0.55);
 }
 
 .story-outline.is-collapsed {
-  padding: 8px 12px;
-  border-color: rgba(255, 254, 246, 0.08);
-  background: rgba(5, 10, 14, 0.42);
-  opacity: 0.82;
+  padding: 6px 10px;
+  border-color: rgba(255, 254, 246, 0.04);
+  background: rgba(5, 10, 14, 0.22);
+  opacity: 0.62;
 }
 
 .story-outline.is-collapsed .story-outline__summary {
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: 11px;
-  color: rgba(255, 247, 208, 0.55);
+  color: rgba(255, 247, 208, 0.38);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
@@ -991,29 +1094,29 @@ textarea {
 }
 
 .story-outline.is-collapsed .story-outline__header strong {
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(255, 247, 208, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 247, 208, 0.36);
 }
 
 .story-outline.is-collapsed .story-outline__toggle {
-  padding: 4px 8px;
-  font-size: 10px;
-  opacity: 0.75;
+  padding: 3px 7px;
+  font-size: 9px;
+  opacity: 0.55;
 }
 
 .story-outline__summary {
-  margin: 10px 0 0;
-  color: rgba(255, 247, 208, 0.84);
+  margin: 8px 0 0;
+  color: rgba(255, 247, 208, 0.52);
 }
 
 .story-outline__body {
   max-height: 8.5rem;
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   overflow: auto;
   white-space: pre-wrap;
-  color: rgba(255, 254, 246, 0.72);
-  font-size: 13px;
+  color: rgba(255, 254, 246, 0.58);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1141,16 +1244,17 @@ textarea {
 }
 
 /* ---------- Main stage paper ---------- */
+/* Night dossier plate: dim warm parchment on film still (D03 / F03). */
 .story-scene-card {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-self: stretch;
-  border: 1px solid rgba(255, 247, 208, 0.16);
-  border-radius: 16px;
-  background: rgba(4, 8, 8, 0.72);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(242, 239, 230, 0.14);
+  border-radius: 8px;
+  background: rgba(12, 10, 8, 0.78);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
   overflow: hidden;
 }
 
@@ -1159,48 +1263,60 @@ textarea {
   align-self: center;
   max-width: 42rem;
   width: 100%;
-  border-color: rgba(255, 247, 208, 0.1);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  border-color: rgba(242, 239, 230, 0.1);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
 .story-scene-card__paper {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   gap: 16px;
-  padding: clamp(24px, 3.8vw, 44px);
+  padding: clamp(20px, 3.2vw, 36px);
   overflow: auto;
-  /* Warm parchment reading surface */
+  /* Dark warm gray-brown parchment — not cream SaaS (D03). */
   background:
-    radial-gradient(circle at 92% 12%, rgba(80, 65, 45, 0.08), transparent 12rem),
-    linear-gradient(180deg, rgba(255, 250, 240, 0.97), rgba(244, 239, 227, 0.95));
-  color: var(--color-text-ink);
-  border-bottom: 1px solid var(--color-border-soft);
+    radial-gradient(circle at 92% 12%, rgba(90, 72, 48, 0.14), transparent 12rem),
+    linear-gradient(180deg, rgba(58, 50, 38, 0.9), rgba(40, 34, 26, 0.88));
+  color: rgba(242, 239, 230, 0.92);
+  border-bottom: 1px solid rgba(242, 239, 230, 0.08);
+  animation: storyPaperIn var(--drama-dur) var(--drama-ease) both;
 }
 
-/* Think: colder / greyer paper — not warm parchment. */
+@keyframes storyPaperIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Think: colder / greyer night plate — still dark, not light admin. */
 .story-scene-card--agent_think .story-scene-card__paper {
   background:
-    radial-gradient(circle at 88% 10%, rgba(80, 96, 110, 0.1), transparent 14rem),
-    linear-gradient(180deg, rgba(204, 208, 212, 0.94), rgba(176, 182, 188, 0.92));
-  color: rgba(36, 42, 48, 0.84);
-  border-bottom-color: rgba(40, 48, 56, 0.18);
+    radial-gradient(circle at 88% 10%, rgba(70, 88, 104, 0.16), transparent 14rem),
+    linear-gradient(180deg, rgba(42, 48, 54, 0.9), rgba(30, 34, 40, 0.88));
+  color: rgba(220, 226, 232, 0.88);
+  border-bottom-color: rgba(180, 196, 210, 0.1);
 }
 
-/* Act: dim stage-direction card */
+/* Act: dim stage-direction card on soot parchment */
 .story-scene-card--agent_act .story-scene-card__paper {
   background:
-    linear-gradient(180deg, rgba(224, 220, 208, 0.92), rgba(198, 192, 176, 0.9));
+    linear-gradient(180deg, rgba(52, 48, 40, 0.88), rgba(36, 32, 26, 0.86));
   padding: clamp(18px, 2.5vw, 28px);
 }
 
-/* Scene setup: cooler slate paper — location beat, not dialogue. */
+/* Scene setup: cooler slate night plate — location beat, not dialogue. */
 .story-scene-card--scene_change .story-scene-card__paper {
   background:
-    radial-gradient(circle at 12% 8%, rgba(120, 100, 160, 0.1), transparent 12rem),
-    linear-gradient(180deg, rgba(228, 226, 218, 0.94), rgba(196, 194, 186, 0.92));
+    radial-gradient(circle at 12% 8%, rgba(100, 80, 140, 0.12), transparent 12rem),
+    linear-gradient(180deg, rgba(46, 44, 52, 0.9), rgba(32, 30, 38, 0.88));
   justify-content: center;
 }
 
@@ -1208,24 +1324,24 @@ textarea {
 .story-scene-card--emotion-angry {
   border-color: rgba(180, 60, 40, 0.35);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.34),
+    0 10px 28px rgba(0, 0, 0, 0.38),
     inset 0 0 0 1px rgba(180, 50, 30, 0.12),
-    0 0 48px rgba(160, 40, 20, 0.12);
+    0 0 32px rgba(160, 40, 20, 0.1);
 }
 
 .story-scene-card--emotion-tense,
 .story-scene-card--emotion-desperate {
   border-color: rgba(200, 140, 40, 0.32);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.34),
+    0 10px 28px rgba(0, 0, 0, 0.38),
     inset 0 0 0 1px rgba(200, 140, 40, 0.1),
-    0 0 40px rgba(180, 120, 30, 0.08);
+    0 0 28px rgba(180, 120, 30, 0.08);
 }
 
 .story-scene-card--emotion-fearful {
   border-color: rgba(90, 110, 160, 0.35);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.34),
+    0 10px 28px rgba(0, 0, 0, 0.38),
     inset 0 0 0 1px rgba(90, 110, 160, 0.12);
 }
 
@@ -1233,7 +1349,7 @@ textarea {
 .story-scene-card--emotion-resigned {
   border-color: rgba(100, 140, 120, 0.28);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.3),
+    0 10px 28px rgba(0, 0, 0, 0.34),
     inset 0 0 0 1px rgba(100, 140, 120, 0.08);
 }
 
@@ -1241,21 +1357,22 @@ textarea {
 .story-scene-card--emotion-manipulative {
   border-color: rgba(130, 90, 150, 0.3);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.34),
+    0 10px 28px rgba(0, 0, 0, 0.38),
     inset 0 0 0 1px rgba(130, 90, 150, 0.1);
 }
 
+/* Emotion paper: tint the dark plate — never re-light to cream. */
 .story-scene-card--emotion-angry .story-scene-card__paper {
   background:
-    radial-gradient(circle at 88% 8%, rgba(160, 50, 30, 0.08), transparent 14rem),
-    linear-gradient(180deg, rgba(255, 246, 236, 0.97), rgba(244, 230, 216, 0.95));
+    radial-gradient(circle at 88% 8%, rgba(160, 50, 30, 0.18), transparent 14rem),
+    linear-gradient(180deg, rgba(64, 42, 34, 0.92), rgba(44, 28, 22, 0.9));
 }
 
 .story-scene-card--emotion-tense .story-scene-card__paper,
 .story-scene-card--emotion-desperate .story-scene-card__paper {
   background:
-    radial-gradient(circle at 90% 10%, rgba(180, 120, 30, 0.07), transparent 14rem),
-    linear-gradient(180deg, rgba(255, 250, 236, 0.97), rgba(244, 236, 214, 0.95));
+    radial-gradient(circle at 90% 10%, rgba(180, 120, 30, 0.14), transparent 14rem),
+    linear-gradient(180deg, rgba(62, 52, 34, 0.92), rgba(42, 36, 24, 0.9));
 }
 
 .story-scene-card__meta {
@@ -1269,52 +1386,53 @@ textarea {
 
 .story-scene-card__meta span,
 .story-scene-card__meta small {
-  padding: 5px 8px;
+  padding: 4px 7px;
   border-radius: 3px;
-  background: rgba(142, 169, 63, 0.16);
-  color: rgba(36, 42, 28, 0.68);
-  font: 900 11px/1 var(--font-sans);
+  background: rgba(142, 169, 63, 0.14);
+  color: rgba(220, 228, 190, 0.62);
+  font: 800 10px/1 var(--font-sans);
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  opacity: 0.9;
 }
 
-/* Type chips: muted by default; think is deliberately de-emphasized. */
+/* Type chips: muted on dark plate; think de-emphasized. */
 .story-scene-card__chip {
-  background: rgba(23, 32, 14, 0.08) !important;
-  color: rgba(36, 42, 28, 0.58) !important;
+  background: rgba(242, 239, 230, 0.06) !important;
+  color: rgba(230, 224, 210, 0.62) !important;
 }
 
 .story-scene-card__chip--agent_speak {
-  background: rgba(247, 206, 70, 0.24) !important;
-  color: rgba(36, 42, 28, 0.78) !important;
+  background: rgba(247, 206, 70, 0.18) !important;
+  color: rgba(255, 236, 170, 0.92) !important;
 }
 
 .story-scene-card__chip--agent_think {
   background: transparent !important;
-  color: rgba(40, 48, 56, 0.55) !important;
-  border: 1px dashed rgba(40, 48, 56, 0.35);
+  color: rgba(180, 196, 210, 0.62) !important;
+  border: 1px dashed rgba(160, 180, 196, 0.32);
   letter-spacing: 0.16em;
   font-weight: 700 !important;
 }
 
 .story-scene-card__chip--agent_act {
   background: transparent !important;
-  color: rgba(23, 32, 14, 0.48) !important;
-  border: 1px solid rgba(23, 32, 14, 0.18);
+  color: rgba(210, 204, 188, 0.58) !important;
+  border: 1px solid rgba(210, 204, 188, 0.2);
   font-weight: 700 !important;
 }
 
 .story-scene-card__chip--scene_change {
   background: transparent !important;
-  color: rgba(70, 58, 96, 0.62) !important;
-  border: 1px solid rgba(100, 80, 140, 0.28);
+  color: rgba(190, 176, 220, 0.72) !important;
+  border: 1px solid rgba(150, 130, 190, 0.28);
   letter-spacing: 0.14em;
   font-weight: 700 !important;
 }
 
 .story-scene-card__speaker {
-  background: rgba(23, 32, 14, 0.07) !important;
-  color: rgba(36, 42, 28, 0.74) !important;
+  background: rgba(242, 239, 230, 0.06) !important;
+  color: rgba(242, 239, 230, 0.82) !important;
   font: 900 12px/1 var(--font-display) !important;
   letter-spacing: 0.06em !important;
   text-transform: none !important;
@@ -1322,19 +1440,19 @@ textarea {
 
 .story-scene-card--agent_think .story-scene-card__speaker {
   background: transparent !important;
-  color: rgba(48, 56, 64, 0.66) !important;
+  color: rgba(190, 204, 216, 0.72) !important;
 }
 
 /* Speak: character name as primary dialogue heading (Disco Elysium weight). */
 .story-scene-card__name {
   margin: 2px 0 0;
   flex-shrink: 0;
-  color: rgba(28, 34, 22, 0.92);
+  color: rgba(247, 242, 228, 0.96);
   font-family: var(--font-display);
-  font-size: clamp(1.2rem, 2.1vw, 1.55rem);
-  font-weight: 800;
+  font-size: clamp(1.22rem, 2.15vw, 1.6rem);
+  font-weight: 900;
   letter-spacing: 0.03em;
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 .story-scene-card__name::after {
@@ -1343,14 +1461,14 @@ textarea {
   width: 2.5rem;
   height: 2px;
   margin-top: 10px;
-  background: linear-gradient(90deg, rgba(142, 169, 63, 0.55), transparent);
+  background: linear-gradient(90deg, rgba(200, 176, 96, 0.55), transparent);
 }
 
 /* Scene change: location beat label, not a speaker. */
 .story-scene-card__scene-label {
   margin: 0;
   flex-shrink: 0;
-  color: rgba(70, 58, 96, 0.55);
+  color: rgba(190, 176, 220, 0.62);
   font: 800 11px/1 var(--font-sans);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -1358,19 +1476,22 @@ textarea {
 
 .story-scene-card__gif-toggle {
   margin-left: auto;
-  padding: 4px 8px;
-  border: 1px solid rgba(23, 32, 14, 0.16);
+  padding: 3px 7px;
+  border: 1px solid rgba(242, 239, 230, 0.14);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-  color: rgba(36, 42, 28, 0.52);
-  font: 700 10px/1 var(--font-sans);
-  letter-spacing: 0.04em;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(220, 214, 198, 0.55);
+  font: 600 9px/1 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
+  opacity: 0.8;
 }
 
 .story-scene-card__gif-toggle:hover {
-  border-color: rgba(23, 32, 14, 0.28);
-  color: rgba(36, 42, 28, 0.72);
+  border-color: rgba(242, 239, 230, 0.28);
+  color: rgba(242, 239, 230, 0.82);
+  opacity: 1;
 }
 
 /* Stage card browsing: prev / position / next + back-to-live */
@@ -1387,10 +1508,10 @@ textarea {
   width: 26px;
   height: 26px;
   padding: 0;
-  border: 1px solid rgba(23, 32, 14, 0.2);
+  border: 1px solid rgba(242, 239, 230, 0.2);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.28);
-  color: rgba(36, 42, 28, 0.72);
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(230, 224, 210, 0.78);
   font: 900 14px/1 var(--font-sans);
   cursor: pointer;
   display: inline-flex;
@@ -1399,8 +1520,8 @@ textarea {
 }
 
 .story-scene-card__nav button:hover:not(:disabled) {
-  border-color: rgba(23, 32, 14, 0.36);
-  color: rgba(36, 42, 28, 0.92);
+  border-color: rgba(242, 239, 230, 0.36);
+  color: rgba(247, 242, 228, 0.96);
 }
 
 .story-scene-card__nav button:disabled {
@@ -1411,31 +1532,31 @@ textarea {
 .story-scene-card__meta .story-scene-card__pos {
   padding: 0 4px;
   background: none;
-  color: rgba(36, 42, 28, 0.55);
+  color: rgba(210, 204, 188, 0.58);
   font: 700 11px/1 var(--font-sans);
   letter-spacing: 0.04em;
 }
 
 .story-scene-card__live {
   padding: 4px 10px;
-  border: 1px solid rgba(23, 32, 14, 0.3);
+  border: 1px solid rgba(142, 169, 63, 0.4);
   border-radius: 999px;
-  background: rgba(142, 169, 63, 0.22);
-  color: rgba(36, 42, 28, 0.85);
+  background: rgba(142, 169, 63, 0.2);
+  color: rgba(220, 232, 180, 0.92);
   font: 900 10px/1 var(--font-sans);
   letter-spacing: 0.04em;
   cursor: pointer;
 }
 
 .story-scene-card__live:hover {
-  background: rgba(142, 169, 63, 0.34);
+  background: rgba(142, 169, 63, 0.32);
 }
 
 .story-scene-card__quote {
   max-width: var(--layout-reading-measure);
   margin: 0;
   flex: 0 1 auto;
-  color: var(--color-text-ink);
+  color: rgba(242, 239, 230, 0.9);
   font-family: var(--font-serif);
   font-size: clamp(17px, 1.9vw, 22px);
   font-weight: var(--font-weight-medium);
@@ -1445,26 +1566,26 @@ textarea {
   text-rendering: optimizeLegibility;
 }
 
-/* Speak: primary reading surface — dark ink on parchment. */
+/* Speak: high-contrast light serif on dark parchment. */
 .story-scene-card__quote.is-speak {
   margin-top: 2px;
-  color: rgba(28, 34, 22, 0.94);
-  font-size: clamp(1.05rem, 1.85vw, 1.35rem);
+  color: rgba(247, 242, 228, 0.94);
+  font-size: clamp(1.05rem, 1.85vw, 1.32rem);
   font-weight: 500;
   line-height: 1.62;
   max-width: 42ch;
 }
 
-/* Think: italic inner monologue — cooler, secondary to dialogue. */
+/* Think: italic monologue — cool light on slate plate, muted chip. */
 .story-scene-card__quote.is-thought {
   font-family: var(--font-display);
   font-style: italic;
-  font-weight: 500;
-  font-size: clamp(0.95rem, 1.5vw, 1.1rem);
-  color: rgba(48, 56, 64, 0.78);
-  border-left: 2px dashed rgba(80, 96, 110, 0.4);
-  border-radius: 0 8px 8px 0;
-  background: rgba(255, 255, 255, 0.28);
+  font-weight: 400;
+  font-size: clamp(0.92rem, 1.45vw, 1.06rem);
+  color: rgba(198, 210, 220, 0.78);
+  border-left: 2px dashed rgba(140, 160, 180, 0.35);
+  border-radius: 0 6px 6px 0;
+  background: rgba(0, 0, 0, 0.22);
   padding: 0.55em 0.9em 0.55em 1em;
   max-width: 48ch;
   line-height: 1.55;
@@ -1479,10 +1600,10 @@ textarea {
   text-align: center;
   font-family: var(--font-display);
   font-style: italic;
-  font-weight: 600;
-  font-size: clamp(0.88rem, 1.5vw, 1.05rem);
+  font-weight: 500;
+  font-size: clamp(0.86rem, 1.45vw, 1rem);
   line-height: 1.55;
-  color: rgba(70, 68, 58, 0.62);
+  color: rgba(200, 194, 176, 0.62);
   letter-spacing: 0.02em;
 }
 
@@ -1491,7 +1612,7 @@ textarea {
   flex: 0;
   max-width: 44ch;
   margin: 4px 0 0;
-  color: rgba(48, 44, 56, 0.78);
+  color: rgba(210, 200, 228, 0.78);
   font-family: var(--font-display);
   font-size: clamp(0.98rem, 1.6vw, 1.18rem);
   font-weight: 600;
@@ -1566,7 +1687,6 @@ textarea {
 }
 
 .story-outline strong,
-.story-status p,
 .story-error p,
 .beat-paused p {
   color: var(--color-surface-yellow-soft);
@@ -1576,6 +1696,17 @@ textarea {
   display: flex;
   align-items: center;
   min-height: 40px;
+}
+
+.streaming-indicator--diegetic {
+  animation: storyStatusBreath 2.8s var(--drama-ease) infinite alternate;
+}
+
+.streaming-indicator__line {
+  margin: 0;
+  color: rgba(255, 247, 208, 0.72);
+  font: 500 13px/1.45 var(--font-sans);
+  letter-spacing: 0.01em;
 }
 
 .auto-continue-notice {
@@ -2961,10 +3092,11 @@ button.story-event {
   color: rgba(255, 248, 214, 0.72);
 }
 
+/* Layer: cold-open 1000 < connection sheet 1100 < toasts 10000 < situation-map 12000 */
 .connection-sheet-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 1100; /* was 80; must beat .cold-open 1000 (D05/F05) */
   display: grid;
   place-items: center;
   padding: 24px;
@@ -3856,6 +3988,18 @@ button.story-event {
 /* ==========================================
    Drama Decision Bar (Story mode bottom layer)
    ========================================== */
+@keyframes drama-decision-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Matte night soot plate — chrome floor under stage (D04/F04: kill glass + gold radial) */
 .drama-decision {
   position: sticky;
   bottom: 0;
@@ -3863,35 +4007,47 @@ button.story-event {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid rgba(247, 206, 70, 0.22);
-  background:
-    linear-gradient(180deg, rgba(6, 10, 12, 0.72) 0%, rgba(4, 8, 10, 0.92) 100%),
-    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(247, 206, 70, 0.08), transparent 70%);
-  backdrop-filter: blur(18px) saturate(0.9);
-  -webkit-backdrop-filter: blur(18px) saturate(0.9);
-  box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.35);
+  border-top: 1px solid rgba(255, 247, 208, 0.12);
+  background: rgba(8, 10, 8, 0.96);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
   color: rgba(255, 247, 208, 0.92);
+  animation: drama-decision-slide-up var(--drama-dur) var(--drama-ease) both;
 }
 
 .drama-decision--disabled {
-  opacity: 0.62;
+  opacity: 0.72;
   pointer-events: none;
 }
 
+/* Head: title + primary continue on one row (desktop) */
 .drama-decision__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
+/* Title demoted: muted sand — only __continue keeps filled gold (D04/F04) */
 .drama-decision__title {
   margin: 0;
-  color: rgba(247, 206, 70, 0.72);
-  font: 900 10px/1 var(--font-sans, system-ui, sans-serif);
+  flex: 1 1 auto;
+  min-width: 0;
+  color: rgba(255, 247, 208, 0.5);
+  font: 700 10px/1 var(--font-sans, system-ui, sans-serif);
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+/* Diegetic status when scene is advancing (disabled) */
+.drama-decision__status {
+  margin: -4px 0 0;
+  padding: 0;
+  color: rgba(255, 247, 208, 0.55);
+  font: 500 12px/1.4 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.02em;
 }
 
 .drama-decision__suggestions {
@@ -3900,24 +4056,34 @@ button.story-event {
   gap: 8px;
 }
 
+/* Unified quiet chip shell — kind hue only on 2px left border (D04/F04) */
 .drama-decision__chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   max-width: 100%;
-  padding: 9px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 247, 208, 0.18);
-  background: rgba(255, 254, 246, 0.06);
-  color: rgba(255, 247, 208, 0.92);
-  font: 700 12px/1.2 var(--font-sans, system-ui, sans-serif);
+  min-width: 0;
+  min-height: 44px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 247, 208, 0.14);
+  border-left: 2px solid rgba(255, 247, 208, 0.2);
+  background: rgba(255, 254, 246, 0.05);
+  color: rgba(255, 247, 208, 0.88);
+  font: 700 13px/1.2 var(--font-sans, system-ui, sans-serif);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  transition:
+    background var(--drama-dur) var(--drama-ease),
+    border-color var(--drama-dur) var(--drama-ease),
+    transform var(--drama-dur) var(--drama-ease);
 }
 
+/* Hover: warm cream lift only — no gold wash; leave left kind bar alone */
 .drama-decision__chip:hover:not(:disabled) {
-  background: rgba(247, 206, 70, 0.12);
-  border-color: rgba(247, 206, 70, 0.45);
+  background: rgba(255, 254, 246, 0.09);
+  border-top-color: rgba(255, 247, 208, 0.22);
+  border-right-color: rgba(255, 247, 208, 0.22);
+  border-bottom-color: rgba(255, 247, 208, 0.22);
   transform: translateY(-1px);
 }
 
@@ -3930,15 +4096,16 @@ button.story-event {
   cursor: not-allowed;
 }
 
+/* Kind tag: monochrome muted — hue lives on left hairline only */
 .drama-decision__kind {
   flex-shrink: 0;
   padding: 3px 7px;
   border-radius: 999px;
-  font: 900 9px/1 var(--font-sans, system-ui, sans-serif);
+  font: 700 9px/1 var(--font-sans, system-ui, sans-serif);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: rgba(0, 0, 0, 0.28);
-  color: rgba(255, 247, 208, 0.72);
+  color: rgba(255, 247, 208, 0.55);
 }
 
 .drama-decision__label {
@@ -3947,32 +4114,76 @@ button.story-event {
   white-space: nowrap;
 }
 
-/* kind accents */
+/* Kind color budget: 2px left border only (low alpha); no full-perimeter rainbow */
 .drama-decision__say {
-  border-color: rgba(128, 218, 190, 0.35);
+  border-left-color: rgba(128, 218, 190, 0.4);
 }
 
 .drama-decision__say .drama-decision__kind {
-  color: rgba(128, 218, 190, 0.95);
-  background: rgba(128, 218, 190, 0.12);
+  color: rgba(128, 218, 190, 0.55);
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .drama-decision__do {
-  border-color: rgba(247, 206, 70, 0.4);
+  /* Warmer sand, not CTA gold strength */
+  border-left-color: rgba(220, 190, 120, 0.35);
 }
 
 .drama-decision__do .drama-decision__kind {
-  color: rgba(247, 206, 70, 0.95);
-  background: rgba(247, 206, 70, 0.14);
+  color: rgba(220, 190, 120, 0.55);
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .drama-decision__observe {
-  border-color: rgba(160, 180, 220, 0.35);
+  border-left-color: rgba(160, 180, 220, 0.35);
 }
 
 .drama-decision__observe .drama-decision__kind {
-  color: rgba(180, 200, 240, 0.95);
-  background: rgba(140, 160, 210, 0.14);
+  color: rgba(180, 200, 240, 0.5);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* Primary: sole filled gold in the bar (D04/F04) */
+.drama-decision__continue {
+  flex: 0 0 auto;
+  min-width: 132px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid rgba(247, 206, 70, 0.55);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(247, 206, 70, 0.98) 0%, rgba(220, 168, 40, 0.95) 100%);
+  color: var(--color-bb-ink, #12140c);
+  font: 900 14px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow:
+    0 1px 0 rgba(255, 247, 208, 0.3) inset,
+    0 4px 12px rgba(0, 0, 0, 0.28);
+  transition:
+    filter var(--drama-dur) var(--drama-ease),
+    transform var(--drama-dur) var(--drama-ease),
+    box-shadow var(--drama-dur) var(--drama-ease);
+}
+
+.drama-decision__continue:hover:not(:disabled) {
+  filter: brightness(1.05);
+  box-shadow:
+    0 1px 0 rgba(255, 247, 208, 0.35) inset,
+    0 6px 14px rgba(0, 0, 0, 0.32);
+  transform: translateY(-1px);
+}
+
+.drama-decision__continue:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+.drama-decision__continue:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .drama-decision__free {
@@ -3998,9 +4209,10 @@ button.story-event {
   color: rgba(18, 20, 12, 0.45);
 }
 
+/* Thin dust-gold focus ring — secondary, not second CTA fill */
 .drama-decision__input:focus {
-  border-color: rgba(247, 206, 70, 0.7);
-  box-shadow: 0 0 0 2px rgba(247, 206, 70, 0.18);
+  border-color: rgba(247, 206, 70, 0.55);
+  box-shadow: 0 0 0 2px rgba(247, 206, 70, 0.14);
 }
 
 .drama-decision__input:disabled {
@@ -4008,37 +4220,91 @@ button.story-event {
   cursor: not-allowed;
 }
 
+/* Tertiary: free-text decide - outline only, never gold fill */
 .drama-decision__submit {
   min-width: 88px;
   min-height: 44px;
   padding: 0 14px;
-  border: 0;
+  border: 1px solid rgba(255, 247, 208, 0.28);
   border-radius: 8px;
-  background: var(--color-bb-yellow, #f7ce46);
-  color: var(--color-bb-ink, #12140c);
-  font: 900 13px/1 var(--font-sans, system-ui, sans-serif);
+  background: transparent;
+  color: rgba(255, 247, 208, 0.88);
+  font: 700 13px/1 var(--font-sans, system-ui, sans-serif);
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .drama-decision__submit:hover:not(:disabled) {
-  filter: brightness(1.05);
+  background: rgba(255, 254, 246, 0.06);
+  border-color: rgba(255, 247, 208, 0.4);
+  color: rgba(255, 247, 208, 0.98);
 }
 
 .drama-decision__submit:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-@media (max-width: 520px) {
+/* Mobile: full-width continue above chips; horizontal chip scroll; hide kind text.
+   F09/D09: chip ≥44 touch, safe-area floor, tighter gaps so bar mass stays down. */
+@media (max-width: 560px) {
   .drama-decision {
+    gap: 6px;
+    padding-top: 8px;
     padding-left: 10px;
     padding-right: 10px;
+    /* Floor 16px when env=0 (no viewport-fit); honor home-indicator when inset > 0 */
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    max-height: 38vh;
+    max-height: 38dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .drama-decision__head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .drama-decision__continue {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .drama-decision__suggestions {
+    flex-wrap: nowrap;
+    align-items: center;
+    min-height: 44px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
   }
 
   .drama-decision__chip {
-    flex: 1 1 calc(50% - 8px);
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    min-height: 44px;
+    min-width: 108px;
+    max-width: 72vw;
+    padding: 10px 14px;
     justify-content: flex-start;
+    scroll-snap-align: start;
+    /* kind hue stays 2px left bar (D04/F04); no rainbow perimeter */
+    border-left-width: 2px;
+  }
+
+  .drama-decision__kind {
+    display: none;
   }
 
   .drama-decision__submit {
@@ -4059,12 +4325,12 @@ button.story-event {
   padding: clamp(16px, 4vw, 48px);
   overflow: hidden;
   isolation: isolate;
-  color: #f2efe6;
-  background: #0c0a08;
+  color: var(--paper-ink);
+  background: var(--night-bg);
   font-family: var(--font-sans, system-ui, sans-serif);
 }
 
-/* Charcoal / soot / deep brown plate — not neon green */
+/* Charcoal / soot / deep brown plate — shared night tokens (F01) */
 .cold-open__bg {
   position: absolute;
   inset: 0;
@@ -4072,7 +4338,7 @@ button.story-event {
   background:
     radial-gradient(ellipse 90% 70% at 50% 18%, rgba(62, 42, 24, 0.42), transparent 58%),
     radial-gradient(ellipse 70% 55% at 78% 78%, rgba(36, 24, 14, 0.55), transparent 55%),
-    linear-gradient(165deg, #161210 0%, #0c0a08 42%, #1a1410 100%);
+    linear-gradient(165deg, var(--night-bg-2) 0%, var(--night-bg) 42%, #1a1410 100%);
   pointer-events: none;
 }
 
@@ -4131,27 +4397,29 @@ button.story-event {
 
 .cold-open__lang button {
   margin: 0;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border: 0;
   background: transparent;
-  color: rgba(242, 239, 230, 0.42);
-  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
-  letter-spacing: 0.06em;
+  color: rgba(242, 239, 230, 0.4);
+  font: 500 10px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.04em;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cold-open__lang button + button {
-  border-left: 1px solid rgba(242, 239, 230, 0.1);
+  border-left: 1px solid rgba(242, 239, 230, 0.08);
 }
 
 .cold-open__lang button:hover {
-  color: rgba(242, 239, 230, 0.78);
+  color: rgba(242, 239, 230, 0.7);
 }
 
 .cold-open__lang button.is-active {
-  color: rgba(242, 239, 230, 0.92);
-  background: rgba(196, 154, 58, 0.18);
+  color: rgba(242, 239, 230, 0.85);
+  background: rgba(196, 154, 58, 0.12);
 }
 
 .cold-open__lang button:focus-visible {
@@ -4159,23 +4427,27 @@ button.story-event {
   outline-offset: -2px;
 }
 
+/* Quiet utility — not admin chrome */
 .cold-open__settings {
-  padding: 8px 12px;
-  border: 1px solid rgba(242, 239, 230, 0.12);
+  padding: 5px 10px;
+  border: 1px solid rgba(242, 239, 230, 0.08);
   border-radius: 999px;
-  background: rgba(12, 10, 8, 0.35);
-  color: rgba(242, 239, 230, 0.48);
-  font: 600 11px/1 var(--font-sans, system-ui, sans-serif);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  background: rgba(12, 10, 8, 0.28);
+  color: rgba(242, 239, 230, 0.4);
+  font: 500 10px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.04em;
+  text-transform: none;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cold-open__settings:hover {
-  color: rgba(242, 239, 230, 0.82);
-  border-color: rgba(242, 239, 230, 0.28);
-  background: rgba(20, 16, 12, 0.55);
+  color: rgba(242, 239, 230, 0.72);
+  border-color: rgba(242, 239, 230, 0.18);
+  background: rgba(20, 16, 12, 0.45);
 }
 
 .cold-open__settings:focus-visible {
@@ -4199,7 +4471,7 @@ button.story-event {
   display: flex;
   flex-direction: column;
   gap: 0;
-  animation: coldOpenStageIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: coldOpenStageIn calc(var(--drama-dur) * 2.75) var(--drama-ease) both;
 }
 
 .cold-open__stage--crisis {
@@ -4222,10 +4494,10 @@ button.story-event {
 }
 
 .cold-open__brand {
-  margin: 0 0 18px;
-  color: rgba(196, 154, 58, 0.72);
-  font: 700 11px/1 var(--font-sans, system-ui, sans-serif);
-  letter-spacing: 0.28em;
+  margin: 0 0 20px;
+  color: rgba(196, 154, 58, 0.35);
+  font: 600 9px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -4241,7 +4513,7 @@ button.story-event {
 .cold-open__crisis {
   margin: 0 0 28px;
   max-width: 22em;
-  color: #f2efe6;
+  color: var(--paper-ink);
   font-family: var(--font-serif, Georgia, 'Times New Roman', serif);
   font-size: clamp(26px, 4.6vw, 40px);
   font-weight: 500;
@@ -4278,22 +4550,25 @@ button.story-event {
   border-radius: 6px;
   background:
     linear-gradient(180deg, rgba(32, 26, 20, 0.72) 0%, rgba(18, 14, 11, 0.82) 100%);
-  color: #f2efe6;
+  color: var(--paper-ink);
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    transform 0.12s ease,
-    box-shadow 0.15s ease;
+    border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.cold-open__choice:hover {
-  border-color: rgba(196, 154, 58, 0.55);
+.cold-open__choice:hover,
+.cold-open__choice:focus-visible {
+  border-color: rgba(212, 168, 72, 0.72);
   background:
-    linear-gradient(180deg, rgba(48, 36, 22, 0.85) 0%, rgba(28, 20, 14, 0.9) 100%);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  transform: translateY(-1px);
+    linear-gradient(180deg, rgba(52, 38, 22, 0.9) 0%, rgba(30, 22, 14, 0.92) 100%);
+  box-shadow:
+    0 0 0 1px rgba(196, 154, 58, 0.22),
+    0 10px 32px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
 }
 
 .cold-open__choice:active {
@@ -4301,7 +4576,7 @@ button.story-event {
 }
 
 .cold-open__choice:focus-visible {
-  outline: 2px solid rgba(196, 154, 58, 0.85);
+  outline: 2px solid rgba(212, 168, 72, 0.9);
   outline-offset: 2px;
 }
 
@@ -4337,12 +4612,15 @@ button.story-event {
   color: rgba(196, 154, 58, 0.55);
   font-size: 16px;
   line-height: 1;
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.cold-open__choice:hover .cold-open__choice-arrow {
-  color: rgba(196, 154, 58, 0.95);
-  transform: translateX(3px);
+.cold-open__choice:hover .cold-open__choice-arrow,
+.cold-open__choice:focus-visible .cold-open__choice-arrow {
+  color: rgba(212, 168, 72, 0.98);
+  transform: translateX(4px);
 }
 
 /* Tertiary "自己决定" — weaker visual weight */
@@ -4356,12 +4634,13 @@ button.story-event {
   opacity: 0.78;
 }
 
-.cold-open__choice--tertiary:hover {
+.cold-open__choice--tertiary:hover,
+.cold-open__choice--tertiary:focus-visible {
   opacity: 1;
-  border-color: rgba(242, 239, 230, 0.22);
+  border-color: rgba(212, 168, 72, 0.45);
   background: rgba(255, 250, 240, 0.04);
-  box-shadow: none;
-  transform: none;
+  box-shadow: 0 0 0 1px rgba(196, 154, 58, 0.12);
+  transform: translateY(-1px);
 }
 
 .cold-open__choice--tertiary .cold-open__choice-label {
@@ -4379,7 +4658,7 @@ button.story-event {
 
 .cold-open__back {
   align-self: flex-start;
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   padding: 6px 0;
   border: 0;
   background: transparent;
@@ -4387,7 +4666,7 @@ button.story-event {
   font: 600 12px/1 var(--font-sans, system-ui, sans-serif);
   letter-spacing: 0.04em;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cold-open__back:hover {
@@ -4400,17 +4679,40 @@ button.story-event {
   border-radius: 2px;
 }
 
+/* Sticky echo of crisis choice — larger, always visible while casting */
 .cold-open__chosen {
-  margin: 0 0 8px;
-  color: rgba(196, 154, 58, 0.85);
-  font: 700 12px/1.3 var(--font-sans, system-ui, sans-serif);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(196, 154, 58, 0.35);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(42, 32, 18, 0.94) 0%, rgba(22, 16, 10, 0.96) 100%);
+  color: rgba(242, 239, 230, 0.92);
+  font: 600 14px/1.35 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.cold-open__chosen-prefix {
+  color: rgba(196, 154, 58, 0.78);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.cold-open__chosen-label {
+  color: #f7f0d8;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .cold-open__cast-title {
   margin: 0 0 8px;
-  color: #f2efe6;
+  color: var(--paper-ink);
   font-family: var(--font-serif, Georgia, 'Times New Roman', serif);
   font-size: clamp(22px, 3.6vw, 30px);
   font-weight: 500;
@@ -4424,11 +4726,64 @@ button.story-event {
   font: 500 13px/1.4 var(--font-sans, system-ui, sans-serif);
 }
 
+/* Diegetic entering beat — breath pulse, not a SaaS spinner */
 .cold-open__entering {
-  margin: -12px 0 20px;
-  color: rgba(196, 154, 58, 0.9);
-  font: 600 13px/1.4 var(--font-sans, system-ui, sans-serif);
+  margin: -12px 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cold-open__entering-diegetic {
+  margin: 0;
+  color: rgba(242, 239, 230, 0.88);
+  font-family: var(--font-serif, Georgia, 'Times New Roman', serif);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  animation: coldOpenBreath 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.cold-open__entering-secondary {
+  margin: 0;
+  color: rgba(196, 154, 58, 0.55);
+  font: 500 11px/1.3 var(--font-sans, system-ui, sans-serif);
   letter-spacing: 0.06em;
+}
+
+@keyframes coldOpenBreath {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Connection-gate / start failure — readable alert, not a tech red box only */
+.cold-open__error {
+  position: absolute;
+  top: max(52px, calc(env(safe-area-inset-top, 0px) + 48px));
+  left: 50%;
+  z-index: 6;
+  width: min(520px, calc(100% - 32px));
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(196, 154, 58, 0.35);
+  border-left: 3px solid rgba(196, 120, 72, 0.85);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(48, 28, 16, 0.96) 0%, rgba(28, 16, 12, 0.96) 100%);
+  color: #f2e4d4;
+  font: 600 13px/1.5 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.01em;
+  text-align: left;
+  transform: translateX(-50%);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .cold-open__choice:disabled,
@@ -4452,6 +4807,7 @@ button.story-event {
 }
 
 .cold-open__cast-member {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4462,16 +4818,18 @@ button.story-event {
   border: 1px solid rgba(242, 239, 230, 0.12);
   border-radius: 8px;
   background: rgba(18, 14, 11, 0.55);
-  color: #f2efe6;
+  color: var(--paper-ink);
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    transform 0.12s ease,
-    box-shadow 0.15s ease;
+    border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.cold-open__cast-member:hover {
+.cold-open__cast-member:hover,
+.cold-open__cast-member:focus-visible {
   border-color: color-mix(in srgb, var(--cast-accent, #c49a3a) 55%, rgba(242, 239, 230, 0.2));
   background: rgba(28, 22, 16, 0.75);
   box-shadow:
@@ -4485,8 +4843,54 @@ button.story-event {
 }
 
 .cold-open__cast-member:focus-visible {
-  outline: 2px solid var(--cast-accent, rgba(196, 154, 58, 0.9));
+  outline: 2px solid var(--cast-accent, rgba(212, 168, 72, 0.9));
   outline-offset: 2px;
+}
+
+/* Call Saul already chosen: Saul still selectable, just quieter */
+.cold-open__cast-member--deemphasized {
+  opacity: 0.38;
+  padding-top: 22px;
+}
+
+.cold-open__cast-member--deemphasized:hover,
+.cold-open__cast-member--deemphasized:focus-visible {
+  opacity: 0.7;
+}
+
+.cold-open__cast-member--recommended {
+  border-color: color-mix(in srgb, var(--cast-accent, #c49a3a) 40%, rgba(242, 239, 230, 0.18));
+}
+
+.cold-open__cast-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--cast-accent, #c49a3a) 55%, rgba(12, 10, 8, 0.85));
+  color: rgba(12, 10, 8, 0.92);
+  font: 700 9px/1.2 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* Soft diegetic hint under de-emphasized Saul */
+.cold-open__cast-hint-soft {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  padding: 0;
+  color: rgba(242, 239, 230, 0.55);
+  font: 500 8px/1.2 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.02em;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cold-open__cast-avatar {
@@ -4565,6 +4969,11 @@ button.story-event {
     animation: none;
   }
 
+  .cold-open__entering-diegetic {
+    animation: none;
+    opacity: 0.88;
+  }
+
   .cold-open__choice,
   .cold-open__cast-member,
   .cold-open__choice-arrow {
@@ -4572,7 +4981,9 @@ button.story-event {
   }
 
   .cold-open__choice:hover,
-  .cold-open__cast-member:hover {
+  .cold-open__choice:focus-visible,
+  .cold-open__cast-member:hover,
+  .cold-open__cast-member:focus-visible {
     transform: none;
   }
 }
@@ -4583,9 +4994,10 @@ button.story-event {
 
 /* Full-bleed stage: less panel chrome, more desert atmosphere */
 .story-panel--drama {
+  /* Same warm soot family as .cold-open / .app-shell (F01) */
   background:
-    linear-gradient(180deg, rgba(8, 10, 12, 0.42) 0%, rgba(10, 12, 14, 0.62) 100%),
-    linear-gradient(90deg, rgba(8, 10, 12, 0.45) 0%, rgba(14, 18, 22, 0.2) 48%, rgba(8, 10, 12, 0.45) 100%),
+    linear-gradient(180deg, rgba(12, 10, 8, 0.42) 0%, rgba(12, 10, 8, 0.62) 100%),
+    linear-gradient(90deg, rgba(12, 10, 8, 0.45) 0%, rgba(22, 18, 16, 0.22) 48%, rgba(12, 10, 8, 0.45) 100%),
     url('/backgrounds/blue-desert-rv.jpg') center / cover no-repeat;
 }
 
@@ -4599,51 +5011,56 @@ button.story-event {
 /* Collapse non-drama HUD chrome spacing — quieter than dialogue paper. */
 .story-hud--minimal {
   grid-template-columns: minmax(0, 1fr) auto;
-  border-bottom-color: rgba(255, 247, 208, 0.05);
+  border-bottom-color: rgba(255, 247, 208, 0.025);
   background:
-    linear-gradient(90deg, rgba(4, 6, 8, 0.55), rgba(6, 8, 10, 0.32));
+    linear-gradient(90deg, rgba(4, 6, 8, 0.28), rgba(6, 8, 10, 0.12));
   box-shadow: none;
-  opacity: 0.92;
+  opacity: 0.48;
 }
 
 .story-hud--minimal .story-hud__brand,
 .story-hud--minimal .story-hud__metric,
 .story-hud--minimal > button {
-  padding: 5px 10px;
+  padding: 4px 8px;
   border-right: 0;
 }
 
 .story-hud--minimal .story-hud__brand h2,
 .story-hud--minimal .story-hud__metric strong {
-  font-size: clamp(11px, 1.1vw, 14px);
-  color: rgba(255, 247, 208, 0.58);
-  font-weight: 700;
+  font-size: clamp(10px, 1vw, 13px);
+  color: rgba(255, 247, 208, 0.32);
+  font-weight: 600;
 }
 
 .story-hud--minimal .story-hud__brand p,
 .story-hud--minimal .story-hud__metric span {
   margin-bottom: 1px;
-  opacity: 0.55;
+  opacity: 0.28;
   font-size: 8px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
 }
 
 .story-hud--minimal .story-hud__metric small {
-  color: rgba(255, 247, 208, 0.38);
-  font-size: 10px;
+  color: rgba(255, 247, 208, 0.2);
+  font-size: 9px;
 }
 
 .story-hud--minimal > button {
-  margin: 5px 8px;
-  padding: 5px 9px;
+  margin: 4px 6px;
+  padding: 4px 8px;
   font-size: 10px;
-  opacity: 0.7;
-  border-color: rgba(247, 206, 70, 0.35);
+  opacity: 0.32;
+  border: none;
+  background: transparent;
+  color: rgba(255, 247, 208, 0.32);
 }
 
 .story-hud--minimal .story-hud__chat-link {
-  opacity: 0.55;
-  font-size: 0.7rem;
+  opacity: 0.28;
+  font-size: 0.65rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 247, 208, 0.32);
 }
 
 /* Dialogue lines: speak / think / act distinction */
@@ -4767,6 +5184,8 @@ button.story-event {
   margin-bottom: 12px;
 }
 
+/* Ghost cream text link — beats any residual gold inheritance on HUD chrome. */
+.story-hud > button.story-hud__chat-link,
 .story-hud__chat-link {
   border: none;
   background: transparent;
@@ -4778,10 +5197,14 @@ button.story-event {
   text-decoration: underline;
   text-underline-offset: 3px;
   align-self: center;
+  box-shadow: none;
 }
 
+.story-hud > button.story-hud__chat-link:hover,
 .story-hud__chat-link:hover {
   color: rgba(255, 247, 208, 0.85);
+  background: transparent;
+  border: none;
 }
 
 .story-hud__connection--low {
@@ -4797,6 +5220,18 @@ button.story-event {
   padding: 0;
   border: none;
   background: transparent;
+  animation: beatPausedSlideUp var(--drama-dur) var(--drama-ease) both;
+}
+
+@keyframes beatPausedSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .beat-paused__advanced {
@@ -4815,22 +5250,53 @@ button.story-event {
   margin-top: 8px;
 }
 
-/* Dialogue type roles on parchment paper (dark ink — do not use on-dark yellow). */
+/* Dialogue type roles on dark night parchment (light type - D03/F03). */
 .story-scene-card__quote.is-speak {
-  color: rgba(28, 34, 22, 0.94);
+  color: rgba(247, 242, 228, 0.94);
   font-weight: 500;
 }
 
 .story-scene-card__quote.is-thought {
   font-style: italic;
-  color: rgba(48, 56, 64, 0.78);
+  color: rgba(198, 210, 220, 0.78);
 }
 
 .story-scene-card__quote.is-stage-dir {
   font-style: italic;
-  color: rgba(70, 68, 58, 0.62);
+  color: rgba(200, 194, 176, 0.62);
 }
 
 .story-scene-card__quote.is-scene {
-  color: rgba(48, 44, 56, 0.78);
+  color: rgba(210, 200, 228, 0.78);
+}
+
+/* ==========================================
+   Drama motion — reduced motion + quote fade
+   ========================================== */
+.story-scene-card__quote {
+  transition:
+    opacity var(--drama-dur) var(--drama-ease),
+    transform var(--drama-dur) var(--drama-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cold-open__stage,
+  .drama-decision,
+  .beat-paused--drama,
+  .story-scene-card__paper,
+  .story-status,
+  .streaming-indicator--diegetic {
+    animation: none !important;
+  }
+
+  .story-status .typing .dot {
+    animation: none !important;
+    opacity: 0.4;
+  }
+
+  .story-scene-card__quote,
+  .drama-decision__chip,
+  .drama-decision__continue {
+    transition: none !important;
+  }
 }

@@ -21,8 +21,7 @@ import { AgentHarnessPanel } from './components/AgentHarnessPanel'
 import { ColdOpenLanding, type ColdOpenStartPayload } from './components/ColdOpenLanding'
 import {
   DramaDecisionBar,
-  buildColdOpenSuggestions,
-  buildBeatPauseSuggestions,
+  dramaSuggestionsForBeat,
   type DramaSuggestion,
 } from './components/DramaDecisionBar'
 import { VoicePlayer } from './components/VoicePlayer'
@@ -112,6 +111,7 @@ function getEventTitle(evt: StoryEvent, lang: Language): string {
   return chip
 }
 
+/** Diegetic outline teaser — never print McKee craft (spine / structure / idea). */
 function formatStoryPlanPreview(outline: string, lang: Language): string {
   const lines = outline
     .split('\n')
@@ -119,36 +119,14 @@ function formatStoryPlanPreview(outline: string, lang: Language): string {
     .filter(Boolean)
   const beats = lines.filter(line => /^\d+[.)]\s+/.test(line))
   const count = Math.max(beats.length, 1)
-  const spine = lines
-    .find(line => /^SPINE\s*[:：]/i.test(line))
-    ?.replace(/^SPINE\s*[:：]\s*/i, '')
-    .trim()
-  const idea = lines
-    .find(line => /^CONTROLLING_IDEA\s*[:：]/i.test(line))
-    ?.replace(/^CONTROLLING_IDEA\s*[:：]\s*/i, '')
-    .trim()
   if (lang === 'zh') {
-    const base = `已规划 ${count} 个剧情节拍（麦基结构）`
-    if (spine) {
-      const short = spine.length > 42 ? `${spine.slice(0, 42)}…` : spine
-      return `${base}。脊椎：${short}`
-    }
-    if (idea) {
-      const short = idea.length > 42 ? `${idea.slice(0, 42)}…` : idea
-      return `${base}。主控：${short}`
-    }
-    return `${base}。具体走向会随游玩逐步揭示。`
+    if (count <= 1) return '局面还在收紧'
+    if (count <= 3) return '这一夜还有几处关口'
+    return `这一夜大约还有 ${count} 处关口`
   }
-  const base = `${count} McKee-structured beats planned`
-  if (spine) {
-    const short = spine.length > 48 ? `${spine.slice(0, 48)}…` : spine
-    return `${base}. Spine: ${short}`
-  }
-  if (idea) {
-    const short = idea.length > 48 ? `${idea.slice(0, 48)}…` : idea
-    return `${base}. Controlling idea: ${short}`
-  }
-  return `${base}. Details reveal as you play.`
+  if (count <= 1) return 'The night is still tightening'
+  if (count <= 3) return 'A few hard turns still ahead'
+  return `About ${count} hard turns still ahead`
 }
 
 /** Hide McKee craft scaffolding if a legacy event still embeds it. */
@@ -204,11 +182,11 @@ function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
 const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
   'Director is analysing the task...': {
     en: 'Director is analysing the task...',
-    zh: '导演正在分析任务…',
+    zh: '局面正在成形…',
   },
   'Director outlined {n} beat(s). Beginning roleplay…': {
     en: 'Director outlined {n} beat(s). Beginning roleplay…',
-    zh: '导演已规划 {n} 个剧情节拍。开始角色扮演…',
+    zh: '{n} 段压力要来了。线头动了…',
   },
   'No action received - continuing automatically.': {
     en: 'No action received - continuing automatically.',
@@ -216,7 +194,7 @@ const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
   },
   'All beats rendered. Roleplay outline complete.': {
     en: 'All beats rendered. Roleplay outline complete.',
-    zh: '全部剧情节点已完成。任务收束。',
+    zh: '所有场面已落下。这一夜先到这里。',
   },
 }
 
@@ -463,29 +441,30 @@ const uiText: Record<Language, Record<string, string>> = {
     setStageHint: 'Describe the story you want in natural language. The scene board will play it beat by beat, pausing at pressure points for your decision.',
     placeholder: 'e.g. Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out…',
     startStory: 'Start Story',
-    directing: 'Blocking the scene…',
-    narrativeStream: 'Narrative Stream',
+    directing: 'Half a bag of cash left in the RV. The night is not done with anyone.',
+    narrativeStream: 'This night',
     eventFeed: 'Fine-grained event-driven narrative',
     directorDecision: 'Choose the next move:',
-    switchToChat: 'Switch to Chat',
+    switchToChat: 'Chat · no chapter advance',
     you: 'You',
     send: 'Send',
     sending: 'Thinking…',
     messagePlaceholder: 'Negotiate with {character} as their {relation}…',
     privateScene: 'Private Scene',
     crewScene: 'Crew Debate',
-    schema: 'Scene Board',
+    schema: 'On scene',
     gifTrigger: 'Scene beat',
     connected: 'Stream live',
-    connecting: 'Connecting…',
+    connecting: 'Half a bag of cash left in the RV. The night is not done with anyone.',
+    streamingUnfold: 'The situation is still unfolding…',
     disconnected: 'Disconnected',
     storyComplete: 'Story complete. All beats rendered.',
     continue: 'Continue',
     stop: 'Stop',
-    storyOutline: 'Story Outline',
+    storyOutline: 'The situation',
     paused: 'Paused',
     toolLabel: 'Tool Call',
-    eventOutline: 'Story Outline',
+    eventOutline: 'The situation',
     eventSceneChange: 'Scene Setup',
     eventSpeaks: 'speaks',
     eventThinks: 'inner',
@@ -551,10 +530,10 @@ const uiText: Record<Language, Record<string, string>> = {
     possibleConsequences: 'Possible Consequences',
     relationshipImpact: 'Relationship Impact',
     currentBeat: 'Current Beat',
-    sceneFallback: 'Scene board is waiting for the first beat.',
+    sceneFallback: 'The scene is waiting for the first beat.',
     storyLocationFallback: 'North of ABQ',
-    outlineExpand: 'Show outline',
-    outlineCollapse: 'Hide outline',
+    outlineExpand: 'Open',
+    outlineCollapse: 'Close',
     timelineHint: 'Tap a beat to focus the stage',
     archiveHandle: 'Archive',
     timelineCollapse: 'Hide rail',
@@ -569,7 +548,7 @@ const uiText: Record<Language, Record<string, string>> = {
     storyStartHint: 'Tip: press ⌘/Ctrl+Enter to start',
   },
   zh: {
-    tagline: '进入阿尔伯克基的角色档案、任务现场与导演式剧情推进。',
+    tagline: '进入阿尔伯克基的角色档案、压力现场与随选择改写的剧情。',
     landingSubtitle: '走进阿尔伯克基。你的每一句话，他们都会记住。',
     landingVoice: 'The door is open. Don\'t start with manners.',
     landingPreview: '你不是你自称的那个人。没关系。先开口。',
@@ -581,39 +560,40 @@ const uiText: Record<Language, Record<string, string>> = {
     relation: '身份关系',
     view: '游玩模式',
     chat: '角色会谈',
-    story: '剧情任务',
+    story: '剧情',
     mode: '会谈形式',
     direct: '单人场景',
     crew: '群像会谈',
     model: '引擎线路',
     storyTitle: 'ABQ Roleplay Lab',
-    setStage: '任务简报',
-    setStageHint: '写下这局的目标、风险和想看到的冲突。场景会分镜推进剧情，并在关键节点等待你的选择。',
+    setStage: '开场设定',
+    setStageHint: '用自然语言写下你想压进这一夜的冲突。场面会一段段推，到紧要处停下来等你。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
-    startStory: '开始任务',
-    directing: '现场正在调度…',
-    narrativeStream: '任务现场',
+    startStory: '进入这一夜',
+    directing: '房车里还剩半袋现金。夜还没放过任何人。',
+    narrativeStream: '这一夜',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
-    switchToChat: '返回会谈',
+    switchToChat: '单聊·不推进章节',
     you: '你',
     send: '发送',
     sending: '生成回应…',
     messagePlaceholder: '以{relation}身份对 {character} 说…',
     privateScene: '单人场景',
     crewScene: '群像会谈',
-    schema: '场景记录',
+    schema: '现场',
     gifTrigger: '镜头节点',
     connected: '现场已连接',
-    connecting: '连接现场…',
+    connecting: '房车里还剩半袋现金。夜还没放过任何人。',
+    streamingUnfold: '局面还在展开…',
     disconnected: '已断开',
-    storyComplete: '任务结束。所有剧情节点已完成。',
+    storyComplete: '这一夜告一段落。',
     continue: '继续',
     stop: '停止',
-    storyOutline: '任务大纲',
+    storyOutline: '局面',
     paused: '已暂停',
     toolLabel: '工具调用',
-    eventOutline: '故事大纲',
+    eventOutline: '局面',
     eventSceneChange: '场景建立',
     eventSpeaks: '说',
     eventThinks: '内心',
@@ -621,7 +601,7 @@ const uiText: Record<Language, Record<string, string>> = {
     eventBeatReady: '关键选择',
     eventWorldDelta: '后果',
     eventStatus: '现场状态',
-    eventComplete: '任务收束',
+    eventComplete: '收场',
     eventError: '错误',
     reconnect: '重连',
     restart: '重新开始',
@@ -679,10 +659,10 @@ const uiText: Record<Language, Record<string, string>> = {
     possibleConsequences: '可能后果',
     relationshipImpact: '关系影响',
     currentBeat: '当前节点',
-    sceneFallback: '场景记录正在等待第一个剧情节点。',
+    sceneFallback: '现场还在等第一拍。',
     storyLocationFallback: '阿尔伯克基北部',
-    outlineExpand: '展开大纲',
-    outlineCollapse: '收起大纲',
+    outlineExpand: '展开',
+    outlineCollapse: '收起',
     timelineHint: '点选分镜，主舞台切换',
     archiveHandle: '档案',
     timelineCollapse: '收起分镜',
@@ -851,10 +831,51 @@ function defaultStoryPrompt(lang: Language): string {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Product surface migration (D06 / P07 FOUC)                         */
+/*  Must run BEFORE usePersistedState hydrates enteredWorld/view so   */
+/*  the first commit is already cold-open for pre-v2 localStorage.    */
+/* ------------------------------------------------------------------ */
+
+const PRODUCT_SURFACE = 'v2-cold-open' as const
+const LS_PREFIX = 'abq_'
+
+function readLs<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(LS_PREFIX + key)
+    if (raw === null) return fallback
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+function writeLs(key: string, value: unknown): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(LS_PREFIX + key, JSON.stringify(value))
+  } catch {
+    /* silent — same policy as usePersistedState */
+  }
+}
+
+/** Sync one-shot: write migrated keys before React state reads them. */
+function migrateProductSurfaceBeforePaint(): void {
+  const surface = readLs<string | null>('productSurface', null)
+  if (surface === PRODUCT_SURFACE) return
+  writeLs('enteredWorld', false)
+  writeLs('view', 'story')
+  writeLs('productSurface', PRODUCT_SURFACE)
+}
+
+/* ------------------------------------------------------------------ */
 /*  App                                                               */
 /* ------------------------------------------------------------------ */
 
 function App() {
+  // Pre-paint migration: first frame must already be cold open for pre-v2 LS.
+  migrateProductSurfaceBeforePaint()
+
   // Language: use browser preference on first visit, then persist
   const defaultLanguage: Language = navigator.language.startsWith('zh') ? 'zh' : 'en'
   const [storedLanguage, setLanguage] = usePersistedState<Language | null>('language', null)
@@ -864,6 +885,7 @@ function App() {
   const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
 
+  // After migrateProductSurfaceBeforePaint, pre-v2 LS already has enteredWorld=false.
   const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
 
   // P0-4: when switching to a character that already has a saved relation,
@@ -882,6 +904,18 @@ function App() {
 
   const [view, setView] = usePersistedState<View>('view', 'story')
   const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
+
+  const [productSurface, setProductSurface] = usePersistedState<string | null>('productSurface', null)
+
+  // Safety net only: mid-session surface clear / race. First paint is handled above.
+  useEffect(() => {
+    if (productSurface === PRODUCT_SURFACE) return
+    queueMicrotask(() => {
+      setHasEnteredWorld(false)
+      setView('story')
+      setProductSurface(PRODUCT_SURFACE)
+    })
+  }, [productSurface, setHasEnteredWorld, setView, setProductSurface])
   const connection = useConnection()
   const auth = useAuth()
   const quota = useQuota(connection.connectionSessionId, auth.user?.id ?? null)
@@ -1252,6 +1286,8 @@ function App() {
    */
   const coldOpenStartingRef = useRef(false)
   const [coldOpenStarting, setColdOpenStarting] = useState(false)
+  /** Connection-gate errors stay on cold open (do not flip hasEnteredWorld). */
+  const [coldOpenError, setColdOpenError] = useState<string | null>(null)
 
   const handleColdOpenStart = useCallback(async (payload: ColdOpenStartPayload) => {
     if (coldOpenStartingRef.current) return
@@ -1259,28 +1295,28 @@ function App() {
     coldOpenStartingRef.current = true
     setColdOpenStarting(true)
 
+    // Staging only — stay on cold open until connection + startStory succeed.
+    // setSelectedCharId / setColdOpenChoiceId / setStoryTask early OK.
     const charId = payload.characterId as CharacterId
     setSelectedCharId(charId)
     setColdOpenChoiceId(payload.choiceId)
-    setHasEnteredWorld(true)
-    setView('story')
-    setSidebarCollapsed(true)
     setStoryTask(payload.storyPrompt)
+    setColdOpenError(null)
     setError(null)
     try {
       if (!connection.view.canStart) {
+        setColdOpenError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
         connection.setSheetOpen(true)
-        setError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
         return
       }
       const bindId = await connection.ensureBound()
       if (connection.view.mode === 'byok' && !bindId) {
-        connection.setSheetOpen(true)
-        setError(
+        setColdOpenError(
           language === 'zh'
             ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
             : 'Key session is not ready. Re-save your key in Model line.',
         )
+        connection.setSheetOpen(true)
         return
       }
       story.setConnectionSessionId(bindId)
@@ -1293,10 +1329,15 @@ function App() {
         language,
         bindId,
       )
-      // Match handleStartStory: clear seed once the connection actually started.
+      // Enter the world only after the story session actually started.
+      setHasEnteredWorld(true)
+      setView('story')
+      setSidebarCollapsed(true)
       setStoryTask('')
+      setColdOpenError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      // Keep hasEnteredWorld false; surface message on cold open for retry.
+      setColdOpenError(e instanceof Error ? e.message : String(e))
     } finally {
       coldOpenStartingRef.current = false
       setColdOpenStarting(false)
@@ -1785,22 +1826,30 @@ function App() {
         <ColdOpenLanding
           language={language}
           onStart={handleColdOpenStart}
-          onOpenSettings={() => connection.setSheetOpen(true)}
+          onOpenSettings={() => {
+            setColdOpenError(null)
+            connection.setSheetOpen(true)
+          }}
           onLanguageChange={(lang) => setLanguage(lang)}
           starting={coldOpenStarting}
+          error={coldOpenError}
         />
         <ConnectionSheet conn={connection} language={language} />
       </>
     )
   }
 
-  const dramaSuggestions: DramaSuggestion[] =
-    story.beatIndex <= 2
-      ? buildColdOpenSuggestions(language, {
-          choiceId: coldOpenChoiceId ?? undefined,
-          characterId: selectedCharId,
-        })
-      : buildBeatPauseSuggestions(language, latestWorldDeltaText || currentStoryText.slice(0, 80))
+  // Cold-open crisis chips only on beat 0; later pauses must not reuse them
+  // (D08: call_saul×Saul still showed 接电话/谈价/编说辞 on beat 1–2).
+  const dramaSuggestions: DramaSuggestion[] = dramaSuggestionsForBeat(
+    story.beatIndex,
+    language,
+    {
+      choiceId: coldOpenChoiceId ?? undefined,
+      characterId: selectedCharId,
+    },
+    latestWorldDeltaText || currentStoryText.slice(0, 80),
+  )
 
   return (
     <>
@@ -2024,15 +2073,12 @@ function App() {
             </div>
           )}
 
-          {/* Connecting */}
+          {/* Connecting — diegetic line, no SaaS spinner dots */}
           {story.connectionState === 'connecting' && (
-            <div className="story-status" aria-live="polite">
-              <div className="typing">
-                <span className="dot" /><span className="dot" /><span className="dot" />
-              </div>
+            <div className="story-status story-status--pulse" aria-live="polite">
               <p>{story.isResuming
                 ? (t.resumingStory)
-                : t.directing}</p>
+                : t.connecting}</p>
             </div>
           )}
 
@@ -2090,7 +2136,14 @@ function App() {
                     storyEmotionClass ? `story-scene-card--emotion-${storyEmotionClass}` : '',
                   ].filter(Boolean).join(' ')}
                 >
-                  <div className="story-scene-card__paper">
+                  <div
+                    className="story-scene-card__paper"
+                    key={
+                      pinnedStoryEventIndex
+                      ?? stageCardIndices[stageCardPos]
+                      ?? currentStoryEventType
+                    }
+                  >
                     <div className="story-scene-card__meta">
                       <span className={`story-scene-card__chip story-scene-card__chip--${currentStoryEventType}`}>
                         {currentStoryTypeChip}
@@ -2260,17 +2313,15 @@ function App() {
                 </div>
               )}
 
-              {/* Streaming indicator */}
+              {/* Streaming indicator — diegetic, no SaaS dots */}
               {story.connectionState === 'streaming' && (
-                <div className="streaming-indicator" aria-live="polite">
+                <div className="streaming-indicator streaming-indicator--diegetic" aria-live="polite">
                   {story.autoContinued ? (
                     <span className="auto-continue-notice">
                       {t.autoContinue}
                     </span>
                   ) : (
-                    <div className="typing">
-                      <span className="dot" /><span className="dot" /><span className="dot" />
-                    </div>
+                    <p className="streaming-indicator__line">{t.streamingUnfold}</p>
                   )}
                 </div>
               )}
@@ -2291,12 +2342,12 @@ function App() {
                       )
                       setDecisionFree('')
                     }}
+                    onContinue={() => {
+                      void story.sendAction('continue', undefined, selectedCharId)
+                    }}
                     onFreeSubmit={() => {
                       const text = decisionFree.trim()
-                      if (!text) {
-                        void story.sendAction('continue', undefined, selectedCharId)
-                        return
-                      }
+                      if (!text) return
                       void story.sendAction(
                         'redirect',
                         { redirect_prompt: text },
@@ -2304,6 +2355,9 @@ function App() {
                       )
                       setDecisionFree('')
                     }}
+                    disabled={
+                      story.connectionState !== 'beat_paused'
+                    }
                   />
                   <details className="beat-paused__advanced">
                     <summary>
