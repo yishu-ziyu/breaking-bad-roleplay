@@ -7,11 +7,19 @@ Purpose (product):
 
 Persistence helper lives here; Director / routes decide when to load/save.
 Era seed JSON lives under materials/breaking-bad/continuity/eras/.
+
+Writer contract (DEC-0005 P4):
+  The sole writer of Continuity Board truth (shared_facts, present_cast,
+  updated_at_beat, irreversible_costs) is
+  ``scenes.state_reducer.apply_validated_turn``. The LLM-side helper
+  ``record_llm_proposed_deltas`` here is advisory-only — it returns
+  LLM-proposed fact entries for observability but never mutates the board.
 """
 
 from __future__ import annotations
 
 import json
+import random
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -75,15 +83,23 @@ def new_session_board(
     location: str = "",
     present_cast: list[str] | None = None,
     player_relation: dict[str, Any] | None = None,
+    world_clock: tuple[int, str, str] | None = None,
 ) -> dict[str, Any]:
     pack = load_era_pack(era)
     cast = present_cast or list(pack.get("present_cast_default") or [])
+    # world_clock: (days_since_start, time_of_day, weather)
+    # days_since_start: int >= 0 (0 = the day the session starts)
+    # time_of_day: "morning" | "afternoon" | "evening" | "night"
+    # weather: "sunny" | "rainy" | "cloudy" | "overcast" | "clear"
+    if world_clock is None:
+        world_clock = (0, "afternoon", "clear")
     return {
         "session_id": session_id,
         "era": pack.get("era", era),
         "label": pack.get("label"),
         "label_zh": pack.get("label_zh"),
         "location": location,
+        "world_clock": world_clock,
         "present_cast": cast,
         "shared_facts": deepcopy(pack.get("shared_facts") or []),
         "open_tensions": deepcopy(pack.get("open_tensions") or []),
@@ -120,6 +136,7 @@ def filter_board_for_character(
         "session_id": board.get("session_id"),
         "era": board.get("era"),
         "location": board.get("location", ""),
+        "world_clock": board.get("world_clock"),
         "present_cast": list(board.get("present_cast") or []),
         "shared_facts": known,
         "open_tensions": tensions,
@@ -168,6 +185,17 @@ def format_board_prompt(
         )
 
     who = character_id or "you"
+    # World clock: gives the character a continuing sense of time/place/weather.
+    clocks = board_view.get("world_clock")
+    clock_line = ""
+    if isinstance(clocks, (list, tuple)) and len(clocks) == 3:
+        day, tod, weather = clocks
+        if isinstance(day, int) and isinstance(tod, str) and isinstance(weather, str):
+            clock_line = (
+                f"- World clock: day {day}, {tod}, {weather} "
+                f"(mention casually only if it fits — keep the scene alive, "
+                "don't force it into every line)"
+            )
     return (
         "CONTINUITY BOARD (what this room already established — continue from it):\n"
         f"- Era: {era}\n"
@@ -176,24 +204,39 @@ def format_board_prompt(
         f"- You know:\n{fact_lines}\n"
         f"- Live tension involving you:\n{tension_lines}\n"
         f"- Costs already paid (do not pretend these un-happened):\n{cost_lines}"
-        f"{rel_line}\n"
+        f"{rel_line}"
+        f"{clock_line}\n"
         "Play freely inside this setup. Do not invent public facts that contradict it.\n"
         "If the player frames an alternate premise, treat new premises as this session's "
         "direction — then keep later lines consistent with what you already played."
     )
 
 
-def apply_delta_facts(
+def record_llm_proposed_deltas(
     board: dict[str, Any],
     *,
     deltas: list[dict[str, Any]],
     known_by: list[str],
     beat_index: int,
     irreversible: bool = False,
-) -> dict[str, Any]:
-    """Return a new board with narrative deltas appended as shared_facts."""
-    out = deepcopy(board)
-    facts = list(out.get("shared_facts") or [])
+) -> list[dict[str, Any]]:
+    """Return the LLM-proposed fact entries for traceability; DO NOT mutate the board.
+
+    DEC-0005 P4: ``scenes.state_reducer.apply_validated_turn`` is the sole writer
+    of Continuity Board truth. This function is advisory only — it normalizes
+    the LLM's free-text deltas into proposal dicts (the same shape a fact on
+    the board would have) so callers can log them, surface them for
+    observability, or feed them into a future feedback channel — but it does
+    not append them to ``board["shared_facts"]`` or
+    ``board["irreversible_costs"]`` and does not advance
+    ``board["updated_at_beat"]``.
+
+    The ``board`` argument is intentionally read-only here: we copy it
+    defensively but discard the copy. The validator and the reducer decide
+    what becomes room truth.
+    """
+    _ = deepcopy(board)  # defensive copy, intentionally discarded
+    proposals: list[dict[str, Any]] = []
     knowers = [normalize_character_id(x) for x in known_by if x]
     for i, d in enumerate(deltas or []):
         if not isinstance(d, dict):
@@ -206,24 +249,18 @@ def apply_delta_facts(
         text = new_value or f"{target}.{field} changed"
         if target and field and new_value:
             text = f"{target}: {field} → {new_value}"
-        fact_id = f"beat{beat_index}_{field or 'fact'}_{i}"
-        facts.append(
+        proposals.append(
             {
-                "id": fact_id,
+                "id": f"advisory_beat{beat_index}_{field or 'fact'}_{i}",
                 "text": text,
-                "known_by": knowers or list(out.get("present_cast") or []),
+                "known_by": knowers,
                 "hidden_from": [],
                 "irreversible": irreversible,
                 "source_beat": beat_index,
+                "source": "llm_advisory",
             }
         )
-        if irreversible:
-            costs = list(out.get("irreversible_costs") or [])
-            costs.append(text)
-            out["irreversible_costs"] = costs
-    out["shared_facts"] = facts
-    out["updated_at_beat"] = beat_index
-    return out
+    return proposals
 
 
 def board_to_json(board: dict[str, Any]) -> str:
@@ -249,6 +286,48 @@ def set_location(board: dict[str, Any], location: str) -> dict[str, Any]:
     out = deepcopy(board)
     if location:
         out["location"] = location
+    return out
+
+
+# Predefined transitions for natural clock progression
+TIME_OF_DAY_ORDER = ["morning", "afternoon", "evening", "night"]
+WEATHER_OPTIONS = ["clear", "sunny", "cloudy", "overcast", "rainy"]
+
+
+def advance_clock(board: dict[str, Any]) -> dict[str, Any]:
+    """Advance the world clock naturally after a completed beat.
+
+    - Move time_of_day forward in cycle; wrap to a new day at morning
+    - Weather changes probabilistically (small chance per step)
+    """
+    out = deepcopy(board)
+    clocks = out.get("world_clock")
+    if not isinstance(clocks, (list, tuple)) or len(clocks) != 3:
+        # Default if clock is missing/malformed
+        out["world_clock"] = (0, "afternoon", "clear")
+        return out
+
+    day, tod, weather = clocks
+
+    # Always step time forward
+    try:
+        idx = TIME_OF_DAY_ORDER.index(tod)
+    except ValueError:
+        idx = 1  # default to afternoon
+    next_idx = (idx + 1) % len(TIME_OF_DAY_ORDER)
+    new_tod = TIME_OF_DAY_ORDER[next_idx]
+
+    # Increment day when we wrap to morning
+    new_day = day
+    if next_idx == 0:  # wrapped to morning -> new day
+        new_day += 1
+
+    # Small chance to change weather
+    new_weather = weather
+    if random.random() < 0.15:  # 15% chance per step
+        new_weather = random.choice(WEATHER_OPTIONS)
+
+    out["world_clock"] = (new_day, new_tod, new_weather)
     return out
 
 

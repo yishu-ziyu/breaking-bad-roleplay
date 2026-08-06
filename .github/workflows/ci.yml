@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:frontend
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - run: pip install pytest pytest-asyncio
+      - run: uv run pytest
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY || 'test-key' }}
+          STEPFUN_API_KEY: ${{ secrets.STEPFUN_API_KEY || 'test-key' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql+asyncpg://u:p@localhost/db' }}
+
+  eval:
+    runs-on: ubuntu-latest
+    needs: [backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      - run: pip install -r backend/requirements.txt
+      - run: pip install promptfoo
+      - run: npx promptfoo eval
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          STEPFUN_API_KEY: ${{ secrets.STEPFUN_API_KEY }}
+      - run: npx promptfoo check --threshold 0.9
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          STEPFUN_API_KEY: ${{ secrets.STEPFUN_API_KEY }}
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      - run: npm run test:e2e
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY || 'test-key' }}
+          STEPFUN_API_KEY: ${{ secrets.STEPFUN_API_KEY || 'test-key' }}

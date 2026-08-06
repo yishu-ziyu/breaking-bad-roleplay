@@ -594,3 +594,66 @@ class TestStreamStopSignal:
         # the fix this would be 1 (only the initial load), so this
         # guards against the check being silently dropped.
         assert mock_db.execute.await_count == 3
+
+
+# ---------------------------------------------------------------------------
+# A/B blind-test switch: ?zh_guard=0 must disable the 中文表达守则 injection
+# at the request level, while the default keeps it enabled.
+# ---------------------------------------------------------------------------
+
+class TestZhGuardQueryParam:
+
+    async def _capture_zh_guard(self, client, mock_db, mock_director, query=""):
+        mock_db.execute = AsyncMock(
+            return_value=_scalar_result(_make_session_row())
+        )
+        calls: list[dict] = []
+
+        async def capture(*args, **kwargs):
+            calls.append(kwargs)
+            yield AgentEvent(
+                type="beat_ready",
+                data={"beat_id": "beat_1", "is_final": False},
+            )
+
+        mock_director.process_next_beat = capture
+        async with client.stream(
+            "GET", f"/api/session/sess-stream-1/stream{query}"
+        ) as resp:
+            await _read_stream(resp)
+        assert len(calls) == 1
+        return calls[0]
+
+    async def test_default_no_param_injects_guard(
+        self, client, mock_db, mock_director
+    ):
+        """No zh_guard param → guard stays enabled (线上行为不变)."""
+        kwargs = await self._capture_zh_guard(client, mock_db, mock_director)
+        assert kwargs["zh_guard"] is True
+
+    async def test_zh_guard_zero_disables_guard(
+        self, client, mock_db, mock_director
+    ):
+        """?zh_guard=0 → guard disabled (skip 表达守则注入)."""
+        kwargs = await self._capture_zh_guard(
+            client, mock_db, mock_director, "?zh_guard=0"
+        )
+        assert kwargs["zh_guard"] is False
+
+    async def test_zh_guard_one_keeps_guard(
+        self, client, mock_db, mock_director
+    ):
+        """?zh_guard=1 → guard enabled (容错)."""
+        kwargs = await self._capture_zh_guard(
+            client, mock_db, mock_director, "?zh_guard=1"
+        )
+        assert kwargs["zh_guard"] is True
+
+    async def test_zh_guard_invalid_value_keeps_guard(
+        self, client, mock_db, mock_director
+    ):
+        """?zh_guard=<garbage> → guard enabled (容错)."""
+        kwargs = await self._capture_zh_guard(
+            client, mock_db, mock_director, "?zh_guard=abc"
+        )
+        assert kwargs["zh_guard"] is True

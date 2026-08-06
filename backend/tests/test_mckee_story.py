@@ -16,7 +16,7 @@ OPPOSITION: Walter White, family expectation, DEA pressure
 MAJOR_QUESTION: Can Hank hold the truth between love and duty?
 CONTROLLING_IDEA: Truth rips the family open because loyalty covered a greater lie
 1. [setup] Schrader backyard — value: safety→unease — gap: banter meets evasion — risk: low
-2. [inciting] DEA office — value: order→imbalance — gap: lead hits family — risk: mid
+2. [inciting] DEA office — value: imbalance→order — gap: lead hits family — risk: mid
 3. [progressive] White living room — value: trust→suspicion — gap: soft probe fails — risk: high
 4. [crisis] Evidence room — value: duty vs family — gap: either choice irreversible — risk: extreme
 5. [climax] Desert road — value: facade→break — gap: inevitable yet surprising — risk: ultimate

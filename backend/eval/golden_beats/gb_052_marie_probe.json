@@ -1,0 +1,96 @@
+{
+  "id": "gb_052_marie_probe",
+  "title": "Marie household probe: warm support flips to quiet suspicion",
+  "world_mode": "alternate",
+  "context": {
+    "board": {
+      "era": "s3_mid",
+      "location": "white_house_kitchen",
+      "present_cast": ["marie", "walter"],
+      "shared_facts": [
+        {
+          "id": "s3_walter_secret_cook",
+          "text": "Walter White is cooking methamphetamine in a hidden lab outside the family house.",
+          "known_by": ["walter", "jesse"],
+          "hidden_from": ["skyler", "marie", "hank"]
+        }
+      ],
+      "irreversible_costs": []
+    }
+  },
+  "beat_contract": {
+    "beat_id": "beat_marie_household_probe",
+    "dramatic_role": "progressive",
+    "location_id": "white_house_kitchen",
+    "present_characters": ["marie", "walter"],
+    "value_before": "Marie presents warm supportive household normalcy",
+    "value_after": "Polite surface gives way to quiet observational suspicion",
+    "dramatic_question": "Will Marie notice the inconsistency between Walt's story and what she observes at home?",
+    "pressure_source": "household observation: late hours and unexplained coat-pocket cash",
+    "required_outcome": [
+      "Marie pivots from warm support to observational questioning without claiming hidden operational knowledge"
+    ],
+    "forbidden_outcomes": [
+      "Marie claims knowledge of the clandestine cook operation",
+      "Marie offers concealment or evasion help"
+    ]
+  },
+  "value_polarity_before": "stability",
+  "value_polarity_after": "doubt",
+  "candidates": {
+    "a": {
+      "actor_id": "marie",
+      "observed_facts": [
+        "Walt has been coming home later than his story accounts for",
+        "There is unexplained cash folded in his coat pocket",
+        "His shirts keep carrying a smell that does not match any kitchen"
+      ],
+      "private_goal": "Surface the inconsistency without naming the danger",
+      "fear": "Naming what I see makes the household story collapse",
+      "relationship_tactic": "polite observation dressed as supportive concern",
+      "speech_act": "probe",
+      "surface_intent": "check on family wellbeing",
+      "subtext": "The hours and the money do not line up",
+      "action": {
+        "verb": "look_at",
+        "target_id": "walter",
+        "destination_anchor": "kitchen_table",
+        "animation": "still_tense"
+      },
+      "inner_monologue": "I am not supposed to know. But the coat pocket and the hours do not lie.",
+      "line": "你今晚又赶不及晚饭，衣服上那股车库的气味也没散。我不想猜，但我也没法假装没注意到。",
+      "emotion_state": "tense"
+    },
+    "b": {
+      "actor_id": "marie",
+      "observed_facts": [
+        "Walter White is cooking methamphetamine in a hidden lab outside the family house"
+      ],
+      "private_goal": "Confront Walt with the cook operation",
+      "fear": "None",
+      "relationship_tactic": "cold accusation",
+      "speech_act": "confront",
+      "surface_intent": "expose the clandestine cook operation",
+      "subtext": "I know everything and I am done pretending",
+      "action": {
+        "verb": "stand",
+        "destination_anchor": "kitchen_center"
+      },
+      "inner_monologue": "I know Walter White is cooking methamphetamine in a hidden lab outside the family house. I am not supposed to, but I do.",
+      "line": "I know Walter White is cooking methamphetamine in a hidden lab outside the family house. Stop pretending.",
+      "emotion_state": "angry"
+    }
+  },
+  "preferred": "a",
+  "hard_failures": {
+    "b": [
+      "knowledge_boundary"
+    ]
+  },
+  "preference_reasons": [
+    "B claims knowledge of the cook operation explicitly, which the board hides from Marie",
+    "A pivots on household observation only — late hours, coat-pocket cash, smell — and never invents operational knowledge",
+    "A's pivot is the canonical Marie beat: warm support thins into pointed questions without naming the secret",
+    "Polarity flip stability -> doubt is genuine on candidate A; candidate B is hard-failed before the soft critic runs"
+  ]
+}

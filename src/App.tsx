@@ -17,6 +17,7 @@ import { loadStoredPrivacyKey, PRIVACY_KEY_UPDATED_EVENT } from './lib/privacyVa
 import { AuthSection } from './components/AuthSection'
 import { GifCard } from './components/GifCard'
 import { PlotGraphPanel } from './components/PlotGraphPanel'
+import { AgentHarnessPanel } from './components/AgentHarnessPanel'
 import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
 import { useConnection } from './hooks/useConnection'
@@ -38,7 +39,7 @@ type ChatMode = 'direct' | 'crew'
 type Language = 'en' | 'zh'
 type View = 'chat' | 'story'
 
-type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank'
+type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank' | 'marie'
 
 const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Walter White': 'walter', 'Walter': 'walter',
@@ -48,6 +49,7 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Mike Ehrmantraut': 'mike', 'Mike': 'mike',
   'Gus Fring': 'gus', 'Gus': 'gus',
   'Hank Schrader': 'hank', 'Hank': 'hank',
+  'Marie Schrader': 'marie', 'Marie': 'marie',
 }
 
 const STORY_CARD_EVENT_TYPES = new Set(['scene_change', 'agent_speak', 'agent_think', 'agent_act'])
@@ -362,6 +364,21 @@ const characters: Character[] = [
       en: 'Hey, relax. I am not here to ruin your day. I am just here to notice if your story keeps changing.',
       zh: '嘿，放松。我不是来毁你一天的，我只是来看看你的故事会不会改口。',
     },
+  }, {
+    id: 'marie', name: 'Marie', color: '#c8b6e2',
+    oneLiner: {
+      en: 'Hank\u2019s wife and Skyler\u2019s sister-in-law. Polished hospitality with a sharp eye for what does not add up at home.',
+      zh: 'Hank 的妻子，Skyler 的嫂子。礼貌周到，对家里说不通的地方尤其敏锐。',
+    },
+    relationOptions: [
+      'Skyler sister-in-law',
+      'Hank spouse',
+      'supportive but uncomprehending',
+    ],
+    opener: {
+      en: 'Come sit down. I made the kitchen look nice and I want to hear how your day is going.',
+      zh: '坐下吧。我把厨房收拾了一下，想听听你今天过得怎么样。',
+    },
   },
 ]
 
@@ -398,6 +415,9 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'DEA partner': { en: 'DEA partner', zh: 'DEA 搭档' },
   'suspect under watch': { en: 'suspect under watch', zh: '被盯上的人' },
   'friend of the family': { en: 'friend of the family', zh: '家人的朋友' },
+  'Skyler sister-in-law': { en: 'Skyler sister-in-law', zh: 'Skyler 的嫂子' },
+  'Hank spouse': { en: 'Hank spouse', zh: 'Hank 的妻子' },
+  'supportive but uncomprehending': { en: 'supportive but uncomprehending', zh: '支持却不理解的人' },
 }
 
 const uiText: Record<Language, Record<string, string>> = {
@@ -1607,6 +1627,23 @@ function App() {
     const cleaned = playerFacingSceneText(destination || getStoryEventSummary(latest, language))
     return (cleaned || t.storyLocationFallback).slice(0, 40)
   }, [language, story, t.storyLocationFallback])
+  // World clock probe: surface the advancing time/weather from the latest
+  // world_state_delta so the player can see the world keep moving.
+  const storyWorldClock = useMemo(() => {
+    const clock = latestWorldDelta?.data?.world_clock
+    if (!Array.isArray(clock) || clock.length !== 3) return null
+    const [day, tod, weather] = clock
+    if (typeof day !== 'number' || typeof tod !== 'string' || typeof weather !== 'string') return null
+    const todLabel = language === 'zh'
+      ? ({ morning: '清晨', afternoon: '午后', evening: '傍晚', night: '深夜' } as Record<string, string>)[tod] ?? tod
+      : tod
+    const weatherLabel = language === 'zh'
+      ? ({ clear: '晴', sunny: '晴', cloudy: '多云', overcast: '阴', rainy: '雨' } as Record<string, string>)[weather] ?? weather
+      : weather
+    return language === 'zh'
+      ? `第 ${day + 1} 天 · ${todLabel} · ${weatherLabel}`
+      : `Day ${day + 1} · ${todLabel} · ${weatherLabel}`
+  }, [latestWorldDelta?.data?.world_clock, language])
   const storyBeatLabel = language === 'zh'
     ? `节点 ${Math.max(story.beatIndex, 1)}`
     : `Beat ${Math.max(story.beatIndex, 1)}`
@@ -1836,6 +1873,7 @@ function App() {
               <span>{t.location}</span>
               <strong>{storyLocation}</strong>
               <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+              {storyWorldClock && <small className="world-clock">{storyWorldClock}</small>}
             </div>
             <div className="story-hud__metric">
               <span>{t.tension}</span>
@@ -2289,6 +2327,9 @@ function App() {
           plotNetFogTag: t.plotNetFogTag,
         }}
       />
+
+      {/* Book-aligned Agent Harness try surface (floating; independent of chat/story). */}
+      <AgentHarnessPanel language={language} />
     </main>
     </>
   )

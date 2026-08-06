@@ -1,333 +1,182 @@
-# API Reference
+# API 参考
 
-当前主 API 由 FastAPI 提供，文件是 [backend/api/routes.py](../../backend/api/routes.py)，统一 prefix 为 `/api`。Vercel 通过 [api/index.py](../../api/index.py) 导出同一个 app。
+## 基础信息
 
-## 通用约定
+- **Base URL**: 开发环境 `http://localhost:8001/api`，生产环境 `https://bb.yishuziyu.cn/api`
+- **格式**: JSON
+- **SSE 流**: `text/event-stream`
+- **认证**: 无 (免费额度 + IP 限流) 或 Supabase Auth (JWT)
 
-- JSON REST endpoint 使用 `Content-Type: application/json`。
-- Story stream 使用 `text/event-stream`。
-- 后端对外错误会脱敏；原始异常只写入 server log。
-- Story session id 是 UUID 字符串。
-- 角色短 id：`walter`、`jesse`、`skyler`、`saul`、`mike`、`gus`、`hank`。
-- 后端完整角色名：`Walter White`、`Jesse Pinkman`、`Skyler White`、`Saul Goodman`、`Mike Ehrmantraut`、`Gus Fring`、`Hank Schrader`。
+## 端点列表
 
-## GET `/api/health`
+### 健康检查
 
-健康检查。
-
-Response：
-
-```json
-{
-  "status": "ok",
-  "service": "breaking-bad-roleplay"
-}
+```
+GET /api/health
 ```
 
-## POST `/api/session/create`
+**响应**: `{ "status": "ok", "version": "0.1.0" }`
 
-创建 Story session。当前前端 `useStoryStream.startStory()` 会先调用这个 endpoint，再连接 SSE。
+### BYOK 连接管理
 
-Request：
-
-```json
-{
-  "title": "Walter needs a new methylamine supply",
-  "task_prompt": "Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out.",
-  "active_character_id": "walter"
-}
 ```
+POST /api/byok/connect
+```
+**请求体**: `{ "provider": "openai", "api_key": "sk-..." }`
+**响应**: `{ "status": "connected", "provider": "openai" }`
 
-Schema：[backend/models/schemas.py](../../backend/models/schemas.py) `SessionCreate`
+```
+POST /api/byok/disconnect
+```
+**请求体**: `{ "provider": "openai" }`
+**响应**: `{ "status": "disconnected" }`
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `title` | string | yes | session 标题 |
-| `task_prompt` | string | yes | Director 任务描述 |
-| `active_character_id` | string/null | no | 当前主视角，前端短 id |
+```
+GET /api/byok/status
+```
+**响应**: `{ "connections": [...] }`
 
-Response：
+### 配额查询
 
+```
+GET /api/quota?guest_id=<uuid>
+```
+**响应**: `{ "remaining": 42, "total": 80, "reset_at": "2026-07-31T00:00:00Z" }`
+
+### 文字转语音
+
+```
+POST /api/tts
+```
+**请求体**: `{ "text": "Hello", "character_id": "walter", "language": "en" }`
+**响应**: `audio/mpeg` 二进制流
+
+### 会话管理
+
+```
+POST /api/sessions
+```
+**请求体**: `SessionCreate` (title, task_prompt, active_character_id?, language?)
+**响应**: `SessionResponse` (session_id, title, status, created_at)
+
+```
+GET /api/sessions/{id}
+```
+**响应**: `SessionResponse`
+
+```
+GET /api/sessions/{id}/messages
+```
+**响应**: `[MessageResponse, ...]`
+
+```
+POST /api/sessions/{id}/action
+```
+**请求体**: `SessionAction` (action, redirect_prompt?, target_character?, branch_goal?, ...)
+**响应**: `SessionActionResponse` (status, session_id)
+
+### 对话 (Direct / Crew)
+
+```
+POST /api/chat
+```
+**请求体**:
 ```json
 {
   "session_id": "uuid",
-  "title": "Walter needs a new methylamine supply",
-  "status": "active",
-  "created_at": "2026-07-01T00:00:00"
-}
-```
-
-创建时后端写入 `sessions`：
-
-- `status = "active"`
-- `current_mode = "story"`
-- `task_prompt = payload.task_prompt`
-- `active_character_id = payload.active_character_id`
-
-## GET `/api/session/{session_id}/stream`
-
-Story SSE 事件流。当前 Story 主路径。
-
-Request：
-
-```http
-GET /api/session/1f7.../stream
-Accept: text/event-stream
-```
-
-Response headers：
-
-```http
-Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
-X-Accel-Buffering: no
-```
-
-SSE frame 格式：
-
-```text
-event: agent_speak
-data: {"type":"agent_speak","data":{"character_id":"Walter White","content":"...","emotion_state":"tense","gif_search_query":"walter white nervous serious"},"model_route":"minimax/MiniMax-M3"}
-```
-
-`data` 是 `AgentEvent` JSON：
-
-```json
-{
-  "type": "agent_speak",
-  "data": {},
-  "model_route": "minimax/MiniMax-M3"
-}
-```
-
-### 事件类型
-
-| Event | `data` shape | 说明 |
-|---|---|---|
-| `status` | `{ "message": string, ... }` | Director 状态、等待用户、停止等 |
-| `outline` | `{ "content": string, "mckee_spine"?: object, "mckee_warnings"?: string[], "mckee_beat_count"?: number }` | Story outline；核心 event type 不变，McKee 字段为可选 extras（DEC-0003） |
-| `scene_change` | `{ "from_scene": string, "to_scene": string, "description": string, "mckee_role"?: string }` | 场景变化；可选 McKee 节拍角色标签 |
-| `agent_act` | `{ "character_id": string, "action": string, "target": string|null }` | 角色动作 |
-| `agent_think` | `{ "character_id": string, "thought_content": string }` | 角色内心 |
-| `agent_speak` | `{ "character_id": string, "content": string, "emotion_state": string, "gif_search_query": string }` | 角色台词 |
-| `world_state_delta` | `{ "deltas": Array<object>, "model_route"?: string }` | 世界/关系状态变化 |
-| `beat_ready` | `{ "beat_id": string, "beat_summary": string, "mckee_role"?: string }` | 当前 beat 结束，等待用户决策 |
-| `complete` | `{ "message": string }` | 全部 beat 结束 |
-| `error` | `{ "message": string }` | 脱敏错误 |
-
-### 典型顺序
-
-```text
-status
-outline
-status
-scene_change
-agent_act
-agent_think
-agent_speak
-world_state_delta
-beat_ready
-status: Waiting for player to continue...
-...
-complete
-```
-
-### 错误
-
-| 状态 | 触发 |
-|---|---|
-| `404` | session 不存在 |
-| `400` | session 没有 `task_prompt` |
-| SSE `error` event | stream 期间内部异常，message 固定为脱敏文本 |
-
-重要实现约束：
-
-- stream 建立前只短暂读取 DB。
-- stream 期间每个 event 前短暂检查 session status。
-- Director 写 messages/dossiers 时也使用短生命周期 session。
-- 不应把一个 request-level DB session 保持到整个 stream 完成。
-
-## POST `/api/session/{session_id}/action`
-
-给活跃 Story session 发送玩家动作。
-
-Request schema：[backend/models/schemas.py](../../backend/models/schemas.py) `SessionAction`
-
-```json
-{
-  "action": "continue",
-  "redirect_prompt": null,
-  "target_character": null
-}
-```
-
-Actions：
-
-| action | required field | 后端行为 |
-|---|---|---|
-| `continue` | none | `status=active`，如果有活跃 queue 则投递 `{"action":"continue"}` |
-| `stop` | none | `status=paused` |
-| `redirect` | `redirect_prompt` | 替换 `task_prompt`，投递 `{"action":"redirect","prompt":...}` |
-| `switch_perspective` | `target_character` | 更新 `active_character_id`，投递 `{"action":"switch_perspective","target":...}` |
-
-Response：
-
-```json
-{
-  "status": "ok",
-  "session_id": "uuid"
-}
-```
-
-错误：
-
-| 状态 | 条件 |
-|---|---|
-| `404` | session 不存在 |
-| `400` | unknown action |
-| `400` | redirect 缺少 `redirect_prompt` |
-| `400` | switch_perspective 缺少 `target_character` |
-
-## GET `/api/session/{session_id}/messages`
-
-返回某个 Story session 已持久化的 assistant messages，供页面刷新恢复。
-
-Query：
-
-| 参数 | 默认 | 规则 |
-|---|---|---|
-| `limit` | `500` | 必须 `>=1`，后端强制 cap 到 500 |
-| `offset` | `0` | 必须 `>=0` |
-
-Response：
-
-```json
-[
-  {
-    "id": "uuid",
-    "session_id": "uuid",
-    "role": "assistant",
-    "content": "We need to talk.",
-    "character_name": "Walter White",
-    "emotion_state": "tense",
-    "gif_search_query": "walter white nervous serious",
-    "beat_id": "beat_1",
-    "created_at": "2026-07-01T00:00:00"
-  }
-]
-```
-
-注意：
-
-- 只有 Story 模式的 `agent_speak` 会写入 `messages` 表。
-- 该 endpoint 不返回 `agent_think`、`agent_act`、`scene_change`。
-- 返回顺序是 oldest-first：`created_at asc, id asc`。
-- session existence check 只 select primary key，避免触发 ORM selectin 关系加载。
-
-## POST `/api/chat`
-
-普通 Chat view 的统一聊天 endpoint，支持 direct 和 crew。
-
-Request：
-
-```json
-{
-  "characterId": "walter",
-  "userInput": "What are you hiding?",
-  "relation": "former student",
+  "userInput": "Hello, Walter",
   "mode": "direct",
-  "history": [
-    { "sender": "user", "text": "..." },
-    { "sender": "walter", "text": "..." }
-  ],
-  "language": "zh",
-  "llmProvider": "cliproxy",
-  "voiceExample": "Choose your words carefully..."
+  "character_id": "walter",
+  "language": "en",
+  "participants": []  // crew 模式时指定参与角色
 }
 ```
-
-Schema：`ChatRequest` in [backend/api/routes.py](../../backend/api/routes.py)
-
-| 字段 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `characterId` | string | required | 前端角色短 id |
-| `userInput` | string | required | 用户消息；空字符串返回 400 |
-| `relation` | string | `partner` | 关系锚点 |
-| `mode` | string | `direct` | `direct` 或 `crew` |
-| `history` | array | `[]` | 最近聊天历史 |
-| `language` | string | `en` | 目标语言 |
-| `llmProvider` | string | `stepfun` | 后端识别 `minimax` / `stepfun` / 其他走 CLIProxy |
-| `voiceExample` | string/null | `null` | 风格参考文本 |
-
-当前前端还会发送 `memorySummary` 和 `keyFacts`，但 FastAPI schema 未声明这些字段，当前后端不会使用。
-
-### Direct response
-
+**响应**:
 ```json
 {
-  "reply_text": "I am not hiding anything from you.",
-  "emotion_state": "tense",
-  "gif_search_query": "walter white tense stare",
-  "thinking": "If they keep pressing, this becomes a liability.",
-  "tool_executed": null,
-  "tool_log": null,
-  "updated_relationship_state": null
+  "reply_text": "...",
+  "emotion_state": "calm",
+  "gif_search_query": "walter white",
+  "thinking": "...",
+  "character_id": "walter",
+  "character_name": "Walter"
 }
 ```
 
-### Crew response
+### 故事模式
 
+```
+POST /api/story/start
+```
+**请求体**:
 ```json
 {
-  "participants": ["walter", "saul"],
-  "scene_goal": "Crew debate: What are we doing about Gus?",
-  "tension_note": "walter, saul debating.",
-  "debate_logs": [
-    {
-      "sender": "walter",
-      "text": "...",
-      "emotion": "tense",
-      "gifQuery": "walter white angry determined",
-      "thinking": "...",
-      "tool_executed": null,
-      "tool_log": null
-    }
-  ]
+  "session_id": "uuid",
+  "task_prompt": "A meeting at Los Pollos Hermanos...",
+  "active_character_id": "gus",
+  "language": "en"
 }
 ```
+**响应**: `{ "session_id": "uuid", "status": "started" }`
 
-错误：
+```
+GET /api/story/stream?session_id=<uuid>
+```
+**SSE 事件流** — 持续推送事件直到故事完成。
 
-| 状态 | 条件 |
-|---|---|
-| `400` | `userInput` 为空 |
-| `400` | `mode` 不是 `direct` / `crew` |
-| `500` | 内部错误，detail 固定 `"Internal server error."` |
+## SSE 事件类型
 
-## Pydantic/SSE Schema 文件
+故事模式使用 `text/event-stream` 协议，每个事件格式为:
 
-主要 schema 文件：[backend/models/schemas.py](../../backend/models/schemas.py)
+```
+event: <event_type>
+data: <JSON>
+```
 
-| 类 | 用途 |
-|---|---|
-| `SessionCreate` | `/session/create` request |
-| `SessionAction` | `/session/{id}/action` request |
-| `SessionActionResponse` | action response |
-| `SessionResponse` | create session response |
-| `MessageResponse` | message response model，当前 routes 内另有 `MessageOut` |
-| `AgentEvent` | SSE envelope |
-| `SceneChangeData` | typed `scene_change.data` |
-| `AgentActData` | typed `agent_act.data` |
-| `AgentSpeakData` | typed `agent_speak.data` |
-| `AgentThinkData` | typed `agent_think.data` |
-| `WorldStateDeltaData` | typed `world_state_delta.data` |
-| `BeatReadyData` | typed `beat_ready.data` |
-| `CharacterStateResponse` | 预留角色状态 response |
+### 事件类型清单
 
-## Vercel 执行语义
+| 事件类型 | data 结构 | 说明 |
+|---------|-----------|------|
+| `status` | `{ "message": "..." }` | 状态更新 (分析中、生成中) |
+| `outline` | `{ "outline_text": "...", "num_beats": N }` | 故事大纲已生成 |
+| `scene_change` | `{ "from_scene": "...", "to_scene": "...", "description": "..." }` | 场景切换 |
+| `agent_act` | `{ "character_id": "...", "action": "...", "target": "..." }` | 角色物理动作 |
+| `agent_speak` | `{ "character_id": "...", "content": "...", "emotion_state": "...", "gif_search_query": "..." }` | 角色说话 |
+| `agent_think` | `{ "character_id": "...", "thinking": "...", "emotion_state": "..." }` | 角色内心独白 |
+| `beat_ready` | `{ "beat_index": N, "scene": "...", "summary": "...", "beat_role": "..." }` | 节拍完成 |
+| `dossier_update` | `{ "deltas": [...] }` | 角色档案更新 |
+| `done` | `{ "session_id": "..." }` | 故事完成 |
+| `error` | `{ "message": "..." }` | 错误 |
 
-- `/api/*` 全部进入 `api/index.py` 导出的 FastAPI app。
-- Story stream 每次请求只产生一个 beat；非最终 `beat_ready` 后由前端关闭 EventSource。
-- `continue` / `redirect` / `switch_perspective` 成功后，前端通过新的 stream 请求继续。
-- outline、`next_beat_index` 和角色消息持久化到 Postgres，因此不依赖函数实例复用。
+### SSE 事件流示例
+
+```
+event: status
+data: {"message": "Analyzing your request..."}
+
+event: outline
+data: {"outline_text": "Beat 1: Inciting Incident...", "num_beats": 5}
+
+event: scene_change
+data: {"from_scene": "neutral", "to_scene": "los-pollos", "description": "Gus's restaurant"}
+
+event: agent_speak
+data: {"character_id": "gus", "content": "Good evening.", "emotion_state": "calm", "gif_search_query": "gus fring calm business"}
+
+event: beat_ready
+data: {"beat_index": 1, "scene": "los-pollos", "summary": "Gus greets the visitor", "beat_role": "inciting_incident"}
+
+event: done
+data: {"session_id": "abc-123"}
+```
+
+## 错误码
+
+| 状态码 | 说明 |
+|--------|------|
+| 400 | 请求参数错误 (如 userInput 为空) |
+| 404 | 资源不存在 (会话、角色) |
+| 429 | 速率限制 (每 IP 每小时超限) |
+| 500 | 服务器内部错误 |
+| 502 | LLM 提供商调用失败 |
+| 503 | 服务不可用 (API key 未配置) |

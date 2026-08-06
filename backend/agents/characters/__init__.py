@@ -6,6 +6,7 @@ from agents.characters.saul import SaulGoodman
 from agents.characters.mike import MikeEhrmantraut
 from agents.characters.gus import GusFring
 from agents.characters.hank import HankSchrader
+from agents.characters.marie import MarieSchrader
 
 __all__ = [
     "BaseCharacter",
@@ -16,4 +17,5 @@ __all__ = [
     "MikeEhrmantraut",
     "GusFring",
     "HankSchrader",
+    "MarieSchrader",
 ]

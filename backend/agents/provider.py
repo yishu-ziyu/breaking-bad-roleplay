@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +13,8 @@ from agents.tools import (
     parse_tool_calls_anthropic,
     parse_tool_calls_openai,
 )
+
+logger = logging.getLogger(__name__)
 
 MINIMAX_HOST_CN = "https://api.minimaxi.com"
 MINIMAX_HOST_GLOBAL = "https://api.minimax.io"
@@ -30,7 +34,14 @@ class ProviderFacade:
         )
     """
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, use_litellm: bool = False):
+        self.use_litellm = use_litellm
+        if use_litellm:
+            try:
+                from agents.litellm_patch import patch_litellm
+                patch_litellm()
+            except Exception:
+                logger.warning("Failed to apply LiteLLM patches, continuing without them", exc_info=True)
         if settings is None:
             from config import settings as _settings
             settings = _settings
@@ -172,6 +183,14 @@ class ProviderFacade:
                 f"Invalid model_route '{model_route}'. Expected 'provider/model'."
             )
         provider, model = model_route.split("/", 1)
+
+        # LiteLLM fast path — when enabled, try it first and fall back on failure.
+        if self.use_litellm:
+            try:
+                return await self._call_litellm(messages, model_route, max_tokens)
+            except Exception as exc:
+                logger.warning("LiteLLM call failed, falling back to direct provider: %s", exc)
+
         if provider == "minimax":
             return await self._call_minimax(messages, model, max_tokens)
         if provider == "stepfun":
@@ -182,8 +201,7 @@ class ProviderFacade:
                     raise
                 # Platform StepFun quota/outage: fall back to MiniMax.
                 # Log status so ops can see route drift vs UI chip.
-                import logging
-                logging.getLogger(__name__).warning(
+                logger.warning(
                     "stepfun route failed HTTP %s; falling back to minimax/MiniMax-M3",
                     getattr(exc.response, "status_code", "?"),
                 )
@@ -307,6 +325,42 @@ class ProviderFacade:
         if not content:
             raise RuntimeError(f"CLIProxy API returned empty content: {data}")
         return content
+
+    async def _call_litellm(
+        self,
+        messages: list[dict],
+        model_route: str,
+        max_tokens: int = 4096,
+    ) -> str:
+        """Use LiteLLM for provider-agnostic model calling.
+
+        Falls back to the caller on any exception (connection error, bad
+        route, etc.) so the existing direct-provider code path is always
+        available as a safety net.
+
+        Args:
+            messages: List of {"role": ..., "content": ...} dicts.
+            model_route: LiteLLM-native model string, e.g. "openai/gpt-4",
+                "anthropic/claude-3-sonnet", "minimax/MiniMax-M3".
+            max_tokens: Max tokens to generate.
+
+        Returns:
+            The assistant's reply text.
+        """
+        try:
+            import litellm
+            from litellm import acompletion
+        except ImportError:
+            raise RuntimeError(
+                "litellm is not installed. Run: uv add litellm or pip install litellm"
+            )
+
+        response = await acompletion(
+            model=model_route,
+            messages=messages,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content
 
     async def close(self) -> None:
         await self._client.aclose()

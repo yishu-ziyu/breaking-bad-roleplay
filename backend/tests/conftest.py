@@ -21,20 +21,22 @@ def _reset_platform_quota():
     from agents import quota as quota_mod
 
     store = quota_mod._store
-    with store._lock:
-        store._used.clear()
-        store._global.clear()
-        store._hits.clear()
+    # RedisQuotaStore wraps a _MemoryQuotaStore as _memory
+    mem = store._memory if hasattr(store, "_memory") else store
+    with mem._lock:
+        mem._used.clear()
+        mem._global.clear()
+        mem._hits.clear()
     # Generous limits so integration tests are not blocked by free tier.
     quota_mod.settings.free_credits_guest = 10_000  # type: ignore[attr-defined]
     quota_mod.settings.free_credits_user = 10_000  # type: ignore[attr-defined]
     quota_mod.settings.platform_daily_credit_budget = 1_000_000  # type: ignore[attr-defined]
     quota_mod.settings.platform_rate_limit_per_hour = 100_000  # type: ignore[attr-defined]
     yield
-    with store._lock:
-        store._used.clear()
-        store._global.clear()
-        store._hits.clear()
+    with mem._lock:
+        mem._used.clear()
+        mem._global.clear()
+        mem._hits.clear()
 
 
 @pytest.fixture

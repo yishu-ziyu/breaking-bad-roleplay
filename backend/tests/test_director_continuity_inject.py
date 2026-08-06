@@ -175,9 +175,21 @@ async def test_second_speaker_receives_prior_line_and_board(director, mock_provi
 
 
 @pytest.mark.asyncio
-async def test_board_deltas_saved_after_beat(director, mock_provider):
+async def test_board_deltas_does_not_land_after_beat(director, mock_provider):
+    """DEC-0005 P4: the LLM world_state_delta does NOT mutate the board.
+
+    The validated-turn path through ``apply_validated_turn`` is the sole
+    writer of board truth. The advisory helper
+    ``record_llm_proposed_deltas`` only returns proposals for observability;
+    it does not write to the board. The beat below emits a ``world_state_delta``
+    with no validated turn (the structured-response mock returns only a line,
+    not a TurnProposal.action), so the reducer commits zero facts and the
+    saved board must equal the seed (minus any locale-enrichment, which the
+    seed board does not need since it is English-anchored).
+    """
     board = new_session_board(session_id="sess-board-2", era="s3_mid")
-    before = len(board["shared_facts"])
+    seed_fact_count = len(board["shared_facts"])
+    seed_updated_at = board["updated_at_beat"]
     plan = json.dumps(
         [
             {
@@ -246,9 +258,31 @@ async def test_board_deltas_saved_after_beat(director, mock_provider):
         ):
             pass
 
+    # Board is still saved (the save path runs), but no LLM-emitted fact
+    # landed. The reducer may legitimately commit a "said: ..." fact because
+    # the validated turn has a non-empty `line` ("Walt line"); that is the
+    # sole writer path (DEC-0005 P4). The LLM world_state_delta payload
+    # (mood -> openly furious) is advisory and MUST NOT appear in the saved
+    # board.
     assert saved, "board must be saved after beat"
-    assert len(saved[0]["shared_facts"]) >= before + 1
-    assert saved[0]["updated_at_beat"] == 3
+
+    saved_facts = saved[0]["shared_facts"]
+    saved_fact_texts = [f.get("text", "") for f in saved_facts]
+
+    # The LLM delta's signature text is NOT present.
+    assert not any("openly furious" in t for t in saved_fact_texts), (
+        "LLM-emitted world_state_delta must NOT land on the board "
+        "(DEC-0005 P4 sole-writer): " + str(saved_fact_texts)
+    )
+    # The reducer's deterministic "said: ..." fact IS present.
+    assert any("Walt line" in t for t in saved_fact_texts), (
+        "Reducer-written 'said: ...' fact must be present: " + str(saved_fact_texts)
+    )
+
+    # Seed sanity: every seed fact id is still in the saved board.
+    seed_ids = {f["id"] for f in board["shared_facts"]}
+    saved_ids = {f["id"] for f in saved_facts}
+    assert seed_ids.issubset(saved_ids)
 
 
 @pytest.mark.asyncio

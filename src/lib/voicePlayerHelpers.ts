@@ -8,7 +8,7 @@ export interface SpeechSynthLike {
   cancel?: () => void
 }
 
-const FEMALE_CHARS: ReadonlySet<CharacterId> = new Set<CharacterId>(['skyler'])
+const FEMALE_CHARS: ReadonlySet<CharacterId> = new Set<CharacterId>(['skyler', 'marie'])
 
 const FEMALE_NAME_RE = /female|woman|samantha|victoria|zira|tina|fiona|karen|hui|mei|ting/i
 const MALE_NAME_RE = /male|\bman\b|david|daniel|alex|fred|george|james|oliver|thomas|li|wang|zhang|jun/i
@@ -27,6 +27,7 @@ export const VOICE_PROFILES: Record<CharacterId, { pitch: number; rate: number }
   mike:   { pitch: 0.75, rate: 0.85 }, // 低沉、缓慢、老练
   gus:    { pitch: 0.8,  rate: 0.8 },  // 极低沉、极慢、压迫感
   hank:   { pitch: 1.05, rate: 1.12 }, // 外放、略快、吵闹忠诚
+  marie:  { pitch: 1.1,  rate: 1.05 }, // 明亮、家居感、轻快
 }
 
 /**

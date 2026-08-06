@@ -140,3 +140,30 @@ Four gaps surfaced, three from Sub Agents and one from the user. Three of them a
 None of the addressed gaps require a product-shape decision. None require backend work. They are all frontend hero work, with one asset dependency (Gap 3 film still) deferred to Loop 11.
 
 If after Loop 10 the user is still not satisfied, the deferred drift signals are the next territory: brand mark, asset pipeline, type system. Those are larger moves that need a separate product decision, not a taste loop.
+
+---
+
+## Loop 11.A post-mortem (2026-07-26) — verdict=worse → full revert
+
+**What shipped:** typography token discipline (Commit 1+2, no behavior change) + full-bleed film-still row below the hero (Commit 3) + SOURCES attribution row (Commit 4) + fonts self-host staging doc (Commit 5, deferred offline).
+
+**Owner verdict:** "worse" on the live `localhost:5173` page.
+
+**Root cause (isolated):** Commit 3's plate asset (`public/backgrounds/los-pollos.svg`) was a tonally wrong choice — a stylized restaurant cartoon (fried-chicken bucket on purple) used under a "ABQ · desert night, idle engine" caption. The plate did not match the caption, the page tone (warm amber, atmospheric), or any of the C1/C2/C3 references (Disco Elysium noir, Detroit photoreal, Cyberpunk industrial). The Loop 11.A brief's risk register explicitly called out this branch ("if no suitable asset exists, ship the layout change with a deep-amber-black gradient placeholder"). The gradient placeholder branch was the correct fallback; we took the wrong branch.
+
+**What did NOT cause the verdict:**
+- Typography token discipline (Commit 1+2): zero behavior change, no risk; user did not yet see typography in isolation.
+- SOURCES.md attribution (Commit 4): documentation only, no UI impact.
+- Fonts self-host staging doc (Commit 5): deferred, never shipped.
+
+**Lesson for the next Loop 11.X:**
+- A wrong asset is worse than no asset. The brief's "gradient placeholder" fallback should have been the default, not the safety net.
+- Full-bleed plates need to match the page tone (warm-amber noir) or they read as insertion. Cartoon-style plates break the atmosphere immediately.
+- Caption copy and plate imagery must cohere. A "desert night, idle engine" caption under a "restaurant cartoon" plate fails on the first 200ms.
+
+**Action:** Loop 11.A artifacts reverted in full (`.ship/loop-11b-prime-decision.md`). Next PM intake will pick a different visual move. Options to evaluate:
+- A different plate source (a license-cleared real photo of an ABQ-style desert service road; an SVG-illustrated silhouette that matches the page tone).
+- Skip the film-still row entirely and ship the typography discipline gate alone (the gate is zero-risk).
+- Pause the visual queue and move to Loop 12 (P4 sole-writer). Visual moves that don't yet have a real asset are speculative.
+
+**Re-derive status:** the multi-loop plan is NOT re-derived. Loop 12-16 are unaffected. Only the Loop 11 visual queue is paused.
