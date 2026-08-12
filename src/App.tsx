@@ -44,6 +44,8 @@ import './App.css'
 type ChatMode = 'direct' | 'crew'
 type Language = 'en' | 'zh'
 type View = 'chat' | 'story'
+/** Unified player surface: story / solo chat / crew debate (P2). */
+type Surface = 'story' | 'direct' | 'crew'
 
 type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank' | 'marie'
 
@@ -420,28 +422,19 @@ const relationLabels: Record<string, Record<Language, string>> = {
 const uiText: Record<Language, Record<string, string>> = {
   en: {
     tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
-    landingSubtitle: 'Step into Albuquerque. Everything you say stays with them.',
-    landingVoice: 'The door is open. Don\'t start with manners.',
-    landingPreview: 'You are not who you say you are. That is fine. Start talking.',
-    landingStep1: 'Choose',
-    landingStep2: 'Anchor',
-    landingStep3: 'Chat',
     character: 'Active Profile',
     language: 'Language',
     relation: 'Relation',
     view: 'View',
-    chat: 'Chat',
     story: 'Story',
-    mode: 'Mode',
     direct: 'Direct Chat',
     crew: 'Crew Debate',
-    model: 'Model Backend',
+    model: 'Model engine',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: 'Set the Stage',
     setStageHint: 'Describe the story you want in natural language. The scene board will play it beat by beat, pausing at pressure points for your decision.',
     placeholder: 'e.g. Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out…',
     startStory: 'Start Story',
-    directing: 'Half a bag of cash left in the RV. The night is not done with anyone.',
     narrativeStream: 'This night',
     eventFeed: 'Fine-grained event-driven narrative',
     directorDecision: 'Choose the next move:',
@@ -549,28 +542,19 @@ const uiText: Record<Language, Record<string, string>> = {
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、压力现场与随选择改写的剧情。',
-    landingSubtitle: '走进阿尔伯克基。你的每一句话，他们都会记住。',
-    landingVoice: 'The door is open. Don\'t start with manners.',
-    landingPreview: '你不是你自称的那个人。没关系。先开口。',
-    landingStep1: '选择',
-    landingStep2: '锚定',
-    landingStep3: '对话',
     character: '角色档案',
     language: '语言',
     relation: '身份关系',
     view: '游玩模式',
-    chat: '角色会谈',
     story: '剧情',
-    mode: '会谈形式',
     direct: '单人场景',
     crew: '群像会谈',
-    model: '引擎线路',
+    model: '模型引擎',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: '开场设定',
     setStageHint: '用自然语言写下你想压进这一夜的冲突。场面会一段段推，到紧要处停下来等你。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
     startStory: '进入这一夜',
-    directing: '房车里还剩半袋现金。夜还没放过任何人。',
     narrativeStream: '这一夜',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
@@ -868,6 +852,22 @@ function migrateProductSurfaceBeforePaint(): void {
   writeLs('productSurface', PRODUCT_SURFACE)
 }
 
+/** P2: merge legacy view(chat/story) + mode(direct/crew) into one surface key.
+ *  Idempotent — only writes when the surface key is absent. Keeps old keys
+ *  intact so a downgrade does not lose the user's last choice. */
+function migrateSurfaceBeforePaint(): void {
+  if (typeof window === 'undefined') return
+  const existing = readLs<string | null>('surface', null)
+  if (existing !== null) return
+  const legacyView = readLs<string | null>('view', 'story')
+  const legacyMode = readLs<string | null>('mode', 'direct')
+  let next: Surface = 'story'
+  if (legacyView === 'chat') {
+    next = legacyMode === 'crew' ? 'crew' : 'direct'
+  }
+  writeLs('surface', next)
+}
+
 /* ------------------------------------------------------------------ */
 /*  App                                                               */
 /* ------------------------------------------------------------------ */
@@ -875,6 +875,8 @@ function migrateProductSurfaceBeforePaint(): void {
 function App() {
   // Pre-paint migration: first frame must already be cold open for pre-v2 LS.
   migrateProductSurfaceBeforePaint()
+  // P2: merge legacy view+mode into surface before React hydrates it.
+  migrateSurfaceBeforePaint()
 
   // Language: use browser preference on first visit, then persist
   const defaultLanguage: Language = navigator.language.startsWith('zh') ? 'zh' : 'en'
@@ -902,8 +904,11 @@ function App() {
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
   const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
 
-  const [view, setView] = usePersistedState<View>('view', 'story')
-  const [mode, setMode] = usePersistedState<ChatMode>('mode', 'direct')
+  // P2: one player surface (story / solo / crew). view & mode are derived for
+  // the rest of the component, so rendering logic needs no other changes.
+  const [surface, setSurface] = usePersistedState<Surface>('surface', 'story')
+  const view: View = surface === 'story' ? 'story' : 'chat'
+  const mode: ChatMode = surface === 'crew' ? 'crew' : 'direct'
 
   const [productSurface, setProductSurface] = usePersistedState<string | null>('productSurface', null)
 
@@ -912,10 +917,10 @@ function App() {
     if (productSurface === PRODUCT_SURFACE) return
     queueMicrotask(() => {
       setHasEnteredWorld(false)
-      setView('story')
+      setSurface('story')
       setProductSurface(PRODUCT_SURFACE)
     })
-  }, [productSurface, setHasEnteredWorld, setView, setProductSurface])
+  }, [productSurface, setHasEnteredWorld, setSurface, setProductSurface])
   const connection = useConnection()
   const auth = useAuth()
   const quota = useQuota(connection.connectionSessionId, auth.user?.id ?? null)
@@ -1249,7 +1254,7 @@ function App() {
     try {
       if (!connection.view.canStart) {
         connection.setSheetOpen(true)
-        setError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
+        setError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
         return
       }
       const bindId = await connection.ensureBound()
@@ -1257,8 +1262,8 @@ function App() {
         connection.setSheetOpen(true)
         setError(
           language === 'zh'
-            ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
-            : 'Key session is not ready. Re-save your key in Model line.',
+            ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
+            : 'Key session is not ready. Re-save your key in the model engine.',
         )
         return
       }
@@ -1305,7 +1310,7 @@ function App() {
     setError(null)
     try {
       if (!connection.view.canStart) {
-        setColdOpenError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
+        setColdOpenError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
         connection.setSheetOpen(true)
         return
       }
@@ -1313,8 +1318,8 @@ function App() {
       if (connection.view.mode === 'byok' && !bindId) {
         setColdOpenError(
           language === 'zh'
-            ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
-            : 'Key session is not ready. Re-save your key in Model line.',
+            ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
+            : 'Key session is not ready. Re-save your key in the model engine.',
         )
         connection.setSheetOpen(true)
         return
@@ -1331,7 +1336,7 @@ function App() {
       )
       // Enter the world only after the story session actually started.
       setHasEnteredWorld(true)
-      setView('story')
+      setSurface('story')
       setSidebarCollapsed(true)
       setStoryTask('')
       setColdOpenError(null)
@@ -1342,7 +1347,7 @@ function App() {
       coldOpenStartingRef.current = false
       setColdOpenStarting(false)
     }
-  }, [connection, language, relation, relationByChar, setHasEnteredWorld, setSelectedCharId, setView, story])
+  }, [connection, language, relation, relationByChar, setHasEnteredWorld, setSelectedCharId, setSurface, story])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -1360,7 +1365,7 @@ function App() {
     // Bind / open sheet before optimistic UI so a dead BYOK session does not leave a stranded bubble.
     if (!connection.view.canStart) {
       connection.setSheetOpen(true)
-      setError(language === 'zh' ? '请先连接模型线路' : 'Connect a model line first')
+      setError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
       return
     }
     setIsSending(true)
@@ -1372,8 +1377,8 @@ function App() {
         connection.setSheetOpen(true)
         throw new Error(
           language === 'zh'
-            ? '密钥会话未就绪，请在模型线路中重新保存密钥。'
-            : 'Key session is not ready. Re-save your key in Model line.',
+            ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
+            : 'Key session is not ready. Re-save your key in the model engine.',
         )
       }
       story.setConnectionSessionId(bindId)
@@ -1441,7 +1446,7 @@ function App() {
           throw new Error(
             quotaErr.message
               || (language === 'zh'
-                ? '今日免费额度已用完。请连接你自己的密钥继续。'
+                ? '今日免费次数已用完。连接你自己的密钥继续。'
                 : 'Free demo credits used up. Connect your own key to continue.'),
           )
         }
@@ -1952,42 +1957,20 @@ function App() {
           <section>
             <span className="field-label">{t.view}</span>
             <div className="seg-control">
-              <button className={view === 'story' ? 'active' : ''} onClick={() => setView('story')}>{t.story}</button>
-              <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>{t.chat}</button>
+              <button className={surface === 'story' ? 'active' : ''} onClick={() => setSurface('story')} aria-pressed={surface === 'story'}>{t.story}</button>
+              <button className={surface === 'direct' ? 'active' : ''} onClick={() => setSurface('direct')} aria-pressed={surface === 'direct'}>{t.direct}</button>
+              <button className={surface === 'crew' ? 'active' : ''} onClick={() => setSurface('crew')} aria-pressed={surface === 'crew'}>{t.crew}</button>
             </div>
           </section>
-
-          <section>
-            <label htmlFor="relation">{t.relation}</label>
-            <select
-              id="relation"
-              value={relation}
-              onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
-            >
-              {selectedChar.relationOptions.map(opt => (
-                <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
-              ))}
-            </select>
-          </section>
-
-          {view === 'chat' && (
-            <section>
-              <span className="field-label">{t.mode}</span>
-              <div className="seg-control">
-                <button className={mode === 'direct' ? 'active' : ''} onClick={() => setMode('direct')}>{t.direct}</button>
-                <button className={mode === 'crew' ? 'active' : ''} onClick={() => setMode('crew')}>{t.crew}</button>
-              </div>
-            </section>
-          )}
 
           <section className="connection-sidebar-block">
             <span className="field-label">{t.model}</span>
             <ConnectionChip conn={connection} language={language} />
             <p className={`quota-pill${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
               {quota.byok
-                ? (language === 'zh' ? '自备密钥 · 不占平台额度' : 'Your key · not metered')
+                ? (language === 'zh' ? '自备密钥 · 不占平台次数' : 'Your key · not metered')
                 : (language === 'zh'
-                  ? `${quota.tier === 'user' ? '登录福利' : '游客'} ${quota.remaining}/${quota.limit} 分`
+                  ? `${quota.tier === 'user' ? '登录赠送' : '游客'} ${quota.remaining}/${quota.limit} 次`
                   : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}/${quota.limit}`)}
             </p>
           </section>
@@ -2038,7 +2021,7 @@ function App() {
             <button
               type="button"
               className="story-hud__chat-link"
-              onClick={() => setView('chat')}
+              onClick={() => setSurface('direct')}
             >
               {t.switchToChat}
             </button>
@@ -2049,6 +2032,18 @@ function App() {
             <div className="story-setup">
               <h3>{t.setStage}</h3>
               <p>{t.setStageHint}</p>
+              <label className="story-setup__relation" htmlFor="setup-relation">
+                <span>{t.relation}</span>
+                <select
+                  id="setup-relation"
+                  value={relation}
+                  onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
+                >
+                  {selectedChar.relationOptions.map(opt => (
+                    <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
+                  ))}
+                </select>
+              </label>
               <textarea
                 ref={storyTaskRef}
                 value={storyTask}
@@ -2426,6 +2421,19 @@ function App() {
               )}
             </div>
             <span className="schema-pill">{t.schema}</span>
+            <label className="chat-header__relation" htmlFor="chat-relation">
+              <span className="sr-only">{t.relation}</span>
+              <select
+                id="chat-relation"
+                value={relation}
+                onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
+                aria-label={t.relation}
+              >
+                {selectedChar.relationOptions.map(opt => (
+                  <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
+                ))}
+              </select>
+            </label>
           </header>
 
           <div className="chat-stream" ref={chatStreamRef} onScroll={handleChatScroll}>
