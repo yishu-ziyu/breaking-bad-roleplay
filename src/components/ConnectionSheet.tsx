@@ -18,7 +18,7 @@ type Lang = 'zh' | 'en'
 
 const copy = {
   en: {
-    title: 'Model line',
+    title: 'Model engine',
     modePlatform: 'Platform demo',
     modeByok: 'My keys',
     fieldLlm: 'Chat API key',
@@ -47,7 +47,7 @@ const copy = {
     saving: 'Saving…',
   },
   zh: {
-    title: '模型线路',
+    title: '模型引擎',
     modePlatform: '平台演示',
     modeByok: '我的密钥',
     fieldLlm: '对话密钥',
