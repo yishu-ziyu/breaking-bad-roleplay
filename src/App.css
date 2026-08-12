@@ -883,6 +883,43 @@ textarea {
   cursor: not-allowed;
 }
 
+/* Relation anchor on the story setup (P1) — the player's standing in the scene. */
+.story-setup__relation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.story-setup__relation > span {
+  font: 700 11px/1 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.story-setup__relation select {
+  min-width: 220px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-on-dark-2);
+  background: rgba(255, 254, 246, 0.08);
+  color: var(--color-text-on-dark);
+  font: 500 13px/1 var(--font-sans);
+}
+
+/* Screen-reader-only util for compact inline labels (P1). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ==========================================
    Story Outline Confirmation (Phase 2)
    ========================================== */
@@ -2176,8 +2213,8 @@ button.story-event {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(7, 16, 24, 0.24) 0%, rgba(7, 16, 24, 0.68) 100%),
-    linear-gradient(90deg, rgba(7, 16, 24, 0.62) 0%, rgba(18, 36, 54, 0.24) 52%, rgba(7, 16, 24, 0.66) 100%),
+    linear-gradient(180deg, rgba(7, 16, 24, 0.3) 0%, rgba(7, 16, 24, 0.76) 100%),
+    linear-gradient(90deg, rgba(7, 16, 24, 0.66) 0%, rgba(18, 36, 54, 0.28) 52%, rgba(7, 16, 24, 0.7) 100%),
     linear-gradient(135deg, rgba(247, 206, 70, 0.08) 0%, transparent 46%, rgba(142, 169, 63, 0.1) 100%);
   z-index: 1;
   pointer-events: none;
@@ -2238,6 +2275,21 @@ button.story-event {
   color: var(--color-bb-ink);
   font: 900 11px/1 var(--font-sans);
   white-space: nowrap;
+}
+
+/* Relation anchor in the chat header (P1) — change your standing mid-scene. */
+.chat-header__relation {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+.chat-header__relation select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 254, 246, 0.22);
+  background: rgba(15, 33, 52, 0.72);
+  color: var(--color-surface-yellow-soft);
+  font: 600 12px/1 var(--font-sans);
+  max-width: 180px;
 }
 
 /* Message stream */
