@@ -118,6 +118,12 @@ Horizon crosswalk: [`continuity/KNOWLEDGE_HORIZONS.md`](./continuity/KNOWLEDGE_H
 }
 ```
 
+## 本地研究素材（非 canon）
+
+| 路径 | 是什么 | 可用方式 | 红线 |
+| --- | --- | --- | --- |
+| [`recap-murphy/`](./recap-murphy/README.md) | 墨菲 B 站一口气解说的 ASR + 自写结构笔记 | 学口播骨架、彩蛋/色彩/音乐讲法；先读 `语言风格与剧本结构.md` | 不是剧方剧本；全文不进 RAG / embedding / 角色台词 |
+
 ## 下一步处理原则
 
 1. 先建 `sources.jsonl`，只保存链接和元数据。
