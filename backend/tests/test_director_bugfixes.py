@@ -1005,7 +1005,7 @@ class TestCycle16_MessagesEndpoint:
         )
         db = self._make_db(session_exists=True, message_rows=[msg1, msg2])
 
-        result = await list_session_messages(session_id="s1", db=db)
+        result = await list_session_messages(request=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(headers={}), session_id="s1", db=db)
 
         assert len(result) == 2
         assert result[0].id == "m1"
@@ -1022,7 +1022,7 @@ class TestCycle16_MessagesEndpoint:
         db = self._make_db(session_exists=False)
 
         with pytest.raises(HTTPException) as exc_info:
-            await list_session_messages(session_id="unknown", db=db)
+            await list_session_messages(request=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(headers={}), session_id="unknown", db=db)
 
         assert exc_info.value.status_code == 404
         assert "Session not found" in exc_info.value.detail
@@ -1033,7 +1033,7 @@ class TestCycle16_MessagesEndpoint:
 
         db = self._make_db(session_exists=True, message_rows=[])
 
-        result = await list_session_messages(session_id="s1", db=db)
+        result = await list_session_messages(request=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(headers={}), session_id="s1", db=db)
 
         assert result == []
 
@@ -1258,7 +1258,7 @@ class TestLoop4_DossierInjection:
         self, director, mock_provider, mock_db, mock_session_factory
     ):
         """Given a world-level dossier exists for Walter, _handle_direct_chat
-        should include the dossier data in the character's prompt."""
+        must NOT load it (shared world table is a cross-player leak)."""
         fake_dossier = MagicMock()
         fake_dossier.session_id = None
         fake_dossier.owner_id = "walter"
@@ -1297,8 +1297,8 @@ class TestLoop4_DossierInjection:
 
         # Verify the character responded
         assert result["reply_text"] == "I know exactly who you are."
-        # Verify DB was queried for dossiers
-        assert mock_db.execute.await_count >= 1
+        # Shared world dossiers must not be queried from Direct chat.
+        assert mock_db.execute.await_count == 0
 
     async def test_direct_chat_no_dossier_when_factory_none(
         self, director, mock_provider

@@ -5,8 +5,9 @@
    ================================================================= */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { authHeaders, getCachedAccessToken, refreshCachedAccessToken } from '../lib/authHeaders'
+import { authHeaders } from '../lib/authHeaders'
 import { getOrCreateGuestId } from '../lib/guestId'
+import { openFetchSse, type SseController } from '../lib/sseFetch'
 
 export interface StoryEvent {
   type: string
@@ -50,6 +51,7 @@ interface MessageOut {
 
 /* ----- localStorage key for session persistence (abq_ prefix) ----- */
 const SESSION_STORAGE_KEY = 'abq_story_session_id'
+const SESSION_KEY_STORAGE = 'abq_story_session_key'
 
 /* ----- Maximum number of events retained in memory.
  * Long streaming sessions can produce hundreds of events; capping the
@@ -66,12 +68,22 @@ function readSavedSessionId(): string | null {
   }
 }
 
-function writeSavedSessionId(sid: string): void {
+function writeSavedSessionId(sid: string, sessionKey?: string | null): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(SESSION_STORAGE_KEY, sid)
+    if (sessionKey) window.localStorage.setItem(SESSION_KEY_STORAGE, sessionKey)
   } catch {
     /* ignore storage errors */
+  }
+}
+
+function readSavedSessionKey(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(SESSION_KEY_STORAGE)
+  } catch {
+    return null
   }
 }
 
@@ -79,9 +91,15 @@ function clearSavedSessionId(): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    window.localStorage.removeItem(SESSION_KEY_STORAGE)
   } catch {
     /* ignore storage errors */
   }
+}
+
+export function sessionAuthHeaders(sessionKey?: string | null): Record<string, string> {
+  const key = sessionKey ?? readSavedSessionKey()
+  return key ? { 'X-Session-Key': key } : {}
 }
 
 /* ----- Existence probe for an existing session -----
@@ -96,9 +114,12 @@ export type SessionProbeResult = 'alive' | 'missing' | 'error'
 export async function pingSession(sid: string): Promise<SessionProbeResult> {
   if (!sid) return 'missing'
   try {
-    const res = await fetch(`/api/session/${sid}/messages?limit=1`, { method: 'GET' })
+    const res = await fetch(`/api/session/${sid}/messages?limit=1`, {
+      method: 'GET',
+      headers: { ...sessionAuthHeaders() },
+    })
     if (res.ok) return 'alive'
-    if (res.status === 404) return 'missing'
+    if (res.status === 404 || res.status === 403) return 'missing'
     return 'error'
   } catch {
     return 'error'
@@ -150,9 +171,6 @@ export function deriveBeatProgressFromMessages(messages: Array<{ beat_id: string
 export function buildStreamQuery(opts: {
   voiceExample?: string | null
   language?: string | null
-  connectionSessionId?: string | null
-  guestId?: string | null
-  accessToken?: string | null
 }): string {
   const parts: string[] = []
   if (opts.voiceExample) {
@@ -160,21 +178,8 @@ export function buildStreamQuery(opts: {
   }
   const language = (opts.language && opts.language.trim()) || 'en'
   parts.push(`language=${encodeURIComponent(language)}`)
-  if (opts.connectionSessionId) {
-    parts.push(`connection_session=${encodeURIComponent(opts.connectionSessionId)}`)
-  }
-  // EventSource cannot set headers; guest UUID + optional access_token in query.
-  const guest = (opts.guestId && opts.guestId.trim()) || getOrCreateGuestId()
-  if (guest) {
-    parts.push(`guest_id=${encodeURIComponent(guest)}`)
-  }
-  if (opts.accessToken && opts.accessToken.trim()) {
-    parts.push(`access_token=${encodeURIComponent(opts.accessToken.trim())}`)
-  }
   // A/B blind-test switch: propagate ?zh_guard=0 from the page URL so the
   // backend can skip the Chinese-expression guard for this Story session.
-  // Only appended when the page URL actually carries the param; a plain
-  // visit (no param) keeps the current default behavior unchanged.
   if (typeof window !== 'undefined' && window.location) {
     const pageZhGuard = new URLSearchParams(window.location.search).get('zh_guard')
     if (pageZhGuard != null) {
@@ -182,6 +187,23 @@ export function buildStreamQuery(opts: {
     }
   }
   return `?${parts.join('&')}`
+}
+
+/** Headers for fetch SSE — secrets never go on the query string. */
+export function buildStreamHeaders(opts: {
+  connectionSessionId?: string | null
+  sessionKey?: string | null
+  extra?: Record<string, string>
+}): Record<string, string> {
+  const headers: Record<string, string> = {
+    ...opts.extra,
+    'X-Guest-Id': getOrCreateGuestId(),
+    ...sessionAuthHeaders(opts.sessionKey),
+  }
+  if (opts.connectionSessionId) {
+    headers['X-Connection-Session'] = opts.connectionSessionId
+  }
+  return headers
 }
 
 /** Read UI language from abq_language (usePersistedState key). */
@@ -247,7 +269,7 @@ export function useStoryStream(): UseStoryStreamReturn {
   const [isResuming, setIsResuming] = useState<boolean>(false)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
 
-  const esRef = useRef<EventSource | null>(null)
+  const esRef = useRef<SseController | null>(null)
   const sessionRef = useRef<string | null>(null)
   const hasAttemptedResumeRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -312,8 +334,6 @@ export function useStoryStream(): UseStoryStreamReturn {
   const connectStream = useCallback((sid: string, voiceExample?: string | null, language?: string) => {
     closeEventSource()
     if (voiceExample !== undefined) voiceExampleRef.current = voiceExample
-    // Prefer explicit arg, then current UI language in localStorage, then ref.
-    // Never silently fall back to en while the sidebar shows 中文.
     const resolvedLanguage =
       language
       || readPersistedStoryLanguage()
@@ -322,114 +342,92 @@ export function useStoryStream(): UseStoryStreamReturn {
     languageRef.current = resolvedLanguage
 
     void (async () => {
-      await refreshCachedAccessToken()
+      const auth = await authHeaders()
       const qs = buildStreamQuery({
         voiceExample: voiceExampleRef.current,
         language: resolvedLanguage,
-        connectionSessionId: connectionSessionRef.current,
-        accessToken: getCachedAccessToken(),
       })
       const streamUrl = `/api/session/${sid}/stream${qs}`
-      const es = new EventSource(streamUrl)
-      esRef.current = es
-
-      es.addEventListener('outline', (e: MessageEvent) => {
+      const handleEvent = (eventType: string, raw: string) => {
+        let payload: { data?: Record<string, unknown> }
         try {
-          const payload = JSON.parse(e.data)
-          setOutline(payload.data?.content ?? '')
+          payload = JSON.parse(raw)
+        } catch {
+          return
+        }
+        if (eventType === 'outline') {
+          setOutline((payload.data?.content as string) ?? '')
           setConnectionState('streaming')
-        } catch { /* ignore parse error */ }
-      })
-
-      es.addEventListener('status', (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data)
-          const msg = payload.data?.message ?? ''
+          return
+        }
+        if (eventType === 'status') {
+          const msg = String(payload.data?.message ?? '')
           if (msg.includes('continuing automatically')) {
             setAutoContinued(true)
             setConnectionState('streaming')
           } else {
-            appendEvent({ type: 'status', data: payload.data })
+            appendEvent({ type: 'status', data: payload.data ?? {} })
           }
-        } catch { /* ignore */ }
-      })
-
-      const appendTypes = ['scene_change', 'agent_act', 'agent_think', 'agent_speak', 'world_state_delta']
-      appendTypes.forEach((t) => {
-        es.addEventListener(t, (e: MessageEvent) => {
-          try {
-            const payload = JSON.parse(e.data)
-            appendEvent({ type: t, data: payload.data })
-          } catch { /* ignore */ }
-        })
-      })
-
-      es.addEventListener('beat_ready', (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data)
+          return
+        }
+        if (['scene_change', 'agent_act', 'agent_think', 'agent_speak', 'world_state_delta'].includes(eventType)) {
+          appendEvent({ type: eventType, data: payload.data ?? {} })
+          return
+        }
+        if (eventType === 'beat_ready') {
           const beatId = typeof payload.data?.beat_id === 'string' ? payload.data.beat_id : null
           const parsedBeatIndex = beatIndexFromBeatId(beatId)
           const isFinal = payload.data?.is_final === true
           setCurrentBeatId(beatId)
           setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
           setAutoContinued(false)
-          if (isFinal) {
-            setConnectionState('streaming')
-          } else {
-            setConnectionState('beat_paused')
-            closeEventSource()
-          }
-        } catch { /* ignore */ }
-      })
-
-      es.addEventListener('complete', (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data)
-          appendEvent({ type: 'complete', data: payload.data })
-        } catch { /* ignore */ }
-        setConnectionState('complete')
-        closeEventSource()
-      })
-
-      es.addEventListener('error', (e: MessageEvent) => {
-        if (e.data) {
-          try {
-            const payload = JSON.parse(e.data)
-            setSessionError(payload.data?.message ?? 'Unknown error')
-            appendEvent({ type: 'error', data: payload.data })
-          } catch {
-            setSessionError('Stream error')
-          }
-          setConnectionState('error')
+          setConnectionState(isFinal ? 'streaming' : 'beat_paused')
           closeEventSource()
           return
         }
-        if (es.readyState === EventSource.CLOSED) {
-          // Probe with fetch so 402 quota becomes a readable message.
-          void (async () => {
-            try {
-              const probe = await fetch(streamUrl, { method: 'GET', headers: await authHeaders() })
-              if (probe.status === 402 || probe.status === 429) {
-                const body = await probe.json().catch(() => null)
-                const detail = body?.detail
-                const msg =
-                  (detail && typeof detail === 'object' && detail.message)
-                  || (typeof detail === 'string' ? detail : null)
-                  || (probe.status === 402
-                    ? 'Free demo credits used up for today. Sign in for early-access credits or connect your own key.'
-                    : 'Too many requests. Slow down or use your own key.')
-                setSessionError(String(msg))
-              } else {
-                setSessionError('SSE connection closed')
-              }
-            } catch {
-              setSessionError('SSE connection closed')
-            }
-            setConnectionState('error')
-            closeEventSource()
-          })()
+        if (eventType === 'complete') {
+          appendEvent({ type: 'complete', data: payload.data ?? {} })
+          setConnectionState('complete')
+          closeEventSource()
+          return
         }
+        if (eventType === 'error') {
+          setSessionError(String(payload.data?.message ?? 'Unknown error'))
+          appendEvent({ type: 'error', data: payload.data ?? {} })
+          setConnectionState('error')
+          closeEventSource()
+        }
+      }
+
+      const es = openFetchSse(streamUrl, {
+        headers: buildStreamHeaders({
+          connectionSessionId: connectionSessionRef.current,
+          extra: auth,
+        }),
+        onEvent: handleEvent,
+        onHttpError: (status, body) => {
+          const detail = (body as { detail?: { message?: string } | string } | null)?.detail
+          const msg =
+            (detail && typeof detail === 'object' && detail.message)
+            || (typeof detail === 'string' ? detail : null)
+            || (status === 402
+              ? 'Free demo credits used up for today. Sign in for early-access credits or connect your own key.'
+              : status === 429
+                ? 'Too many requests. Slow down or use your own key.'
+                : status === 403
+                  ? 'This story session is locked to another browser.'
+                  : 'Could not start the story stream.')
+          setSessionError(String(msg))
+          setConnectionState('error')
+          closeEventSource()
+        },
+        onNetworkError: () => {
+          setSessionError('SSE connection closed')
+          setConnectionState('error')
+          closeEventSource()
+        },
       })
+      esRef.current = es
     })()
   }, [appendEvent, closeEventSource, setSessionError])
 
@@ -467,9 +465,10 @@ export function useStoryStream(): UseStoryStreamReturn {
       }
       const data = await res.json()
       const sid = data.session_id as string
+      const skey = typeof data.session_key === 'string' ? data.session_key : null
       setSessionId(sid)
       sessionRef.current = sid
-      writeSavedSessionId(sid)
+      writeSavedSessionId(sid, skey)
       connectStream(sid, voiceExampleRef.current, resolvedLanguage)
     } catch (e) {
       setSessionError(e instanceof Error ? e.message : 'Unknown error')
@@ -484,7 +483,9 @@ export function useStoryStream(): UseStoryStreamReturn {
     setSessionError(null)
 
     try {
-      const res = await fetch(`/api/session/${sid}/messages`)
+      const res = await fetch(`/api/session/${sid}/messages`, {
+        headers: { ...sessionAuthHeaders() },
+      })
       if (res.status === 404) {
         // Session no longer exists — clear storage and return to idle.
         clearStorySessionState({ clearStorage: true })
@@ -539,7 +540,7 @@ export function useStoryStream(): UseStoryStreamReturn {
       try {
         await fetch(`/api/session/${sid}/action`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...sessionAuthHeaders() },
           body: JSON.stringify({ action: 'stop' }),
           signal: controller.signal,
         })
@@ -596,7 +597,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     try {
       const res = await fetch(`/api/session/${sid}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...sessionAuthHeaders() },
         body: JSON.stringify(body),
         signal: controller.signal,
       })

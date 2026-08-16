@@ -289,10 +289,13 @@ async def update_dossiers(
     model_route: str = "stepfun/step-3.7-flash",
 ) -> list[dict[str, Any]]:
     """
-    Load all dossiers for the current session + world-level,
-    compute deltas via LLM, persist changes.
+    Load dossiers for the current session, compute deltas via LLM, persist
+    session-scoped changes only.
 
-    Returns the list of applied deltas for SSE emission.
+    World-level rows (session_id IS NULL) are a shared global table. Writing
+    them from a player session leaked one playthrough into every other
+    player's Direct chat. Cross-session memory must be namespaced by owner
+    before that path is re-enabled.
     """
     # Load session-level dossiers
     stmt = select(CharacterDossier).where(CharacterDossier.session_id == session_id)
@@ -301,19 +304,11 @@ async def update_dossiers(
 
     # Build lookup dict: (owner_id, subject_id) -> session-level dossier
     dossier_map: dict[tuple[str, str], CharacterDossier] = {}
+    session_context: dict[str, dict] = {}
     for d in session_dossiers:
         dossier_map[(d.owner_id, d.subject_id)] = d
-
-    # Load world-level dossiers for context
-    world_dossiers: dict[str, dict] = {}
-    world_stmt = select(CharacterDossier).where(CharacterDossier.session_id.is_(None))
-    world_result = await db.execute(world_stmt)
-    world_dossier_map: dict[tuple[str, str], CharacterDossier] = {}
-    for d in world_result.scalars().all():
-        key = (d.owner_id, d.subject_id)
-        world_dossier_map[key] = d
         knowledge = _load_knowledge(d.knowledge)
-        world_dossiers[f"{d.owner_id}->{d.subject_id}"] = {
+        session_context[f"{d.owner_id}->{d.subject_id}"] = {
             "trust_level": d.trust_level,
             "knowledge": knowledge,
             "relationship_notes": d.relationship_notes,
@@ -322,7 +317,7 @@ async def update_dossiers(
     # Compute deltas
     delta_result = await compute_dossier_delta(
         provider=provider,
-        dossiers=world_dossiers,
+        dossiers=session_context,
         beat_summary=beat_summary,
         beat_events=beat_events,
         model_route=model_route,
@@ -345,7 +340,7 @@ async def update_dossiers(
 
         key = (owner, subject)
 
-        # Session-level memory preserves what happened in this playthrough.
+        # Session-level memory only — never write the shared world table.
         if session_id is not None:
             existing = dossier_map.get(key)
             if existing:
@@ -362,28 +357,12 @@ async def update_dossiers(
                 db.add(new_dossier)
                 dossier_map[key] = new_dossier
 
-        # World-level memory is the cross-session source loaded by new sessions.
-        world_existing = world_dossier_map.get(key)
-        if world_existing:
-            _apply_dossier_delta(world_existing, trust_delta, new_knowledge, new_notes)
-        else:
-            new_world_dossier = _new_dossier(
-                session_id=None,
-                owner=owner,
-                subject=subject,
-                trust_delta=trust_delta,
-                new_knowledge=new_knowledge,
-                new_notes=new_notes,
-            )
-            db.add(new_world_dossier)
-            world_dossier_map[key] = new_world_dossier
-
         applied.append({
             "owner": owner,
             "subject": subject,
             "trust_delta": trust_delta,
             "new_knowledge": new_knowledge,
-            "world_persisted": True,
+            "world_persisted": False,
             "model_route": model_route,
         })
 

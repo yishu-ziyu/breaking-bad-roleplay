@@ -21,8 +21,15 @@ from agents.byok_presets import PROVIDER_PRESETS, preset_by_id, known_provider_i
 from agents.director import DirectorAgent
 from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
-from agents.credential_context import use_credentials, CredentialOverride
+from agents.credential_context import use_credentials, use_model_route, CredentialOverride
 from agents.connection_sessions import connection_store, session_public_view
+from agents.session_guard import (
+    extract_session_key,
+    hash_session_key,
+    new_session_key,
+    session_key_matches,
+)
+from agents.outbound_url import UnsafeOutboundURL, validate_outbound_base_url
 from agents.quota import (
     enforce_platform_quota,
     read_quota_snapshot,
@@ -125,6 +132,25 @@ def _platform_flags() -> dict[str, bool]:
     }
 
 
+def _require_session_owner(session, request: Request, *, query_key: str | None = None) -> None:
+    hashed = getattr(session, "owner_token_hash", None)
+    raw = extract_session_key(request, query_key=query_key)
+    if not session_key_matches(raw, hashed):
+        raise HTTPException(status_code=403, detail="Invalid session key")
+
+
+def _validated_user_base_url(raw: str | None, *, provider_id: str) -> str | None:
+    if not raw or not str(raw).strip():
+        return None
+    allow_loopback = provider_id == "cliproxy" and settings.app_env != "production"
+    if provider_id == "cliproxy" and settings.app_env == "production":
+        raise HTTPException(status_code=400, detail="cliproxy is not available in production")
+    try:
+        return validate_outbound_base_url(str(raw), allow_loopback=allow_loopback)
+    except UnsafeOutboundURL as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _resolve_override_from_session(connection_session_id: str | None) -> CredentialOverride | None:
     if not connection_session_id:
         return None
@@ -182,7 +208,7 @@ async def connections_test(payload: ConnectionTestRequest):
             if not payload.apiKey:
                 raise HTTPException(status_code=400, detail="apiKey required for MiniMax TTS")
             host = MINIMAX_HOST_GLOBAL if payload.region == "global" else MINIMAX_HOST_CN
-            async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=15.0, trust_env=False, follow_redirects=False) as client:
                 # Lightweight auth probe: empty-ish request still returns structured error with auth
                 resp = await client.post(
                     f"{host}/v1/t2a_v2",
@@ -211,7 +237,7 @@ async def connections_test(payload: ConnectionTestRequest):
                 raise HTTPException(status_code=400, detail="apiKey required")
             host = MINIMAX_HOST_GLOBAL if payload.region == "global" else MINIMAX_HOST_CN
             model = payload.modelId or "MiniMax-M3"
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False, follow_redirects=False) as client:
                 resp = await client.post(
                     f"{host}/anthropic/v1/messages",
                     headers={
@@ -243,7 +269,7 @@ async def connections_test(payload: ConnectionTestRequest):
             if not payload.apiKey:
                 raise HTTPException(status_code=400, detail="apiKey required")
             model = payload.modelId or "step-3.7-flash"
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False, follow_redirects=False) as client:
                 resp = await client.post(
                     "https://api.stepfun.com/v1/chat/completions",
                     headers={
@@ -283,11 +309,14 @@ async def connections_test(payload: ConnectionTestRequest):
             if not payload.apiKey:
                 raise HTTPException(status_code=400, detail="apiKey required")
             model = payload.modelId or preset.get("defaultModel") or "gpt-4o-mini"
-            base = (payload.baseUrl or preset.get("defaultBaseUrl") or "").rstrip("/")
+            base = _validated_user_base_url(
+                payload.baseUrl or preset.get("defaultBaseUrl"),
+                provider_id=provider,
+            )
             if not base:
                 raise HTTPException(status_code=400, detail="baseUrl required for this provider")
             kind = preset.get("kind") or "openai"
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False, follow_redirects=False) as client:
                 if kind == "anthropic":
                     url = f"{base}/messages"
                     resp = await client.post(
@@ -344,8 +373,13 @@ async def connections_test(payload: ConnectionTestRequest):
 
         # Local-only cliproxy probe (not in public catalog).
         if provider == "cliproxy":
-            base = (payload.baseUrl or settings.cli_proxy_base_url).rstrip("/")
-            async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
+            base = _validated_user_base_url(
+                payload.baseUrl or settings.cli_proxy_base_url,
+                provider_id="cliproxy",
+            )
+            if not base:
+                raise HTTPException(status_code=400, detail="baseUrl required for cliproxy")
+            async with httpx.AsyncClient(timeout=8.0, trust_env=False, follow_redirects=False) as client:
                 try:
                     resp = await client.get(f"{base}/v1/models")
                 except httpx.HTTPError:
@@ -419,6 +453,7 @@ async def connections_bind(payload: ConnectionBindRequest):
         base_url = preset["defaultBaseUrl"]
     if preset and preset.get("needsBaseUrl") and not (base_url and str(base_url).strip()):
         raise HTTPException(status_code=400, detail="baseUrl required for custom provider")
+    base_url = _validated_user_base_url(base_url, provider_id=provider)
     model_id = payload.modelId or (preset.get("defaultModel") if preset else None)
     session = connection_store.bind(
         provider_id=provider,
@@ -563,6 +598,7 @@ async def synthesize_tts(
 
 @router.post("/session/create", response_model=SessionResponse)
 async def create_session(
+    request: Request,
     payload: SessionCreate,
     db: AsyncSession = Depends(get_db),
 ):
@@ -573,8 +609,11 @@ async def create_session(
     - task_prompt is the player's natural-language mission, stored on the
       Session row and fed to the Director when streaming begins.
     """
+    await _require_platform_quota(request, action="session_create")
+
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    raw_key = new_session_key()
 
     new_session = SessionModel(
         id=session_id,
@@ -584,6 +623,7 @@ async def create_session(
         task_prompt=payload.task_prompt,
         active_character_id=payload.active_character_id,
         next_beat_index=0,
+        owner_token_hash=hash_session_key(raw_key),
         created_at=now,
         updated_at=now,
     )
@@ -596,6 +636,7 @@ async def create_session(
         title=new_session.title,
         status=new_session.status,
         created_at=new_session.created_at,
+        session_key=raw_key,
     )
 
 
@@ -605,6 +646,7 @@ async def create_session(
 
 @router.post("/session/{session_id}/action", response_model=SessionActionResponse)
 async def session_action(
+    request: Request,
     session_id: str,
     payload: SessionAction,
     db: AsyncSession = Depends(get_db),
@@ -627,6 +669,7 @@ async def session_action(
     session = result.scalar_one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_owner(session, request)
 
     action = payload.action
 
@@ -741,6 +784,7 @@ async def stream_session(
     connection_session: str | None = Query(default=None),
     guest_id: str | None = Query(default=None),
     access_token: str | None = Query(default=None),
+    session_key: str | None = Query(default=None),
     zh_guard: str | None = Query(default=None),
     director: DirectorAgent = Depends(get_director),
 ):
@@ -783,11 +827,29 @@ async def stream_session(
                 status_code=400,
                 detail="Session has no task_prompt — create the session with a task description.",
             )
+        _require_session_owner(session, request, query_key=session_key)
 
         resolved_session_id = session.id
 
+    header_conn = request.headers.get("x-connection-session") or request.headers.get(
+        "X-Connection-Session"
+    )
+    if not isinstance(connection_session, str):
+        connection_session = None
+    if not isinstance(access_token, str):
+        access_token = None
+    if not isinstance(guest_id, str):
+        guest_id = None
+    if not isinstance(session_key, str):
+        session_key = None
+    connection_session = (header_conn or connection_session or "").strip() or None
+    header_token = None
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        header_token = auth.split(None, 1)[1].strip()
+    access_token = header_token or access_token
+
     # Charge only after the session is known valid (do not bill 404s).
-    # SSE cannot set custom headers; guest_id / access_token go in the query.
     await _require_platform_quota(
         request,
         action="story_beat",
@@ -815,12 +877,9 @@ async def stream_session(
         return f"{pid}/{model}"
 
     async def event_generator() -> AsyncGenerator[bytes, None]:
-        prev_route = director.model_route
         bound_route = _bind_model_route()
-        if bound_route:
-            director.model_route = bound_route
         try:
-            with use_credentials(bind_override):
+            with use_credentials(bind_override), use_model_route(bound_route):
                 async for event in director.process_next_beat(
                     session_factory=async_session_factory,
                     session_id=resolved_session_id,
@@ -878,7 +937,7 @@ async def stream_session(
                 f"data: {err.model_dump_json()}\n\n"
             ).encode("utf-8")
         finally:
-            director.model_route = prev_route
+            pass
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -908,6 +967,7 @@ class MessageOut(BaseModel):
 
 @router.get("/session/{session_id}/messages", response_model=list[MessageOut])
 async def list_session_messages(
+    request: Request,
     session_id: str,
     limit: int = 500,
     offset: int = 0,
@@ -941,10 +1001,12 @@ async def list_session_messages(
     # trigger 3 extra SELECTs pulling in all messages/states/dossiers —
     # data we don't need just to verify the session exists.
     existence = await db.execute(
-        select(SessionModel.id).where(SessionModel.id == session_id)
+        select(SessionModel).where(SessionModel.id == session_id)
     )
-    if existence.scalar_one_or_none() is None:
+    existing = existence.scalar_one_or_none()
+    if existing is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_owner(existing, request)
 
     rows = await db.execute(
         select(MessageModel)
@@ -971,6 +1033,7 @@ class PlotGraphResponse(BaseModel):
 
 @router.get("/session/{session_id}/plot-graph", response_model=PlotGraphResponse)
 async def get_session_plot_graph(
+    request: Request,
     session_id: str,
     language: str = Query(default="en"),
     db: AsyncSession = Depends(get_db),
@@ -993,6 +1056,7 @@ async def get_session_plot_graph(
     session = sess_result.scalar_one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_owner(session, request)
 
     msg_result = await db.execute(
         select(MessageModel)
@@ -1033,15 +1097,15 @@ async def get_session_plot_graph(
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
-    characterId: str
-    userInput: str
-    relation: str = "partner"
+    characterId: str = Field(..., max_length=40)
+    userInput: str = Field(..., min_length=1, max_length=4000)
+    relation: str = Field(default="partner", max_length=80)
     mode: str = "direct"          # "direct" | "crew"
-    history: list[dict] = []
+    history: list[dict] = Field(default_factory=list, max_length=20)
     language: str = "en"
     llmProvider: str = "stepfun"  # catalog provider id (minimax/stepfun/deepseek/...)
-    modelId: str | None = None
-    voiceExample: str | None = None
+    modelId: str | None = Field(default=None, max_length=80)
+    voiceExample: str | None = Field(default=None, max_length=2000)
     connectionSessionId: str | None = None
     # Optional experiment path: Agent Harness pipeline instead of director.
     # Default False keeps production chat unchanged.
@@ -1260,11 +1324,11 @@ async def chat(
 # ---------------------------------------------------------------------------
 
 class AgentRunRequest(BaseModel):
-    message: str
-    character_id: str = "walter"
+    message: str = Field(..., min_length=1, max_length=4000)
+    character_id: str = Field(default="walter", max_length=40)
     mode: str = "direct"  # direct|crew|story
     language: str = "zh"
-    model_route: str | None = None
+    model_route: str | None = Field(default=None, max_length=80)
     use_multi_agent: bool = False
     session_id: str | None = None
     offline: bool = True
@@ -1330,6 +1394,11 @@ async def agent_run(request: Request, payload: AgentRunRequest):
     use_offline = bool(payload.offline) or not _live_provider_available(request)
     provider = None
     if not use_offline:
+        await _require_platform_quota(
+            request,
+            action="chat",
+            mode=payload.mode if payload.mode in ("direct", "crew") else "direct",
+        )
         provider = getattr(request.app.state, "provider", None)
 
     service = get_harness_service()
@@ -1362,10 +1431,24 @@ async def agent_trajectories(limit: int = Query(10, ge=1, le=100)):
         items = store.list_recent(n=limit)
         out = []
         for t in items:
-            if hasattr(t, "to_dict"):
-                out.append(t.to_dict())
+            if hasattr(t, "public_view"):
+                out.append(t.public_view())
+            elif hasattr(t, "to_dict"):
+                raw = t.to_dict()
+                out.append({
+                    "run_id": raw.get("run_id"),
+                    "started_at": raw.get("started_at"),
+                    "finished_at": raw.get("finished_at"),
+                    "event_count": len(raw.get("events") or []),
+                    "stopped_reason": (raw.get("result_summary") or {}).get("stopped_reason"),
+                })
             elif isinstance(t, dict):
-                out.append(t)
+                out.append({
+                    "run_id": t.get("run_id"),
+                    "started_at": t.get("started_at"),
+                    "finished_at": t.get("finished_at"),
+                    "event_count": len(t.get("events") or []),
+                })
             else:
                 out.append({"run_id": getattr(t, "run_id", None)})
         # Newest first for API consumers

@@ -103,7 +103,7 @@ def test_director_runtime_route_is_reflected_in_its_system_prompt():
 
 
 async def test_update_dossiers_creates_session_and_world_rows():
-    """Given a new relationship delta, it is saved for this session and future sessions."""
+    """Given a new relationship delta, it is saved for this session only."""
     db = _DbStub()
     provider = _provider_with_delta(
         {
@@ -129,16 +129,14 @@ async def test_update_dossiers_creates_session_and_world_rows():
             "subject": "jesse_pinkman",
             "trust_delta": 2,
             "new_knowledge": "Walter notices Jesse kept the plan quiet.",
-            "world_persisted": True,
+            "world_persisted": False,
             "model_route": "stepfun/step-3.7-flash",
         }
     ]
-    assert len(db.added) == 2
-    session_row, world_row = db.added
+    assert len(db.added) == 1
+    session_row = db.added[0]
     assert session_row.session_id == "session-1"
-    assert world_row.session_id is None
     assert session_row.trust_level == 7
-    assert world_row.trust_level == 7
     assert db.commit.await_count == 1
 
 
@@ -173,10 +171,9 @@ async def test_update_dossiers_accumulates_existing_world_memory():
 
     assert len(db.added) == 1
     assert db.added[0].session_id == "session-2"
-    assert world_row.trust_level == 3
-    assert "Jesse helped Walter before." in world_row.knowledge
-    assert "Walter sees Jesse hesitate under pressure." in world_row.knowledge
-    assert "Walter becomes more doubtful." in world_row.relationship_notes
+    # Shared world rows must not be mutated by another player's session.
+    assert world_row.trust_level == 6
+    assert "Walter sees Jesse hesitate under pressure." not in world_row.knowledge
     assert db.commit.await_count == 1
 
 
