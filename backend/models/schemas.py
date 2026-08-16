@@ -1,22 +1,22 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Any, Optional, List
 
 
 class SessionCreate(BaseModel):
-    title: str
-    task_prompt: str
+    title: str = Field(..., min_length=1, max_length=200)
+    task_prompt: str = Field(..., min_length=1, max_length=4000)
     active_character_id: Optional[str] = None
     language: str = "en"
 
 
 class SessionAction(BaseModel):
     action: str  # continue | stop | redirect | switch_perspective | continue_chapter | branch | replay
-    redirect_prompt: Optional[str] = None
-    target_character: Optional[str] = None
-    from_beat_id: Optional[str] = None
-    branch_goal: Optional[str] = None
-    beat_id: Optional[str] = None
+    redirect_prompt: Optional[str] = Field(default=None, max_length=4000)
+    target_character: Optional[str] = Field(default=None, max_length=80)
+    from_beat_id: Optional[str] = Field(default=None, max_length=40)
+    branch_goal: Optional[str] = Field(default=None, max_length=2000)
+    beat_id: Optional[str] = Field(default=None, max_length=40)
 
 
 class SessionActionResponse(BaseModel):
@@ -29,6 +29,7 @@ class SessionResponse(BaseModel):
     title: str
     status: str
     created_at: datetime
+    session_key: Optional[str] = None
 
 
 class MessageResponse(BaseModel):

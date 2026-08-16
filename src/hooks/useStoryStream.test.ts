@@ -59,24 +59,21 @@ describe('useStoryStream pingSession', () => {
 
 describe('buildStreamQuery (continue must keep language)', () => {
   it('always includes language, defaulting to en', () => {
-    const guest = '550e8400-e29b-41d4-a716-446655440000'
-    assert.equal(buildStreamQuery({ guestId: guest }), `?language=en&guest_id=${guest}`)
-    assert.equal(buildStreamQuery({ language: null, guestId: guest }), `?language=en&guest_id=${guest}`)
-    assert.equal(buildStreamQuery({ language: '', guestId: guest }), `?language=en&guest_id=${guest}`)
+    assert.equal(buildStreamQuery({}), '?language=en')
+    assert.equal(buildStreamQuery({ language: null }), '?language=en')
+    assert.equal(buildStreamQuery({ language: '' }), '?language=en')
   })
 
   it('preserves zh on continue-style reconnects', () => {
-    const guest = '550e8400-e29b-41d4-a716-446655440000'
-    assert.equal(buildStreamQuery({ language: 'zh', guestId: guest }), `?language=zh&guest_id=${guest}`)
+    assert.equal(buildStreamQuery({ language: 'zh' }), '?language=zh')
   })
 
   it('includes voice_example when provided', () => {
-    const guest = '550e8400-e29b-41d4-a716-446655440000'
-    const qs = buildStreamQuery({ language: 'zh', voiceExample: 'Say my name.', guestId: guest })
+    const qs = buildStreamQuery({ language: 'zh', voiceExample: 'Say my name.' })
     assert.ok(qs.includes('language=zh'))
     assert.ok(qs.includes('voice_example='))
     assert.ok(qs.includes(encodeURIComponent('Say my name.')))
-    assert.ok(qs.includes(`guest_id=${guest}`))
+    assert.ok(!qs.includes('guest_id'))
   })
 })
 

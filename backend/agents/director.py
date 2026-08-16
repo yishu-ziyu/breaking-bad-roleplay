@@ -533,6 +533,12 @@ class DirectorAgent:
             model_route,
         )
         self.enable_dossier_updates = enable_dossier_updates
+
+    @property
+    def active_route(self) -> str:
+        """Request-scoped route override, else the process default."""
+        from agents.credential_context import get_model_route_override
+        return get_model_route_override() or self.model_route
     async def process(
         self,
         task: str,
@@ -892,20 +898,29 @@ class DirectorAgent:
             )
             return
 
-        if beat_index >= len(scenes):
-            async with session_factory() as session:
-                result = await session.execute(
-                    select(SessionModel).where(SessionModel.id == session_id)
-                )
-                story_session = result.scalar_one_or_none()
-                if story_session is not None:
-                    story_session.status = "complete"
-                    await session.commit()
-            yield AgentEvent(
-                type="complete",
-                data={"message": _status_message("complete", language)},
+        # Claim the next beat under a row lock so two concurrent SSE
+        # connections cannot generate (and bill) the same beat.
+        async with session_factory() as session:
+            result = await session.execute(
+                select(SessionModel)
+                .where(SessionModel.id == session_id)
+                .with_for_update()
             )
-            return
+            story_session = result.scalar_one_or_none()
+            if story_session is None:
+                raise ValueError("Session not found")
+            beat_index = int(getattr(story_session, "next_beat_index", 0) or 0)
+            if beat_index >= len(scenes):
+                story_session.status = "complete"
+                await session.commit()
+                yield AgentEvent(
+                    type="complete",
+                    data={"message": _status_message("complete", language)},
+                )
+                return
+            story_session.next_beat_index = beat_index + 1
+            story_session.plot_outline = outline_text
+            await session.commit()
 
         scene_desc = scenes[beat_index]
         current_scene = self._short_scene_name(scene_desc)
@@ -948,7 +963,6 @@ class DirectorAgent:
             if story_session is None:
                 raise ValueError("Session not found")
             story_session.plot_outline = outline_text
-            story_session.next_beat_index = next_beat_index
             story_session.status = "complete" if is_final else "waiting"
             await session.commit()
 
@@ -993,7 +1007,7 @@ class DirectorAgent:
             },
         ]
         try:
-            raw = await self.provider.call_model(messages, self.model_route)
+            raw = await self.provider.call_model(messages, self.active_route)
             # B1 fix: if LLM returned JSON despite instructions, extract text
             if raw and raw.strip().startswith(('[', '{')):
                 return self._extract_text_from_json_outline(raw)
@@ -1100,7 +1114,7 @@ class DirectorAgent:
             },
         ]
         try:
-            raw = await self.provider.call_model(messages, self.model_route)
+            raw = await self.provider.call_model(messages, self.active_route)
             if raw and raw.strip().startswith(('[', '{')):
                 return self._extract_text_from_json_outline(raw)
             return raw
@@ -1141,7 +1155,7 @@ class DirectorAgent:
             },
         ]
         try:
-            raw = await self.provider.call_model(messages, self.model_route)
+            raw = await self.provider.call_model(messages, self.active_route)
             if raw and raw.strip().startswith(('[', '{')):
                 return self._extract_text_from_json_outline(raw)
             return raw
@@ -1336,7 +1350,7 @@ class DirectorAgent:
             "Include only one scene_change if needed. Include brief agent_act and agent_think events. "
             "End with one world_state_delta containing only concrete changed facts. "
             "Every event object must include a 'recommended_model' field set to "
-            f"'{self.model_route}'. "
+            f"'{self.active_route}'. "
             "Obey RESPONSE LANGUAGE for every narrative string field "
             "(action, thought_content, content, description, deltas)."
         )
@@ -1356,7 +1370,7 @@ class DirectorAgent:
             {"role": "user", "content": beat_prompt},
         ]
         try:
-            llm_response = await self.provider.call_model(messages, self.model_route)
+            llm_response = await self.provider.call_model(messages, self.active_route)
         except Exception:
             logger.exception("Beat %d LLM call failed", beat_index + 1)
             yield AgentEvent(
@@ -1366,7 +1380,7 @@ class DirectorAgent:
                         "beat_llm_failed",
                         language,
                         n=beat_index + 1,
-                        route=self.model_route,
+                        route=self.active_route,
                     )
                 },
             )
@@ -1380,7 +1394,7 @@ class DirectorAgent:
             logger.warning(
                 "Beat %d parse miss; retrying JSON repair (route=%s preview=%s)",
                 beat_index + 1,
-                self.model_route,
+                self.active_route,
                 parse_preview(llm_response),
             )
             repair_messages = [
@@ -1411,7 +1425,7 @@ class DirectorAgent:
             ]
             try:
                 repaired = await self.provider.call_model(
-                    repair_messages, self.model_route, max_tokens=4096
+                    repair_messages, self.active_route, max_tokens=4096
                 )
                 events, repair_contract = parse_beat_plan(repaired)
                 if repair_contract and not contract_raw:
@@ -1424,9 +1438,9 @@ class DirectorAgent:
                 type="error",
                 data={
                     "message": _status_message(
-                        "beat_parse_failed", language, route=self.model_route
+                        "beat_parse_failed", language, route=self.active_route
                     ),
-                    "route": self.model_route,
+                    "route": self.active_route,
                     "preview": parse_preview(llm_response),
                 },
             )
@@ -1455,7 +1469,7 @@ class DirectorAgent:
         # If language is zh but the planner still emitted English narrative,
         # rewrite those fields before character polish / yield.
         events = await self._rewrite_english_fields_to_zh(
-            events, language=language, model_route=self.model_route
+            events, language=language, model_route=self.active_route
         )
         if _norm_lang(language) == "zh":
             events = normalize_zh_names_in_events(events)
@@ -2370,8 +2384,11 @@ class DirectorAgent:
             context.get("modelId"),
             fallback=model_route,
         )
-        # Build context messages from history
+        # Build context messages from history (hard cap — never trust client size)
         history: list[dict] = context.get("history", [])
+        if not isinstance(history, list):
+            history = []
+        history = history[-12:]
         ctx_messages: list[dict] = []
         for turn in history:
             role = turn.get("sender", "user")
@@ -2391,24 +2408,9 @@ class DirectorAgent:
                 "Do not copy the reference language; translate the style into "
                 f"{target_language}: {voice_example}]"
             )
-        # Load dossier context from DB if available
+        # Direct chat has no per-player world table. Loading session_id IS NULL
+        # dossiers shared one player's facts with every other player.
         dossier_context = ""
-        if session_factory is not None:
-            try:
-                async with session_factory() as sess:
-                    from db.models import CharacterDossier
-                    stmt = select(CharacterDossier).where(
-                        CharacterDossier.session_id.is_(None),
-                        CharacterDossier.subject_id == backend_id,
-                    )
-                    result = await sess.execute(stmt)
-                    world_dossiers = result.scalars().all()
-                    from agents.memory import format_dossier_context
-                    dossier_context = format_dossier_context(
-                        list(world_dossiers), backend_id,
-                    )
-            except Exception:
-                logger.debug("Dossier load failed for direct chat %s", backend_id)
         # Optional era-bound intelligence pack (Direct chat when era is set).
         try:
             from agents.character_intelligence import format_intelligence_prompt_block

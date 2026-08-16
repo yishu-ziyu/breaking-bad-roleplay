@@ -3,6 +3,7 @@
    Opens only when the player asks; never auto-pop on story complete. */
 
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { sessionAuthHeaders } from '../hooks/useStoryStream'
 
 export interface PlotGraphNode {
   id: string
@@ -151,7 +152,9 @@ export async function fetchPlotGraph(
   sessionId: string,
   language: 'zh' | 'en' = 'en',
 ): Promise<PlotGraphData> {
-  const res = await fetch(`/api/session/${sessionId}/plot-graph?language=${encodeURIComponent(language)}`)
+  const res = await fetch(`/api/session/${sessionId}/plot-graph?language=${encodeURIComponent(language)}`, {
+    headers: { ...sessionAuthHeaders() },
+  })
   if (!res.ok) {
     throw new Error(`plot-graph ${res.status}`)
   }
