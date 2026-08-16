@@ -28,6 +28,7 @@ class Session(Base):
     next_beat_index: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False, server_default="0"
     )
+    owner_token_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )

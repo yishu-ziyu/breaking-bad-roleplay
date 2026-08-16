@@ -17,7 +17,7 @@ Attackers must not:
 | Keys stay server-side | Only booleans in `/api/connections/catalog`; keys never in JSON responses |
 | BYOK keys | Browser AES-GCM vault + RAM bind token only; never written to DB |
 | Free credits | Server meter: chat 1 / crew 2 / story beat 5 / tts 1 |
-| Guest identity | UUID in `X-Guest-Id` or SSE `guest_id` query; scoped with IP hash |
+| Guest identity | UUID in `X-Guest-Id` header; scoped with IP hash (`X-Real-IP`, never client `X-Forwarded-For`) |
 | Daily guest cap | Default **8** credits (`FREE_CREDITS_GUEST`) |
 | Daily logged-in cap | Default **80** credits (`FREE_CREDITS_USER`) - early-access welfare per Supabase user |
 | Auth proof | Supabase access token via `Authorization: Bearer` (or SSE `access_token` query); server calls `/auth/v1/user` |
@@ -42,6 +42,10 @@ SUPABASE_ANON_KEY=eyJ...   # same publishable/anon key as frontend
 - In-process counters: fine for single Docker VM; multi-instance (Vercel) does not share memory across lambdas. Prefer one primary host for platform demo, or later move counters to Redis/Postgres.
 - Guest UUID is not a secret; IP rate limit is the burst shield against rotation.
 - Client UI remaining is advisory; only server 402/429 is authoritative.
+- Nginx must set `X-Real-IP $remote_addr`. Do not trust client `X-Forwarded-For`.
+- Story sessions now issue a `session_key` at create; send it as `X-Session-Key`.
+- Fetch SSE sends `Authorization` / `X-Connection-Session` as headers (not query).
+- Live `/api/agent/run` (`offline=false`) consumes the same chat quota as `/api/chat`.
 
 ## Operator checklist
 

@@ -55,7 +55,9 @@ class ProviderFacade:
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0),
             trust_env=False,
+            follow_redirects=False,
         )
+        self.app_env = getattr(settings, "app_env", "development")
 
     # ------------------------------------------------------------------
     # BYOK-aware credential helpers (request ContextVar first, env fallback)
@@ -398,6 +400,17 @@ class ProviderFacade:
         base = self.effective_byok_base_url(provider_id)
         if not base:
             raise RuntimeError(f"{provider_id} base URL is not configured")
+        from agents.outbound_url import UnsafeOutboundURL, validate_outbound_base_url
+
+        try:
+            base = validate_outbound_base_url(
+                base,
+                allow_loopback=(
+                    provider_id == "cliproxy" and self.app_env != "production"
+                ),
+            )
+        except UnsafeOutboundURL as exc:
+            raise RuntimeError(str(exc)) from exc
 
         if kind == "anthropic":
             # base should already include /v1 (or vendor anthropic path)
@@ -480,6 +493,17 @@ class ProviderFacade:
         base = self.effective_byok_base_url(provider_id)
         if not base:
             raise RuntimeError(f"{provider_id} base URL is not configured")
+        from agents.outbound_url import UnsafeOutboundURL, validate_outbound_base_url
+
+        try:
+            base = validate_outbound_base_url(
+                base,
+                allow_loopback=(
+                    provider_id == "cliproxy" and self.app_env != "production"
+                ),
+            )
+        except UnsafeOutboundURL as exc:
+            raise RuntimeError(str(exc)) from exc
 
         if kind == "anthropic":
             url = f"{base.rstrip('/')}/messages"

@@ -53,12 +53,33 @@ def normalize_guest_id(raw: str | None) -> str | None:
     return value.lower()
 
 
+_IP_RE = re.compile(
+    r"^(?:\d{1,3}\.){3}\d{1,3}$|"
+    r"^[0-9a-fA-F:]+$"
+)
+
+
+def _looks_like_ip(value: str) -> bool:
+    text = value.strip()
+    if not text or not _IP_RE.match(text):
+        return False
+    if "." in text:
+        parts = text.split(".")
+        return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
+    return ":" in text
+
+
 def client_ip(request: Any) -> str:
-    """Best-effort client IP (respects first X-Forwarded-For hop)."""
+    """Best-effort client IP.
+
+    Do **not** trust client-supplied ``X-Forwarded-For`` (first hop is trivial
+    to spoof and bypasses guest quota / rate limits). Prefer ``X-Real-IP``
+    which nginx should set to ``$remote_addr``, then the socket peer.
+    """
     try:
-        forwarded = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip() or "unknown"
+        real = request.headers.get("x-real-ip") or request.headers.get("X-Real-IP")
+        if real and _looks_like_ip(real):
+            return real.strip()
         if request.client and request.client.host:
             return request.client.host
     except Exception:
@@ -98,6 +119,8 @@ def action_cost(action: str, *, mode: str | None = None) -> int:
         return COST_STORY_BEAT
     if action == "tts":
         return COST_TTS
+    if action == "session_create":
+        return 0
     raise ValueError(f"unknown action: {action}")
 
 
@@ -383,13 +406,20 @@ return {1}
 _store = RedisQuotaStore()
 
 
+def _int_setting(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = getattr(settings, name, default)
+    if raw is None:
+        raw = default
+    return max(minimum, int(raw))
+
+
 def guest_daily_limit() -> int:
-    return max(0, int(getattr(settings, "free_credits_guest", 8) or 8))
+    return _int_setting("free_credits_guest", 8)
 
 
 def user_daily_limit() -> int:
     """Logged-in early-access free pool (default 80)."""
-    return max(0, int(getattr(settings, "free_credits_user", 80) or 80))
+    return _int_setting("free_credits_user", 80)
 
 
 def daily_limit_for(*, user_id: str | None) -> int:
@@ -399,11 +429,11 @@ def daily_limit_for(*, user_id: str | None) -> int:
 
 
 def global_daily_limit() -> int:
-    return max(0, int(getattr(settings, "platform_daily_credit_budget", 5000) or 5000))
+    return _int_setting("platform_daily_credit_budget", 5000)
 
 
 def rate_limit_max() -> int:
-    return max(1, int(getattr(settings, "platform_rate_limit_per_hour", 40) or 40))
+    return _int_setting("platform_rate_limit_per_hour", 40, minimum=1)
 
 
 def is_byok(connection_session_id: str | None) -> bool:
@@ -447,9 +477,13 @@ async def enforce_platform_quota(
     resolved_user_id = user_id
     if not resolved_user_id:
         try:
+            import asyncio
+
             from agents.auth_user import resolve_auth_user
 
-            auth = resolve_auth_user(request, query_access_token=access_token)
+            auth = await asyncio.to_thread(
+                lambda: resolve_auth_user(request, query_access_token=access_token)
+            )
             if auth:
                 resolved_user_id = auth.user_id
         except Exception:
@@ -498,9 +532,13 @@ async def read_quota_snapshot(
     resolved_user_id = user_id
     if not resolved_user_id:
         try:
+            import asyncio
+
             from agents.auth_user import resolve_auth_user
 
-            auth = resolve_auth_user(request, query_access_token=access_token)
+            auth = await asyncio.to_thread(
+                lambda: resolve_auth_user(request, query_access_token=access_token)
+            )
             if auth:
                 resolved_user_id = auth.user_id
         except Exception:

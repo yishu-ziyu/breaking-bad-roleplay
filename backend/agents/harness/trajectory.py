@@ -57,6 +57,19 @@ class TrajectoryRecord:
             "result_summary": self.result_summary,
         }
 
+    def public_view(self) -> dict[str, Any]:
+        """Redacted view for unauthenticated list APIs — no user text."""
+        return {
+            "run_id": self.run_id,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "event_count": len(self.events),
+            "stopped_reason": (self.result_summary or {}).get("stopped_reason"),
+            "character_id": (self.meta or {}).get("character_id"),
+            "mode": (self.meta or {}).get("mode"),
+            "offline": (self.meta or {}).get("offline"),
+        }
+
 
 class TrajectoryStore:
     """In-memory trajectory store with optional JSONL append-on-finish."""

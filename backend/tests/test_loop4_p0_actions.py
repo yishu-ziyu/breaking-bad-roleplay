@@ -40,10 +40,16 @@ def _session_row(session_id: str = "sess-123"):
     return session
 
 
+def _fake_request():
+    req = MagicMock()
+    req.headers = {}
+    return req
+
+
 async def _call_action(mock_db, payload: SessionAction):
     session = _session_row()
     mock_db.execute = AsyncMock(return_value=_ScalarResult(session))
-    response = await session_action(session.id, payload, mock_db)
+    response = await session_action(_fake_request(), session.id, payload, mock_db)
     return response, session
 
 
@@ -69,7 +75,8 @@ class TestLoop4SessionActions:
 
         with pytest.raises(HTTPException) as exc_info:
             await session_action(
-                session.id,
+                  _fake_request(),
+                  session.id,
                 SessionAction(action="branch"),
                 mock_db,
             )
@@ -99,7 +106,8 @@ class TestLoop4SessionActions:
 
         with pytest.raises(HTTPException) as exc_info:
             await session_action(
-                session.id,
+                  _fake_request(),
+                  session.id,
                 SessionAction(action="replay"),
                 mock_db,
             )

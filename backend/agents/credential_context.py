@@ -29,6 +29,11 @@ _credential_override: ContextVar[Optional[CredentialOverride]] = ContextVar(
     default=None,
 )
 
+_model_route_override: ContextVar[Optional[str]] = ContextVar(
+    "abq_model_route_override",
+    default=None,
+)
+
 
 def get_credential_override() -> CredentialOverride | None:
     return _credential_override.get()
@@ -49,6 +54,20 @@ def use_credentials(override: CredentialOverride | None) -> Iterator[None]:
         yield
     finally:
         reset_credential_override(token)
+
+
+def get_model_route_override() -> str | None:
+    return _model_route_override.get()
+
+
+@contextmanager
+def use_model_route(route: str | None) -> Iterator[None]:
+    """Request-scoped Director model route (do not mutate the singleton)."""
+    token = _model_route_override.set(route)
+    try:
+        yield
+    finally:
+        _model_route_override.reset(token)
 
 
 def mask_hint(secret: str | None, tail: int = 4) -> str:
