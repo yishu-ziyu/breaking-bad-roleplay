@@ -32,9 +32,15 @@
 
 新踩到的项目专属坑：同一会话内补进 `docs/OPS_RUNBOOK.md`，不要只留在对话里。
 
+## 预览方式
+
+- 需要打开本地预览时，**默认用 ZCode 内置浏览器**（browser-use `iab`）打开，不要用 `open` 唤起系统浏览器
+- 本项目 dev 端口是 5176（vite.config.ts 固定，避开其他项目占用的 5173/5175/8080）；后端 8001，`VITE_API_PROXY_TARGET=http://127.0.0.1:8001 npm run dev`
+- 机器上 5173（econpaper）、5175（creator-live-preview）、8080（paper-echo）、8002（DeepTutor）被其他项目常驻占用，不要误连
+
 ## 构建与运行
 
-- 前端开发：`npm run dev`（Vite，端口 5173）
+- 前端开发：`npm run dev`（Vite，端口 5176）
 - 前端构建：`npm run build`
 - 前端测试：`npm test`（tsx test runner）
 - 前端 Lint：`npm run lint`
