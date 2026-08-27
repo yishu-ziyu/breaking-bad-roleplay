@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三个方向 · 玩法原型 A/B/C</title>
+<style>
+:root {
+  --ink: #f2efe6;
+  --ink-dim: rgba(242,239,230,.5);
+  --sans: "MiSans","PingFang SC","Noto Sans SC",-apple-system,sans-serif;
+  --serif: "Noto Serif SC","Songti SC",serif;
+  --ease: cubic-bezier(.22,1,.36,1);
+}
+* { box-sizing:border-box; margin:0; }
+html,body { overflow-x:clip; }
+body { background:#0a0a0c; color:var(--ink); font-family:var(--sans); }
+
+/* 方向切换 tab */
+.tabs { position:fixed; top:0; left:0; right:0; z-index:50; display:flex; gap:1px; background:#000; }
+.tabs button {
+  flex:1; padding:13px 8px; border:0; background:#111114; color:var(--ink-dim);
+  font:600 13px/1 var(--sans); letter-spacing:.06em; cursor:pointer;
+  border-bottom:2px solid transparent; transition:all .25s var(--ease);
+}
+.tabs button.on { background:#17171b; color:var(--ink); border-bottom-color:#c73a2e; }
+.panel { display:none; min-height:100dvh; padding:64px 0 40px; }
+.panel.on { display:block; animation:fadeIn .45s var(--ease); }
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px);} }
+.pname { text-align:center; font:500 11px/1 var(--mono,monospace); letter-spacing:.22em; color:var(--ink-dim); margin-bottom:26px; }
+
+/* =============== A 窜戏：实景+字幕条 =============== */
+#pA { background:linear-gradient(180deg,#0b0e12 0%,#101318 60%,#0a0c10 100%); }
+.tv {
+  max-width:960px; margin:0 auto; padding:0 clamp(12px,3vw,32px);
+}
+.screen {
+  position:relative; aspect-ratio:16/8.4; border-radius:10px; overflow:hidden;
+  background:
+    radial-gradient(120% 90% at 30% 100%, rgba(196,120,30,.28), transparent 55%),
+    radial-gradient(90% 70% at 75% 20%, rgba(122,178,196,.10), transparent 55%),
+    linear-gradient(165deg,#1a1f16 0%, #0d120e 55%, #07090a 100%);
+  box-shadow:0 30px 80px rgba(0,0,0,.6);
+}
+/* 剪影级场景绘画：房车与两个人影 */
+.art { position:absolute; inset:0; }
+.art .rv {
+  position:absolute; left:8%; bottom:24%; width:38%; height:34%;
+  background:linear-gradient(180deg,#2a2f24 0%, #14180f 100%);
+  border-radius:8px 14px 4px 4px;
+  box-shadow: inset 0 6px 14px rgba(255,240,200,.06);
+}
+.art .rv::after { content:""; position:absolute; right:12%; top:22%; width:16%; height:26%;
+  background:linear-gradient(180deg, rgba(255,236,180,.5), rgba(255,220,120,.12)); border-radius:3px; }
+.art .ground { position:absolute; left:0; right:0; bottom:0; height:24%;
+  background:linear-gradient(180deg,#0c0f0b,#070907); }
+.art .man { position:absolute; bottom:24%; width:9%; aspect-ratio:.42;
+  background:linear-gradient(180deg,#232a20 0%,#0e120c 80%); border-radius:40% 40% 8% 8%; }
+.art .man.left { left:30%; }
+.art .man.talk { box-shadow:0 0 34px rgba(206,138,34,.28); }
+.subtitle {
+  position:absolute; left:50%; bottom:7%; transform:translateX(-50%);
+  width:min(86%,760px); text-align:center;
+}
+.sub-name { display:inline-block; margin-bottom:8px; padding:3px 10px;
+  background:rgba(196,154,58,.16); border-radius:3px;
+  font:600 11px/1 var(--sans); letter-spacing:.16em; color:#e8c98a; }
+.sub-line {
+  font-family:var(--serif); font-size:clamp(15px,2.2vw,20px); line-height:1.6;
+  color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.9);
+}
+.tv .under {
+  margin-top:22px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+}
+.tv .under button {
+  padding:10px 18px; border:1px solid rgba(255,255,255,.16); border-radius:6px;
+  background:rgba(255,255,255,.05); color:var(--ink); font:500 13px/1 var(--sans);
+  cursor:pointer; transition:all .2s var(--ease);
+}
+.tv .under button:hover { border-color:rgba(206,138,34,.7); }
+.hud {
+  position:absolute; top:12px; left:14px; right:14px; display:flex; gap:14px;
+  font:500 11px/1 var(--sans); color:rgba(255,255,255,.55); letter-spacing:.05em;
+}
+.hud .rec { margin-left:auto; color:#e05b4c; display:flex; align-items:center; gap:6px; }
+.hud .rec::before { content:""; width:7px; height:7px; border-radius:50%; background:#e05b4c; }
+
+/* =============== B 棋局：局势卡 =============== */
+#pB { background:radial-gradient(120% 100% at 50% 0%, #14161c 0%, #0b0c10 70%); }
+.board { max-width:900px; margin:0 auto; padding:0 clamp(12px,3vw,32px); }
+.b-hud { display:flex; gap:18px; justify-content:center; margin-bottom:20px;
+  font:500 12px/1 var(--sans); color:var(--ink-dim); letter-spacing:.05em; }
+.grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:680px; margin:0 auto; }
+.cell {
+  position:relative; min-height:118px; padding:12px;
+  border:1px solid rgba(255,255,255,.09); border-radius:8px;
+  background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));
+  cursor:pointer; transition:all .2s var(--ease); text-align:left; color:var(--ink);
+}
+.cell:hover { border-color:rgba(206,138,34,.65); transform:translateY(-2px); }
+.cell .tag { font:600 9.5px/1 var(--sans); letter-spacing:.14em; color:rgba(206,138,34,.75); }
+.cell h4 { margin:7px 0 5px; font:600 14px/1.3 var(--sans); }
+.cell p { font:400 11.5px/1.55 var(--sans); color:var(--ink-dim); }
+.cell.risk { border-color:rgba(199,58,46,.4); }
+.cell.risk .tag { color:#e0765f; }
+.order {
+  max-width:680px; margin:20px auto 0; display:flex; gap:8px;
+}
+.order input {
+  flex:1; padding:12px 14px; border:1px solid rgba(255,255,255,.12); border-radius:6px;
+  background:rgba(0,0,0,.4); color:var(--ink); font:400 13.5px/1.3 var(--sans);
+}
+.order button {
+  padding:12px 22px; border:0; border-radius:6px; cursor:pointer;
+  background:#c49a3a; color:#141109; font:700 13px/1 var(--sans);
+}
+.logline { max-width:680px; margin:16px auto 0; text-align:center;
+  font:400 12.5px/1.7 var(--sans); color:var(--ink-dim); }
+
+/* =============== C 独白：排印砸脸 =============== */
+#pC { background:#050505; }
+.mono {
+  max-width:620px; margin:0 auto; padding:8vh clamp(16px,4vw,32px) 40px;
+  display:flex; flex-direction:column; gap:5vh; min-height:calc(100dvh - 64px);
+}
+.beatline {
+  font-family:var(--serif); font-weight:600;
+  font-size:clamp(26px,5vw,44px); line-height:1.42; letter-spacing:.01em;
+  color:#fff; text-wrap:balance;
+}
+.beatline em { font-style:normal; color:#c73a2e; }
+.beatline.dim { font-size:clamp(16px,2.6vw,22px); font-weight:400; color:rgba(255,255,255,.4); line-height:1.8; }
+.ask { margin-top:auto; display:flex; flex-direction:column; gap:10px; }
+.ask button {
+  text-align:left; padding:16px 18px; border:0; border-radius:4px; cursor:pointer;
+  background:rgba(255,255,255,.05); color:#fff;
+  font-family:var(--serif); font-size:16px; line-height:1.5;
+  transition:background .2s var(--ease), transform .2s var(--ease);
+}
+.ask button:hover { background:rgba(199,58,46,.16); transform:translateX(4px); }
+.ask .free-hint { font:400 12px/1 var(--sans); color:rgba(255,255,255,.28); padding:6px 18px; }
+
+@media (max-width:640px){ .grid { grid-template-columns:1fr 1fr; } }
+@media (prefers-reduced-motion:reduce){ *{ animation:none!important; transition:none!important; } }
+</style>
+</head>
+<body>
+
+<nav class="tabs" role="tablist">
+  <button class="on" data-p="pA">A · 窜戏（实景+字幕）</button>
+  <button data-p="pB">B · 棋局（局势卡）</button>
+  <button data-p="pC">C · 独白（排印砸脸）</button>
+</nav>
+
+<!-- =============== A =============== -->
+<section class="panel on" id="pA">
+  <p class="pname">A · 你在剧里 —— 实景画面 + 电影字幕条</p>
+  <div class="tv">
+    <div class="screen">
+      <div class="art">
+        <div class="rv"></div>
+        <div class="ground"></div>
+        <div class="man left"></div>
+        <div class="man talk"></div>
+      </div>
+      <div class="hud"><span>S1E4 · 沙漠房车</span><span>第1天 傍晚</span><span class="rec">DIR</span></div>
+      <div class="subtitle">
+        <span class="sub-name">JESSE</span>
+        <div class="sub-line">"我说了别提麦片。托德那帮人昨晚到底给了你什么——你看着我，兄弟。"</div>
+      </div>
+    </div>
+    <div class="under">
+      <button>逼问托德的事</button>
+      <button>不接话，等他先开口</button>
+      <button>转身回房车</button>
+      <button>⋯ 自由行动</button>
+    </div>
+  </div>
+</section>
+
+<!-- =============== B =============== -->
+<section class="panel" id="pB">
+  <p class="pname">B · 你是操盘手 —— 局面优先，指令是对局势落子</p>
+  <div class="board">
+    <div class="b-hud"><span>夜 1 · 傍晚</span><span>风险 ▲▲</span><span>现金 $4.2万</span><span>DEA 距离 12h</span></div>
+    <div class="grid">
+      <button class="cell risk"><span class="tag">人物 · 动摇</span><h4>杰西</h4><p>见过托德的人。慌，但藏着话。</p></button>
+      <button class="cell"><span class="tag">地点</span><h4>房车</h4><p>半锅料没出。氨水味压不住多久。</p></button>
+      <button class="cell risk"><span class="tag">威胁 · 倒计时</span><h4>DEA 突击</h4><p>线人放风：本周内行动。</p></button>
+      <button class="cell"><span class="tag">资产</span><h4>现金 $4.2万</h4><p>第一单只剩这些。少了就是亏。</p></button>
+      <button class="cell"><span class="tag">人脉</span><h4>索尔</h4><p>广告律师。接得起今晚这种电话。</p></button>
+      <button class="cell"><span class="tag">地点</span><h4>怀特家</h4><p>Skyler 在数这个月的账单。</p></button>
+    </div>
+    <div class="order">
+      <input placeholder="对局面下令：撬杰西的嘴 / 转移房车 / 打给索尔…">
+      <button>落子</button>
+    </div>
+    <p class="logline">上一手后果：杰西 · 信任 ↓ —— 他把手机扣在了桌面上。</p>
+  </div>
+</section>
+
+<!-- =============== C =============== -->
+<section class="panel" id="pC">
+  <p class="pname">C · 文字即世界 —— 一次只砸一句</p>
+  <div class="mono">
+    <p class="beatline dim">厨房的灯只开了一半。杰西手插在兜里，没看你。</p>
+    <p class="beatline">"托德那帮人昨晚到底给了你<em>什么</em>？"</p>
+    <div class="ask">
+      <button>"一个名字。现在。"</button>
+      <button>什么都不说。盯着他。</button>
+      <button>把碗从他手边拿走。</button>
+      <span class="free-hint">⋯ 或键入你要做的任何事</span>
+    </div>
+  </div>
+</section>
+
+<script>
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById(btn.dataset.p).classList.add('on');
+  });
+});
+</script>
+</body>
+</html>

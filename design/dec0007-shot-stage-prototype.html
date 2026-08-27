@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEC-0007 镜头舞台原型</title>
+<style>
+/* Hallmark · component: shot-stage prototype · genre: atmospheric
+ * theme: studied-DNA (project night plate: sodium amber / petrol green / WenKai display)
+ * states: default · typing · settle · consequence-flash · inner-voice · choice-weights */
+:root {
+  --night: #05090c;
+  --night-2: #080d0b;
+  --amber: rgba(206, 138, 34, 1);
+  --ink: #f2efe6;
+  --ink-dim: rgba(242, 239, 230, 0.45);
+  --hazmat: #d1e05c;
+  --display: "LXGW WenKai Screen", "LXGW WenKai", "Noto Serif SC", "Songti SC", serif;
+  --sans: "MiSans", "PingFang SC", "Noto Sans SC", -apple-system, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { overflow-x: clip; }
+body {
+  min-height: 100dvh;
+  color: var(--ink);
+  font-family: var(--sans);
+  background:
+    radial-gradient(130% 42% at 28% 104%, rgba(206,138,34,.30), rgba(206,138,34,.08) 38%, transparent 64%),
+    radial-gradient(70% 40% at 84% -4%, rgba(122,178,196,.08), transparent 58%),
+    linear-gradient(178deg, var(--night) 0%, var(--night-2) 46%, #101408 88%, #151806 100%);
+}
+body.dark-pulse { animation: darkPulse .6s var(--ease); }
+@keyframes darkPulse {
+  0% { filter: brightness(.35); }
+  100% { filter: brightness(1); }
+}
+
+.stage {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(20px, 5vh, 56px) clamp(18px, 4vw, 40px) 32px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+/* ---- 定场 establishing row ---- */
+.establish {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font: 400 12.5px/1.5 var(--sans);
+  color: var(--ink-dim);
+  letter-spacing: .04em;
+  border-bottom: 1px solid rgba(242,239,230,.08);
+  padding-bottom: 12px;
+}
+.establish .clock { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.establish .rel { margin-left: auto; }
+.establish .rel em { font-style: normal; color: rgba(206,138,34,.85); }
+
+/* ---- 场景字幕卡 scene card ---- */
+.scene-card {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(2,4,3,.94);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .5s var(--ease);
+}
+.scene-card.show { opacity: 1; }
+.scene-card h2 {
+  font-family: var(--display);
+  font-size: clamp(30px, 6vw, 52px);
+  font-weight: 500;
+  letter-spacing: .12em;
+  color: var(--ink);
+}
+
+/* ---- 镜头主体 shots ---- */
+.shots {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 4vh, 36px);
+  padding: clamp(24px, 5vh, 48px) 0;
+  max-width: 38em;
+}
+.shot { transition: opacity .8s var(--ease); }
+.shot.read { opacity: .38; }
+.shot.read .speak { font-size: 15px; }
+
+/* 定场动作白描 */
+.shot.action p {
+  font: 400 15px/1.9 var(--sans);
+  color: rgba(242,239,230,.78);
+  text-wrap: pretty;
+}
+/* 内心声音（本角色） */
+.shot.think p {
+  font: 400 14.5px/1.8 var(--display);
+  font-style: italic;
+  color: rgba(210,220,230,.62);
+}
+.shot.think p::before { content: "（"; }
+.shot.think p::after { content: "）"; }
+/* Heisenberg 侧轨 */
+.shot.inner p {
+  font: 500 14px/1.7 var(--display);
+  font-style: italic;
+  color: rgba(199, 90, 60, .9);
+  border-left: 2px solid rgba(199,58,46,.55);
+  padding-left: 14px;
+}
+.shot.inner .who {
+  font: 500 10px/1 var(--mono);
+  font-style: normal;
+  letter-spacing: .18em;
+  color: rgba(199,58,46,.6);
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* 台词镜头 */
+.shot.speak-shot { display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 16px; align-items: start; }
+.avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(242,239,230,.16);
+  background: radial-gradient(circle at 35% 30%, #3a4a3a, #131a12 70%);
+  display: grid; place-items: center;
+  font: 600 15px/1 var(--display);
+  color: rgba(242,239,230,.8);
+  flex-shrink: 0;
+}
+.speak-body .name {
+  font: 600 11px/1 var(--sans);
+  letter-spacing: .1em;
+  color: rgba(206,138,34,.85);
+  margin-bottom: 10px;
+}
+.speak {
+  font-family: var(--display);
+  font-size: clamp(19px, 2.6vw, 24px);
+  font-weight: 500;
+  line-height: 1.62;
+  letter-spacing: .01em;
+  color: var(--ink);
+  transition: font-size .8s var(--ease);
+}
+.caret { display: inline-block; width: 2px; height: 1em; background: var(--amber); vertical-align: -0.12em; animation: caret 1s steps(2) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+
+/* ---- 后果闪现 consequence flash ---- */
+.flash {
+  position: fixed;
+  right: clamp(16px, 4vw, 44px);
+  bottom: clamp(88px, 16vh, 140px);
+  z-index: 15;
+  padding: 10px 16px;
+  border-left: 2px solid rgba(142,169,63,.7);
+  background: rgba(8,12,7,.88);
+  color: rgba(215,227,111,.92);
+  font: 500 13px/1.5 var(--sans);
+  max-width: 260px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .6s var(--ease), transform .6s var(--ease);
+  pointer-events: none;
+}
+.flash.show { opacity: 1; transform: translateY(0); }
+
+/* ---- 导演指令 ---- */
+.decide {
+  border-top: 1px solid rgba(242,239,230,.08);
+  padding-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.decide .label {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .16em;
+  color: rgba(206,138,34,.7);
+}
+.pushes { display: flex; flex-wrap: wrap; gap: 10px; }
+.push {
+  padding: 11px 16px;
+  border: 1px solid rgba(242,239,230,.16);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(26,32,22,.78), rgba(12,16,10,.9));
+  color: var(--ink);
+  font: 500 13.5px/1.4 var(--sans);
+  cursor: pointer;
+  text-align: left;
+  flex: 1 1 200px;
+  transition: border-color .2s var(--ease), background .2s var(--ease), transform .2s var(--ease);
+}
+.push:hover, .push:focus-visible { border-color: rgba(209,224,92,.6); outline: none; transform: translateY(-1px); }
+.push .hint { display: block; margin-top: 4px; font-size: 11.5px; color: rgba(242,239,230,.45); }
+.push.picked { border-color: var(--hazmat); background: rgba(44,52,26,.92); }
+
+/* 定调（低频重选择） */
+.tone {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+.tone.show { display: flex; }
+.tone .label { margin-bottom: 2px; }
+.tone-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.tone-btn {
+  flex: 1 1 130px;
+  padding: 12px 10px;
+  border: 1px solid rgba(242,239,230,.14);
+  border-radius: 6px;
+  background: rgba(8,10,7,.6);
+  color: rgba(242,239,230,.85);
+  font: 600 13px/1.3 var(--sans);
+  cursor: pointer;
+  transition: all .2s var(--ease);
+}
+.tone-btn[data-tone="violence"]:hover { border-color: rgba(199,58,46,.7); color: #f0c9b8; }
+.tone-btn[data-tone="deceive"]:hover { border-color: rgba(122,178,196,.7); color: #c7e2ea; }
+.tone-btn[data-tone="money"]:hover { border-color: rgba(206,138,34,.8); color: #f0dcb8; }
+
+.free { display: flex; gap: 8px; }
+.free input {
+  flex: 1;
+  padding: 11px 14px;
+  border: 1px solid rgba(242,239,230,.14);
+  border-radius: 6px;
+  background: rgba(6,9,6,.7);
+  color: var(--ink);
+  font: 400 14px/1.4 var(--sans);
+}
+.free input:focus { outline: 1px solid rgba(206,138,34,.6); }
+.free button {
+  padding: 11px 20px;
+  border: 1px solid rgba(209,224,92,.4);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(44,52,26,.9), rgba(24,30,14,.95));
+  color: #eef2e9;
+  font: 600 13px/1 var(--sans);
+  cursor: pointer;
+}
+
+/* 顶部原型的说明条 */
+.proto-note {
+  position: fixed; left: 14px; top: 12px; z-index: 30;
+  font: 500 10px/1.6 var(--mono); color: rgba(242,239,230,.3);
+  letter-spacing: .06em;
+}
+@media (max-width: 640px) {
+  .speak { font-size: 17px; }
+  .flash { max-width: 200px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="proto-note">DEC-0007 PROTOTYPE · 镜头舞台 · 非产品</div>
+
+<div class="scene-card" id="sceneCard"><h2>怀特家 · 厨房</h2></div>
+
+<main class="stage">
+  <div class="establish">
+    <span class="clock">第 1 天 · 傍晚 · 晴</span>
+    <span>怀特家厨房</span>
+    <span class="rel">杰西 <em>动摇</em> · 这一夜还有 5 处关口</span>
+  </div>
+
+  <div class="shots" id="shots">
+    <div class="shot action">
+      <p>厨房的灯只开了一半。麦片碗在水槽里还剩半碗牛奶，杰西站在冰箱旁边，手一直插在兜里，没看你。</p>
+    </div>
+
+    <div class="shot think">
+      <p>托德。他不该在这个点上见托德。除非有人在替他安排下一次见面。</p>
+    </div>
+
+    <div class="shot inner" id="innerVoice" style="display:none">
+      <span class="who">HEISENBERG</span>
+      <p>你上次心软，是让他把钱揣走了一半。这一次，问出来的第一个名字。</p>
+    </div>
+
+    <div class="shot speak-shot" id="speakShot">
+      <div class="avatar">杰</div>
+      <div class="speak-body">
+        <div class="name">杰西</div>
+        <div class="speak"><span id="speakText"></span><span class="caret" id="caret"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flash" id="flash">有什么东西开始不对劲了 —— 杰西对你的信任在往下掉</div>
+
+  <div class="decide">
+    <span class="label">导演指令 · 这一拍怎么走</span>
+    <div class="pushes">
+      <button class="push" id="p1">顺着托德逼问</button>
+      <button class="push" id="p2">先不接话，看他手势</button>
+    </div>
+    <div class="tone" id="toneRow">
+      <span class="label">定调 · 这一夜往哪走（不可逆）</span>
+      <div class="tone-row">
+        <button class="tone-btn" data-tone="violence">往暴力走</button>
+        <button class="tone-btn" data-tone="deceive">往欺骗走</button>
+        <button class="tone-btn" data-tone="money">往钱走</button>
+      </div>
+    </div>
+    <div class="free">
+      <input type="text" placeholder="或直接下指令：你说什么、做什么…">
+      <button>拍摄</button>
+    </div>
+  </div>
+</main>
+
+<script>
+/* 打字机流入 → 已读淡化 → 后果闪现 → Heisenberg 插嘴 → 定调浮现 */
+const SPEECH = "我说了别提麦片。听着——托德那帮人昨晚到底给了你什么？一个电话？还是一张纸？你看着我，兄弟。";
+let i = 0;
+const textEl = document.getElementById('speakText');
+const shotsEl = document.getElementById('shots');
+
+function type() {
+  if (i <= SPEECH.length) {
+    textEl.textContent = SPEECH.slice(0, i);
+    i++;
+    setTimeout(type, 55);
+  } else {
+    document.getElementById('caret').style.display = 'none';
+    setTimeout(sequence, 900);
+  }
+}
+
+function markRead() {
+  document.querySelectorAll('.shot').forEach(el => el.classList.add('read'));
+}
+
+function sequence() {
+  markRead();
+  // 后果闪现
+  const flash = document.getElementById('flash');
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 4200);
+  // Heisenberg 插嘴（延迟出现）
+  setTimeout(() => {
+    const iv = document.getElementById('innerVoice');
+    iv.style.display = '';
+    iv.classList.add('read');
+    requestAnimationFrame(() => iv.classList.remove('read'));
+  }, 1600);
+  // 定调浮现
+  setTimeout(() => document.getElementById('toneRow').classList.add('show'), 2800);
+}
+
+// 定调按钮：压黑 + 色调脉冲
+document.querySelectorAll('.tone-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.body.classList.add('dark-pulse');
+    document.querySelectorAll('.tone-btn').forEach(b => b.style.borderColor = '');
+    btn.style.borderColor = 'rgba(209,224,92,.8)';
+    setTimeout(() => document.body.classList.remove('dark-pulse'), 700);
+  });
+});
+
+// 轻推选中态
+document.querySelectorAll('.push').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.push').forEach(b => b.classList.remove('picked'));
+    btn.classList.add('picked');
+  });
+});
+
+// 进场时序：场景字幕卡 1.2s → 开拍
+window.addEventListener('load', () => {
+  const card = document.getElementById('sceneCard');
+  card.classList.add('show');
+  setTimeout(() => { card.classList.remove('show'); setTimeout(type, 500); }, 1400);
+});
+</script>
+</body>
+</html>
