@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     cli_proxy_base_url: str = "http://127.0.0.1:8317"
     cli_proxy_api_key: str = ""
     cli_proxy_default_model: str = "gemini-pro-agent"
-    director_model_route: str = "stepfun/step-3.7-flash"
+    # Empty default = derive from whichever platform key exists (see the
+    # model validator below: MiniMax preferred, StepFun fallback). A explicit
+    # DIRECTOR_MODEL_ROUTE env value always wins.
+    director_model_route: str = ""
     # Dossier analysis is a useful secondary LLM pass, but it must be
     # deferrable on runtimes with a hard request deadline (for example Vercel
     # Hobby functions). Dialogue messages are still persisted either way.
@@ -59,6 +62,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "At least one of MINIMAX_API_KEY, STEPFUN_API_KEY, or CLI_PROXY_API_KEY must be "
                 "set — the app cannot call any LLM provider without an API key."
+            )
+        # Derive the default director route from whichever platform key exists
+        # (MiniMax preferred — QA 2026-08-27: StepFun key was exhausted and
+        # every call paid a 10s 402 retry before falling back). An explicit
+        # DIRECTOR_MODEL_ROUTE env value is kept untouched.
+        if not self.director_model_route:
+            self.director_model_route = (
+                "minimax/MiniMax-M3" if self.minimax_api_key else "stepfun/step-3.7-flash"
             )
         return self
 
