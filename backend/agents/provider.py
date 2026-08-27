@@ -194,7 +194,18 @@ class ProviderFacade:
                 logger.warning("LiteLLM call failed, falling back to direct provider: %s", exc)
 
         if provider == "minimax":
-            return await self._call_minimax(messages, model, max_tokens)
+            try:
+                return await self._call_minimax(messages, model, max_tokens)
+            except httpx.HTTPStatusError as exc:
+                if not self.effective_stepfun_key():
+                    raise
+                # Platform MiniMax quota/outage: fall back to StepFun.
+                # Symmetric with the stepfun→minimax fallback below.
+                logger.warning(
+                    "minimax route failed HTTP %s; falling back to stepfun/step-3.7-flash",
+                    getattr(exc.response, "status_code", "?"),
+                )
+                return await self._call_stepfun(messages, "step-3.7-flash")
         if provider == "stepfun":
             try:
                 return await self._call_stepfun(messages, model)
@@ -567,7 +578,10 @@ class ProviderFacade:
         scene_context: str,
         characters: list[str],
     ) -> str:
-        """Default public route: StepFun 3.7 Flash. Frontend may override."""
+        """Default public route: MiniMax M3 when a platform key exists,
+        StepFun otherwise. Frontend may override."""
+        if self.effective_minimax_llm_key():
+            return "minimax/MiniMax-M3"
         return "stepfun/step-3.7-flash"
 
     # ------------------------------------------------------------------

@@ -28,6 +28,8 @@ export type DramaDecisionBarProps = {
   /** Primary continue path (no free text required) */
   onContinue: () => void
   placeholder?: string
+  /** Playbook C1: one-time non-modal coach mark on the player's first beat pause. */
+  firstTimeHint?: string
 }
 
 const KIND_CLASS: Record<DramaSuggestion['kind'], string> = {
@@ -434,6 +436,8 @@ export function buildColdOpenSuggestions(
  * Cold-open crisis chips only on beat 0.
  * beatIndex >= 1 always uses beat-pause suggestions so answered actions
  * (e.g. 接电话 after call_saul) do not linger on later pauses.
+ * QA P2#9: label pools rotate by beatIndex so consecutive pauses don't
+ * repeat the same three names (payloads keep the same action grammar).
  */
 export function dramaSuggestionsForBeat(
   beatIndex: number,
@@ -444,25 +448,48 @@ export function dramaSuggestionsForBeat(
   if (beatIndex === 0) {
     return buildColdOpenSuggestions(language, coldOpts)
   }
-  return buildBeatPauseSuggestions(language, pauseHint)
+  return buildBeatPauseSuggestions(language, pauseHint, beatIndex)
+}
+
+/** Label pools per action kind — index rotates by beat (deterministic). */
+const BEAT_PAUSE_LABELS: Record<
+  'zh' | 'en',
+  { say: string[]; do: string[]; observe: string[] }
+> = {
+  zh: {
+    say: ['施压追问', '点破话头', '把话挑明', '逼他表态'],
+    do: ['先动手', '直接出手', '先发制人', '抢先把事做掉'],
+    observe: ['先看清', '扫一遍场面', '盯住破绽', '掂量风险'],
+  },
+  en: {
+    say: ['Push them', 'Call it out', 'Say it plain', 'Force the answer'],
+    do: ['Act first', 'Move now', 'Strike first', 'Make the move'],
+    observe: ['Read the room', 'Scan the scene', 'Watch the cracks', 'Weigh the risk'],
+  },
 }
 
 /**
  * Generic pressure choices for mid-beat pauses.
  * Optional contextHint is woven into payloads when provided.
+ * beatIndex rotates the visible labels (QA P2#9) without changing grammar.
  */
 export function buildBeatPauseSuggestions(
   language: 'zh' | 'en',
   contextHint?: string,
+  beatIndex = 1,
 ): DramaSuggestion[] {
   const hint = contextHint?.trim()
+  const pick = (kind: 'say' | 'do' | 'observe'): string => {
+    const pool = BEAT_PAUSE_LABELS[language][kind]
+    return pool[(Math.max(beatIndex, 1) - 1) % pool.length]
+  }
   if (language === 'zh') {
     const about = hint ? `（针对：${hint}）` : ''
     return [
       {
         id: 'pause-say-pressure',
         kind: 'say',
-        label: '施压追问',
+        label: pick('say'),
         payload: hint
           ? `我直接点破压力点，逼对方表态：${hint}`
           : '我提高语气，逼对方立刻给出一个明确说法。',
@@ -470,7 +497,7 @@ export function buildBeatPauseSuggestions(
       {
         id: 'pause-do-act',
         kind: 'do',
-        label: '先动手',
+        label: pick('do'),
         payload: hint
           ? `我不空谈，立刻采取行动应对：${hint}`
           : '我不空谈，先采取一个能改变局面的实际动作。',
@@ -478,7 +505,7 @@ export function buildBeatPauseSuggestions(
       {
         id: 'pause-observe-hold',
         kind: 'observe',
-        label: '先看清',
+        label: pick('observe'),
         payload: hint
           ? `我先按兵不动，仔细观察局势${about}`
           : '我先按兵不动，把每个人的反应和风险看清楚。',
@@ -490,7 +517,7 @@ export function buildBeatPauseSuggestions(
     {
       id: 'pause-say-pressure',
       kind: 'say',
-      label: 'Push them',
+      label: pick('say'),
       payload: hint
         ? `I press hard and force a clear answer about: ${hint}`
         : 'I raise the pressure and demand a clear answer right now.',
@@ -498,7 +525,7 @@ export function buildBeatPauseSuggestions(
     {
       id: 'pause-do-act',
       kind: 'do',
-      label: 'Act first',
+      label: pick('do'),
       payload: hint
         ? `I stop talking and take a concrete move on: ${hint}`
         : 'I stop talking and take one concrete move that changes the board.',
@@ -506,7 +533,7 @@ export function buildBeatPauseSuggestions(
     {
       id: 'pause-observe-hold',
       kind: 'observe',
-      label: 'Hold & watch',
+      label: pick('observe'),
       payload: hint
         ? `I hold still and study the room${about}`
         : 'I hold still and study every reaction before I commit.',
@@ -532,6 +559,7 @@ export function DramaDecisionBar({
   onFreeSubmit,
   onContinue,
   placeholder,
+  firstTimeHint,
 }: DramaDecisionBarProps) {
   const t = DRAMA_DECISION_COPY[language]
   const canSubmitFree = canSubmitFreeText(freeValue, disabled)
@@ -556,6 +584,11 @@ export function DramaDecisionBar({
       aria-label={t.title}
       aria-disabled={disabled || undefined}
     >
+      {firstTimeHint && !disabled && (
+        <p className="drama-decision__hint" role="note">
+          {firstTimeHint}
+        </p>
+      )}
       <div className="drama-decision__head">
         <span className="drama-decision__title">{t.title}</span>
         <button
