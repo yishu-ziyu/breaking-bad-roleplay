@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ABQ Roleplay — 剧情主舞台原型 v2 · 《绝命毒师》色彩理论</title>
+<style>
+  /* ============================================================
+     DESIGN TOKENS — 《绝命毒师》Color Chart 系统
+     Gilligan / Slovis / Detoro 的内部色彩图谱，映射为产品 token
+     ============================================================ */
+  :root{
+    /* 基底 — ABQ 沙漠深夜：暖近黑，非纯黑 */
+    --bg-void:#0d0b09;
+    --bg-abyss:#100d0b;
+    --bg-panel:#16130f;
+    --bg-panel-rise:#1b1712;
+    --bg-overlay:rgba(13,11,9,.72);
+
+    /* 墨色 — 沙漠暖白 */
+    --ink:#efe6d3;
+    --ink-dim:#bdb09a;
+    --ink-faint:#7a6f5c;
+    --ink-ghost:#514838;
+
+    /* ★ 蓝冰毒 — 产品签名强调色（纯度 · 品牌 · 主操作） */
+    --meth:#3aa7dc;
+    --meth-hot:#5fc0ee;
+    --meth-glow:rgba(58,167,220,.5);
+
+    /* ★ 黄 = 冰毒 / 危险 / 堕落（Gus · Jesse 黄卫衣 · 制毒服） */
+    --danger-yellow:#e3b23c;
+    --danger-glow:rgba(227,178,60,.45);
+
+    /* ★ 绿 = 钱 / 贪婪 / 毒性（Heisenberg · Saul） */
+    --money-green:#7c9a3a;
+    /* ★ 红/橙 = 愤怒 / 暴力（Hank） */
+    --violence-orange:#d9822b;
+    --blood-red:#c0392b;
+    /* ★ 紫 = Marie 的奢华 / 否认 */
+    --marie-purple:#9b6bb0;
+    /* ★ 蓝 = Skyler 的忠诚 / 平静 */
+    --skyler-blue:#4a90d9;
+    /* ★ 米色 = Walter 起点的隐没 */
+    --walt-beige:#c4a882;
+
+    /* 角色身份色 ↑ 对齐剧集色彩图谱 */
+
+    /* 结构性 */
+    --line:rgba(239,230,211,.13);
+    --line-strong:rgba(239,230,211,.26);
+
+    --radius:8px;
+    --radius-card:14px;
+
+    --font-serif:'Georgia','Times New Roman','Songti SC','SimSun',serif;
+    --font-mono:ui-monospace,'SF Mono','JetBrains Mono','Menlo',monospace;
+    --font-sans:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',sans-serif;
+
+    --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+    --space-5:20px; --space-6:24px; --space-8:32px;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg-void);color:var(--ink);font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased;overflow:hidden;
+  }
+  body::after{ /* film grain */
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:999;opacity:.05;mix-blend-mode:overlay;
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2"/></filter><rect width="120" height="120" filter="url(%23n)" opacity="0.6"/></svg>');
+  }
+
+  .shell{display:flex;height:100vh;}
+
+  .archive-handle{
+    width:34px;flex:0 0 34px;background:var(--bg-abyss);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:16px;
+    color:var(--ink-faint);font-size:11px;letter-spacing:.18em;writing-mode:vertical-rl;
+    font-family:var(--font-mono);cursor:pointer;transition:.2s;
+  }
+  .archive-handle:hover{color:var(--meth);}
+  .archive-handle .dot{width:6px;height:6px;border-radius:50%;background:var(--meth);box-shadow:0 0 8px var(--meth-glow);}
+
+  /* ---- STORY PANEL ---- */
+  .story{flex:1;display:flex;flex-direction:column;min-width:0;
+    background:
+      radial-gradient(120% 60% at 12% -8%, rgba(58,167,220,.10), transparent 58%),
+      radial-gradient(130% 70% at 95% 110%, rgba(227,178,60,.06), transparent 55%),
+      var(--bg-void);}
+
+  /* ---- HUD ---- */
+  .hud{display:flex;align-items:stretch;border-bottom:1px solid var(--line);
+    background:var(--bg-overlay);backdrop-filter:blur(6px);padding:0 var(--space-5);min-height:74px;}
+  .hud__brand{display:flex;align-items:center;gap:12px;padding-right:var(--space-6);border-right:1px solid var(--line);}
+  .hud__brand .seal{width:30px;height:30px;border-radius:50%;border:1px solid var(--meth);
+    display:grid;place-items:center;color:var(--meth);font-family:var(--font-mono);font-size:11px;
+    box-shadow:0 0 14px var(--meth-glow), inset 0 0 8px rgba(58,167,220,.22);}
+  .hud__brand p{font-family:var(--font-mono);font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint);}
+  .hud__brand h1{font-size:15px;font-weight:600;letter-spacing:.02em;color:var(--ink);}
+
+  .hud__m{display:flex;flex-direction:column;justify-content:center;padding:0 var(--space-5);min-width:120px;}
+  .hud__m + .hud__m{border-left:1px solid var(--line);}
+  .hud__m span{font-family:var(--font-mono);font-size:9px;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-faint);}
+  .hud__m strong{font-family:var(--font-serif);font-size:16px;font-weight:500;color:var(--ink-dim);margin-top:3px;}
+  .hud__m small{font-family:var(--font-mono);font-size:10px;color:var(--ink-ghost);margin-top:2px;}
+  .hud__m .clock{color:var(--meth);letter-spacing:.1em;}
+  .hud__m--tension strong{color:var(--danger-yellow);text-shadow:0 0 12px var(--danger-glow);}
+  .hud__grow{flex:1;}
+  .hud__live{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);}
+  .hud__live .pulse{width:7px;height:7px;border-radius:50%;background:var(--meth);box-shadow:0 0 10px var(--meth-glow);animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* 设计说明入口 — 指向设计说明页 */
+  .hud__notes{
+    align-self:center;margin-left:var(--space-4);
+    display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
+    border:1px solid var(--line-strong);border-radius:6px;cursor:pointer;
+    font-family:var(--font-mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-dim);text-decoration:none;transition:.18s;
+  }
+  .hud__notes:hover{color:var(--meth);border-color:var(--meth);}
+  .hud__notes .swatch{width:12px;height:12px;border-radius:3px;
+    background:linear-gradient(120deg,var(--meth) 0 30%,var(--danger-yellow) 30% 60%,var(--money-green) 60% 100%);}
+
+  /* ---- Board ---- */
+  .board{flex:1;display:flex;min-height:0;padding:var(--space-5);gap:var(--space-5);}
+
+  .stage{flex:1;min-width:0;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,var(--bg-panel),var(--bg-abyss));
+    border:1px solid var(--line);border-radius:var(--radius-card);position:relative;overflow:hidden;}
+  .stage::before{content:'';position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(130% 90% at 50% -10%, rgba(58,167,220,.07), transparent 55%);}
+  .stage__paper{position:relative;flex:1;display:flex;flex-direction:column;padding:var(--space-6) var(--space-8);}
+
+  .card-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .chip{font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;
+    padding:4px 10px;border-radius:3px;border:1px solid var(--line-strong);color:var(--ink-dim);}
+  .chip--speak{border-color:rgba(58,167,220,.45);color:var(--meth);}
+  /* Gus 说话 chip 用"黄" — 剧集中他穿黄衬衫，代表冰毒/危险 */
+  .chip--gus{border-color:rgba(227,178,60,.5);color:var(--danger-yellow);}
+  .card-nav{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--ink-faint);}
+  .card-nav .pos{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;}
+  .nav-btn{width:26px;height:26px;border-radius:6px;border:1px solid var(--line);background:transparent;
+    color:var(--ink-dim);font-size:15px;cursor:pointer;transition:.15s;}
+  .nav-btn:hover{color:var(--meth);border-color:var(--meth);}
+  .nav-btn:disabled{opacity:.3;cursor:default;}
+
+  .card-speaker{font-family:var(--font-serif);font-size:26px;font-weight:500;letter-spacing:.01em;
+    margin-top:var(--space-8);color:var(--ink);}
+  .card-speaker em{font-style:italic;color:var(--danger-yellow);text-shadow:0 0 14px var(--danger-glow);}
+  .card-quote{font-family:var(--font-serif);font-size:20px;line-height:1.7;color:var(--ink-dim);margin-top:var(--space-5);max-width:60ch;}
+  .card-dire{margin-top:auto;padding-top:var(--space-6);font-family:var(--font-mono);font-size:12px;color:var(--ink-ghost);border-top:1px dashed var(--line);}
+  .card-dire b{color:var(--ink-faint);font-weight:500;}
+
+  .delta{margin:0 var(--space-5) var(--space-3);display:flex;align-items:center;gap:12px;padding:10px var(--space-4);
+    border:1px solid var(--line);border-left:2px solid var(--money-green);border-radius:6px;
+    font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);}
+  .delta span{color:var(--money-green);letter-spacing:.2em;text-transform:uppercase;font-size:9px;}
+
+  .decision{margin:0 var(--space-5) var(--space-5);padding:var(--space-4) var(--space-6);
+    background:var(--bg-panel-rise);border:1px solid var(--line-strong);border-radius:var(--radius-card);}
+  .decision__label{font-family:var(--font-mono);font-size:9px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:10px;}
+  .decision__row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .d-chip{font-family:var(--font-serif);font-size:14px;color:var(--ink);padding:9px 16px;border-radius:8px;
+    border:1px solid var(--line-strong);background:rgb(27 23 18 / .6);cursor:pointer;transition:.15s;}
+  .d-chip:hover{border-color:var(--meth);color:var(--meth-hot);transform:translateY(-1px);}
+  .d-chip--prime{border-color:var(--meth);color:var(--meth-hot);box-shadow:0 0 16px rgba(58,167,220,.18);}
+  .d-free{flex:1;min-width:200px;display:flex;align-items:center;gap:10px;padding:9px 14px;
+    border:1px solid var(--line);border-radius:8px;font-family:var(--font-serif);font-size:14px;color:var(--ink-dim);cursor:pointer;}
+  .d-free:hover{border-color:var(--line-strong);}
+  .d-free .caret{width:6px;height:6px;border-radius:50%;background:var(--meth);box-shadow:0 0 8px var(--meth-glow);}
+  .d-free span{color:var(--ink-faint);}
+
+  .rail-tab{width:44px;flex:0 0 44px;border:1px solid var(--line);border-radius:var(--radius-card);
+    background:var(--bg-panel);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    gap:12px;padding-top:16px;cursor:pointer;color:var(--ink-faint);font-family:var(--font-mono);
+    font-size:10px;letter-spacing:.2em;writing-mode:vertical-rl;transition:.2s;}
+  .rail-tab:hover{color:var(--meth);border-color:var(--line-strong);}
+  .rail-tab .chev{writing-mode:horizontal-tb;font-size:14px;}
+
+  .streaming{position:absolute;right:var(--space-6);bottom:var(--space-4);
+    font-family:var(--font-serif);font-style:italic;font-size:13px;color:var(--ink-faint);}
+</style>
+</head>
+<body>
+  <div class="shell">
+    <div class="archive-handle"><span class="dot"></span><span>档案</span></div>
+
+    <main class="story">
+      <header class="hud">
+        <div class="hud__brand">
+          <span class="seal">ABQ</span>
+          <div><p>现场 · Live</p><h1>这一夜</h1></div>
+        </div>
+        <div class="hud__m"><span>场次</span><strong>节点 3 / 7</strong></div>
+        <div class="hud__m">
+          <span>地点</span><strong>洛斯波罗斯办公室</strong>
+          <small>Walter · 供应方</small><small class="clock">第 2 天 · 深夜 · 阴</small>
+        </div>
+        <div class="hud__m hud__m--tension"><span>张力</span><strong>操控</strong></div>
+        <div class="hud__grow"></div>
+        <div class="hud__live" style="align-self:center;"><span class="pulse"></span>局面还在展开…</div>
+        <a class="hud__notes" href="design-rationale.html" target="_blank">
+          <span class="swatch"></span>设计说明
+        </a>
+      </header>
+
+      <div class="board">
+        <section class="stage">
+          <div class="stage__paper">
+            <div class="card-meta">
+              <!-- Gus 用"黄"chip：剧集中他穿黄衬衫，黄色=冰毒/危险 -->
+              <span class="chip chip--gus">说 · 黄 = 冰毒</span>
+              <div class="card-nav">
+                <button class="nav-btn" disabled>‹</button><span class="pos">2 / 5</span><button class="nav-btn">›</button>
+              </div>
+            </div>
+
+            <div class="card-speaker">Gus <em>Fring</em></div>
+            <p class="card-quote">
+              「请不要误会。我欣赏野心，沃尔特。但这里没有对手，只有安排。
+              你今天是来求一瓶好货的——那就别把它当成一场谈判。」
+            </p>
+
+            <div class="card-dire">
+              <b>〔 古斯 · 弗林格 ]</b> 缓缓靠向椅背。他衬衫的黄色在昏黄的灯下像一枚警告——你离那东西，比你以为的更近。
+            </div>
+          </div>
+          <div class="streaming">风还在吹…</div>
+        </section>
+
+        <aside class="rail-tab"><span class="chev">‹</span><span>分镜</span></aside>
+      </div>
+
+      <div class="delta">
+        <span>后果 · 绿 = 钱</span>
+        信任 −1 · 你唯一能打的牌，是承认自己走投无路。
+      </div>
+
+      <div class="decision">
+        <div class="decision__label">关键节点 · 选择下一步</div>
+        <div class="decision__row">
+          <button class="d-chip">「先软下来，说自己只是缺货。」</button>
+          <button class="d-chip">「顶回去，你不是来求人的。」</button>
+          <button class="d-chip d-chip--prime">「沉默，等他先开口。」</button>
+          <div class="d-free"><span class="caret"></span><span>用你自己的话行动…</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
