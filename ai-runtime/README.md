@@ -30,4 +30,25 @@ AI_RUNTIME=legacy   # template fallback, no sidecar required
 AI_RUNTIME=pi AI_RUNTIME_URL=http://127.0.0.1:8010
 ```
 
-If no `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `MINIMAX_API_KEY` is present, the sidecar stays on the Faux provider. Live-provider e2e is skipped and documented by `test/credentials.test.ts`.
+If no usable live key is present, the sidecar stays on the Faux provider. Live-provider e2e is skipped unless `APODEX_API_KEY` is set (`test/credentials.test.ts`).
+
+## Live provider (Apodex)
+
+OpenAI-compatible. Docs: https://platform.apodex.ai/docs
+
+```bash
+# Required for a live Apodex call. Never commit this value.
+APODEX_API_KEY=
+
+# Core 1.1 (default). apodex-1.1-mini is also allowed. Not deep-research.
+APODEX_MODEL=apodex-1.1
+
+# Optional override; default is the public Apodex endpoint.
+APODEX_BASE_URL=https://api.apodex.ai/v1
+```
+
+`liveProviderFromEnv` uses `provider_id=openai-compatible`, `base_url=https://api.apodex.ai/v1`, and model `apodex-1.1`.
+
+Alternatively, `OPENAI_API_KEY` + `OPENAI_BASE_URL=https://api.apodex.ai/v1` is treated as Apodex (same provider id and 1.1 model). Other OpenAI / Anthropic / MiniMax keys remain fallbacks.
+
+Do not put keys in the repo, `.env` examples, logs, SSE, or PR text. FastAPI never forwards a key; the sidecar reads env itself.
