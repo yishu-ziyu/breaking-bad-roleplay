@@ -9,11 +9,21 @@
 
 import { useCallback, useId, useState, type CSSProperties } from 'react'
 import { Silhouette } from '../lib/silhouette'
-import type { CharacterId } from '../roleProfiles'
 
-export type ColdOpenLanguage = 'zh' | 'en'
+import type { ColdOpenChoiceId, ColdOpenLanguage, KnowledgeTrack } from './coldOpenCopy'
+import {
+  BRIEF_COPY,
+  COLD_OPEN_CAST,
+  COLD_OPEN_PROMPTS,
+  CHOICE_COPY,
+  CRISIS_COPY,
+  ENTERING_COPY,
+  UI_COPY,
+} from './coldOpenCopy'
 
-export type ColdOpenChoiceId = 'find_jesse' | 'clean_scene' | 'call_saul' | 'free'
+/* Re-exports keep App.tsx import paths stable after the copy split. */
+export type { ColdOpenChoiceId, ColdOpenLanguage, KnowledgeTrack }
+export { COLD_OPEN_PROMPTS }
 
 export type ColdOpenStartPayload = {
   choiceId: ColdOpenChoiceId
@@ -23,6 +33,9 @@ export type ColdOpenStartPayload = {
 
 export type ColdOpenLandingProps = {
   language: ColdOpenLanguage
+  /** Chosen at the brief screen; null until then. Drives copy density everywhere. */
+  knowledgeTrack: KnowledgeTrack | null
+  onKnowledgePick: (track: KnowledgeTrack) => void
   onStart: (payload: ColdOpenStartPayload) => void
   onOpenSettings?: () => void
   /** Optional zh/en toggle; parent persists via usePersistedState. */
@@ -33,134 +46,35 @@ export type ColdOpenLandingProps = {
   error?: string | null
 }
 
-/** Story seed text per cold-open choice. Parent may also import this map. */
-export const COLD_OPEN_PROMPTS: Record<
-  ColdOpenChoiceId,
-  Record<ColdOpenLanguage, string>
-> = {
-  find_jesse: {
-    en: 'New Mexico desert, 2:13 a.m. The RV back door hangs open. Jesse is gone and half the cash is missing. You step into the dark to find him before anyone else does — every minute he is missing makes this worse.',
-    zh: '新墨西哥沙漠，凌晨 2:13。房车后门敞着。杰西不见了，桌上的钱少了一半。你走进夜色里找他，必须赶在任何人之前——他每消失一分钟，局面就更糟一分。',
-  },
-  clean_scene: {
-    en: 'New Mexico desert, 2:13 a.m. The RV is a crime scene waiting to happen. Jesse is gone, half the cash is missing, and the desert keeps no secrets. Wipe every print, bury every loose end, and leave nothing the morning light can use against you.',
-    zh: '新墨西哥沙漠，凌晨 2:13。房车随时会变成犯罪现场。杰西不见了，钱少了一半，沙漠不帮任何人保密。擦掉指纹，处理掉所有破绽，别给晨光留下任何把柄。',
-  },
-  call_saul: {
-    en: 'New Mexico desert, 2:13 a.m. Jesse is gone, half the cash is missing, and the only professional left on speed-dial is Saul Goodman. You call him into this mess — he will want cash, leverage, and a story that holds up under pressure.',
-    zh: '新墨西哥沙漠，凌晨 2:13。杰西不见了，钱少了一半，通讯录里唯一还能用的专业人士是索尔·古德曼。你把他拖进这摊浑水——他会要钱、要筹码、要一个扛得住压力的说法。',
-  },
-  free: {
-    en: 'New Mexico desert, 2:13 a.m. The RV back door is open. Jesse is gone. Half the cash is missing. You decide what happens next — no script, only the night and whatever you are willing to risk.',
-    zh: '新墨西哥沙漠，凌晨 2:13。房车后门开着。杰西不见了。桌上的钱少了一半。接下来怎么做由你决定——没有剧本，只有这一夜，以及你愿意押上的一切。',
-  },
-}
-
-const CRISIS_COPY: Record<ColdOpenLanguage, { stamp: string; body: string }> = {
-  en: {
-    stamp: 'New Mexico · 2:13 a.m.',
-    body: 'RV back door open. Jesse gone. Half the cash missing.',
-  },
-  zh: {
-    stamp: '新墨西哥 · 凌晨 2:13',
-    body: '房车后门开着。杰西不见了。钱少了一半。',
-  },
-}
-
-/** Diegetic beat while the session starts — not a SaaS spinner. */
-const ENTERING_COPY: Record<ColdOpenLanguage, { diegetic: string; secondary: string }> = {
-  en: {
-    diegetic: 'Half a bag of cash still in the RV.',
-    secondary: 'Entering…',
-  },
-  zh: {
-    diegetic: '房车里还剩半袋现金。',
-    secondary: '进入中…',
-  },
-}
-
-const CHOICE_COPY: Record<
-  ColdOpenChoiceId,
-  Record<ColdOpenLanguage, { label: string; hint: string }>
-> = {
-  find_jesse: {
-    en: { label: 'Find Jesse', hint: 'Track him before the desert does.' },
-    zh: { label: '寻找杰西', hint: '在沙漠吞掉他之前找到他。' },
-  },
-  clean_scene: {
-    en: { label: 'Clean the scene', hint: 'Erase what morning light would see.' },
-    zh: { label: '清理现场', hint: '别给晨光留下任何痕迹。' },
-  },
-  call_saul: {
-    en: { label: 'Call Saul', hint: 'Buy a lawyer. Buy time.' },
-    zh: { label: '打给索尔', hint: '买一个律师。买一点时间。' },
-  },
-  free: {
-    en: { label: 'Decide myself…', hint: 'No prescribed move.' },
-    zh: { label: '自己决定…', hint: '没有规定动作。' },
-  },
-}
-
-const UI_COPY: Record<
-  ColdOpenLanguage,
-  {
-    brand: string
-    castTitle: string
-    castHint: string
-    back: string
-    settings: string
-    continueAs: string
-    chosenPrefix: string
-    /** Hint on non-Saul faces when the crisis choice already called Saul. */
-    recommended: string
-    /** Quiet hint on Saul face when Call Saul was already chosen. */
-    saulAlready: string
-  }
-> = {
-  en: {
-    brand: 'Cold Open',
-    castTitle: 'You enter as who?',
-    castHint: 'Pick a face for this night.',
-    back: 'Back to choices',
-    settings: 'Line',
-    continueAs: 'Enter as',
-    chosenPrefix: 'You chose:',
-    recommended: 'Recommended',
-    saulAlready: 'Already on the line',
-  },
-  zh: {
-    brand: '冷开场',
-    castTitle: '你以谁的身份进入？',
-    castHint: '为这一夜选一张脸。',
-    back: '返回选择',
-    settings: '线路',
-    continueAs: '进入角色',
-    chosenPrefix: '你已选：',
-    recommended: '推荐',
-    saulAlready: '已在线上',
-  },
-}
-
-type CastMember = {
-  id: CharacterId
-  name: Record<ColdOpenLanguage, string>
-  accent: string
-}
-
-/** Compact cast for this cold open — not the full 8-card grid. */
-const COLD_OPEN_CAST: CastMember[] = [
-  { id: 'walter', name: { en: 'Walter', zh: '沃尔特' }, accent: '#d7e36f' },
-  { id: 'jesse', name: { en: 'Jesse', zh: '杰西' }, accent: '#93d7ff' },
-  { id: 'saul', name: { en: 'Saul', zh: '索尔' }, accent: '#f7ce46' },
-  { id: 'mike', name: { en: 'Mike', zh: '迈克' }, accent: '#b9c0a5' },
-]
-
 const PRIMARY_CHOICES: ColdOpenChoiceId[] = ['find_jesse', 'clean_scene', 'call_saul']
+
+/**
+ * Perspective note appended to the story seed when the player casts against the
+ * default cook role. Crisis copy speaks to the cook who stayed; without this
+ * the seed contradicts an identity who bolted (Jesse) or was never in the RV.
+ */
+const IDENTITY_NOTE: Record<string, Record<ColdOpenLanguage, string>> = {
+  walter: { zh: '', en: '' },
+  jesse: {
+    zh: '（注意：玩家扮演的就是杰西——冲进黑地的那个人。这一夜从他狂奔的视角展开。）',
+    en: ' (Note: the player IS Jesse — the one who bolted. The night unfolds from his side of the run.)',
+  },
+  saul: {
+    zh: '（注意：玩家扮演的是索尔·古德曼——深夜被这摊事拽进局里的律师。）',
+    en: ' (Note: the player is Saul Goodman — the lawyer this mess drags in at night.)',
+  },
+  mike: {
+    zh: '（注意：玩家扮演的是迈克——被卷进这一夜的专业人士。）',
+    en: ' (Note: the player is Mike — the professional pulled into this night.)',
+  },
+}
 
 type Phase = 'crisis' | 'casting'
 
 export function ColdOpenLanding({
   language,
+  knowledgeTrack,
+  onKnowledgePick,
   onStart,
   onOpenSettings,
   onLanguageChange,
@@ -173,7 +87,8 @@ export function ColdOpenLanding({
   const castTitleId = useId()
   const zh = language === 'zh'
   const ui = UI_COPY[language]
-  const crisis = CRISIS_COPY[language]
+  const track: KnowledgeTrack = knowledgeTrack ?? 'fresh'
+  const crisis = CRISIS_COPY[language][track]
   /** When player already chose Call Saul, de-emphasize casting as Saul (still selectable). */
   const deemphasizeSaul = phase === 'casting' && selectedChoice === 'call_saul'
   const castFocusIndex = deemphasizeSaul
@@ -195,13 +110,14 @@ export function ColdOpenLanding({
   const handleCast = useCallback(
     (characterId: string) => {
       if (starting || !selectedChoice) return
+      const note = IDENTITY_NOTE[characterId]?.[language] ?? ''
       onStart({
         choiceId: selectedChoice,
         characterId,
-        storyPrompt: COLD_OPEN_PROMPTS[selectedChoice][language],
+        storyPrompt: COLD_OPEN_PROMPTS[selectedChoice][language][track] + note,
       })
     },
-    [language, onStart, selectedChoice, starting],
+    [language, onStart, selectedChoice, starting, track],
   )
 
   return (
@@ -265,12 +181,47 @@ export function ColdOpenLanding({
       ) : null}
 
       <div className="cold-open__content">
-        {phase === 'crisis' ? (
+        {!knowledgeTrack ? (
+          /* Brief (phase 0): value line + knowledge question. One tap either way. */
+          <div className="cold-open__stage cold-open__stage--brief" key="brief">
+            <h2 className="cold-open__brief-title" id={titleId}>
+              {BRIEF_COPY[language].title}
+            </h2>
+            <p className="cold-open__brief-sub">{BRIEF_COPY[language].sub}</p>
+            <div className="cold-open__divider" aria-hidden="true" />
+            <p className="cold-open__brief-q">{BRIEF_COPY[language].question}</p>
+            <div className="cold-open__brief-answers" role="group" aria-label={BRIEF_COPY[language].question}>
+              <button
+                type="button"
+                className="cold-open__choice"
+                onClick={() => onKnowledgePick('fan')}
+                autoFocus
+                disabled={starting}
+              >
+                <span className="cold-open__choice-body">
+                  <span className="cold-open__choice-label">{BRIEF_COPY[language].fan}</span>
+                </span>
+                <span className="cold-open__choice-arrow" aria-hidden="true">→</span>
+              </button>
+              <button
+                type="button"
+                className="cold-open__choice"
+                onClick={() => onKnowledgePick('fresh')}
+                disabled={starting}
+              >
+                <span className="cold-open__choice-body">
+                  <span className="cold-open__choice-label">{BRIEF_COPY[language].fresh}</span>
+                </span>
+                <span className="cold-open__choice-arrow" aria-hidden="true">→</span>
+              </button>
+            </div>
+          </div>
+        ) : phase === 'crisis' ? (
           <div className="cold-open__stage cold-open__stage--crisis" key="crisis">
-            <p className="cold-open__brand">{ui.brand}</p>
             <p className="cold-open__stamp" id={titleId}>
               {crisis.stamp}
             </p>
+            <p className="cold-open__establish">{crisis.establish}</p>
             <p className="cold-open__crisis">{crisis.body}</p>
             <div className="cold-open__divider" aria-hidden="true" />
 
