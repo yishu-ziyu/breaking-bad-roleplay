@@ -233,6 +233,8 @@ export interface UseStoryStreamReturn {
   autoContinued: boolean
   isResuming: boolean
   resumeToast: string | null
+  /** Classified failure for the interrupted-state UI (QA P0#1/#2). */
+  streamFailure: { kind: 'timeout' | 'network' | 'http' | 'unknown'; message: string } | null
   startStory: (
     taskPrompt: string,
     characterId?: string,
@@ -268,22 +270,67 @@ export function useStoryStream(): UseStoryStreamReturn {
   // session-history probe confirms the session is still alive.
   const [isResuming, setIsResuming] = useState<boolean>(false)
   const [resumeToast, setResumeToast] = useState<string | null>(null)
+  /* QA P0#1/#2: classified failure while streaming. The old flow could sit in
+   * 'streaming' forever when the SSE closed without a terminal event. */
+  const [streamFailure, setStreamFailure] = useState<UseStoryStreamReturn['streamFailure']>(null)
 
   const esRef = useRef<SseController | null>(null)
   const sessionRef = useRef<string | null>(null)
   const hasAttemptedResumeRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  /* Streaming watchdog: if no SSE event (or terminal state) arrives within
+   * STREAM_STALL_TIMEOUT_MS while we claim to be 'streaming', surface an
+   * interrupted state instead of an eternal spinner. */
+  const stallTimerRef = useRef<number | null>(null)
+  /* One silent reconnect per stall — a transient proxy drop should not need
+   * player attention. */
+  const stallReconnectRef = useRef(false)
   // Persist across beat_paused → continue (stream is closed after each beat).
   const languageRef = useRef<string>(readPersistedStoryLanguage())
   const voiceExampleRef = useRef<string | null>(null)
   const connectionSessionRef = useRef<string | null>(null)
+
+  const STREAM_STALL_TIMEOUT_MS = 90_000
 
   const closeEventSource = useCallback(() => {
     if (esRef.current) {
       esRef.current.close()
       esRef.current = null
     }
+    if (stallTimerRef.current != null) {
+      window.clearTimeout(stallTimerRef.current)
+      stallTimerRef.current = null
+    }
   }, [])
+
+  /** Rearm the stall watchdog — called on every SSE event and on connect. */
+  const armStallWatchdog = useCallback((sid: string) => {
+    if (stallTimerRef.current != null) {
+      window.clearTimeout(stallTimerRef.current)
+    }
+    stallTimerRef.current = window.setTimeout(() => {
+      stallTimerRef.current = null
+      // Only fire while we still claim to be streaming (a beat_ready/complete
+      // may have arrived and closed the stream legitimately).
+      esRef.current?.close()
+      esRef.current = null
+      setConnectionState((prev) => {
+        if (prev !== 'streaming' && prev !== 'connecting') return prev
+        // First stall: silent reconnect. Second: classified failure.
+        if (!stallReconnectRef.current) {
+          stallReconnectRef.current = true
+          connectStream(sid, undefined, undefined)
+          return prev
+        }
+        setStreamFailure({
+          kind: 'timeout',
+          message:
+            'The story stalled mid-beat (no response from the director for 90s). Your progress is saved — retry or continue later.',
+        })
+        return 'error'
+      })
+    }, STREAM_STALL_TIMEOUT_MS)
+  }, [STREAM_STALL_TIMEOUT_MS])
 
   const setSessionError = useCallback((err: string | null) => {
     setErrorByChar(prev => ({ ...prev, '__session__': err }))
@@ -300,6 +347,8 @@ export function useStoryStream(): UseStoryStreamReturn {
     setCurrentBeatId(null)
     setBeatIndex(0)
     setAutoContinued(false)
+    setStreamFailure(null)
+    stallReconnectRef.current = false
     setConnectionState('idle')
     sessionRef.current = null
     // Keep language/voice for the next continue within the same UI session;
@@ -355,6 +404,8 @@ export function useStoryStream(): UseStoryStreamReturn {
         } catch {
           return
         }
+        // Any live event resets the stall watchdog.
+        armStallWatchdog(sid)
         if (eventType === 'outline') {
           setOutline((payload.data?.content as string) ?? '')
           setConnectionState('streaming')
@@ -381,12 +432,16 @@ export function useStoryStream(): UseStoryStreamReturn {
           setCurrentBeatId(beatId)
           setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
           setAutoContinued(false)
+          stallReconnectRef.current = false
+          setStreamFailure(null)
           setConnectionState(isFinal ? 'streaming' : 'beat_paused')
           closeEventSource()
           return
         }
         if (eventType === 'complete') {
           appendEvent({ type: 'complete', data: payload.data ?? {} })
+          stallReconnectRef.current = false
+          setStreamFailure(null)
           setConnectionState('complete')
           closeEventSource()
           return
@@ -394,6 +449,7 @@ export function useStoryStream(): UseStoryStreamReturn {
         if (eventType === 'error') {
           setSessionError(String(payload.data?.message ?? 'Unknown error'))
           appendEvent({ type: 'error', data: payload.data ?? {} })
+          setStreamFailure({ kind: 'unknown', message: String(payload.data?.message ?? 'Unknown error') })
           setConnectionState('error')
           closeEventSource()
         }
@@ -407,9 +463,11 @@ export function useStoryStream(): UseStoryStreamReturn {
         onEvent: handleEvent,
         onHttpError: (status, body) => {
           const detail = (body as { detail?: { message?: string } | string } | null)?.detail
-          const msg =
+          const rawMsg =
             (detail && typeof detail === 'object' && detail.message)
             || (typeof detail === 'string' ? detail : null)
+          const msg =
+            rawMsg
             || (status === 402
               ? 'Free demo credits used up for today. Sign in for early-access credits or connect your own key.'
               : status === 429
@@ -417,19 +475,47 @@ export function useStoryStream(): UseStoryStreamReturn {
                 : status === 403
                   ? 'This story session is locked to another browser.'
                   : 'Could not start the story stream.')
+          // QA P0#2: classify provider-exhaustion so the UI can speak plainly.
+          const kind: 'http' = 'http'
+          setStreamFailure({
+            kind,
+            message: status === 402 && !rawMsg
+              ? msg
+              : `Story stream failed (${status}). ${msg}`,
+          })
           setSessionError(String(msg))
           setConnectionState('error')
           closeEventSource()
         },
         onNetworkError: () => {
-          setSessionError('SSE connection closed')
-          setConnectionState('error')
+          // QA P0#1: a dropped SSE mid-beat used to leave an eternal spinner.
+          // First drop: silent reconnect (same budget as the stall watchdog).
+          esRef.current = null
+          setConnectionState((prev) => {
+            if (prev !== 'streaming') {
+              setStreamFailure({ kind: 'network', message: 'SSE connection closed.' })
+              setSessionError('SSE connection closed')
+              return 'error'
+            }
+            if (!stallReconnectRef.current) {
+              stallReconnectRef.current = true
+              connectStream(sid, undefined, undefined)
+              return prev
+            }
+            setStreamFailure({
+              kind: 'network',
+              message:
+                'The connection to the director dropped and one reconnect already failed. Your progress is saved — retry when ready.',
+            })
+            return 'error'
+          })
           closeEventSource()
         },
       })
       esRef.current = es
+      armStallWatchdog(sid)
     })()
-  }, [appendEvent, closeEventSource, setSessionError])
+  }, [appendEvent, armStallWatchdog, closeEventSource, setSessionError])
 
   const startStory = useCallback(async (
     taskPrompt: string,
@@ -440,6 +526,8 @@ export function useStoryStream(): UseStoryStreamReturn {
   ): Promise<void> => {
     clearStorySessionState()
     setSessionError(null)
+    setStreamFailure(null)
+    stallReconnectRef.current = false
     setConnectionState('connecting')
     const resolvedLanguage = language || readPersistedStoryLanguage() || 'en'
     languageRef.current = resolvedLanguage
@@ -738,6 +826,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     isSendingByChar,
     errorByChar,
     autoContinued,
+    streamFailure,
     setConnectionSessionId,
     isResuming,
     resumeToast,

@@ -18,7 +18,7 @@ import { AuthSection } from './components/AuthSection'
 import { GifCard } from './components/GifCard'
 import { PlotGraphPanel } from './components/PlotGraphPanel'
 import { AgentHarnessPanel } from './components/AgentHarnessPanel'
-import { ColdOpenLanding, type ColdOpenStartPayload } from './components/ColdOpenLanding'
+import { ColdOpenLanding, type ColdOpenStartPayload, type KnowledgeTrack } from './components/ColdOpenLanding'
 import {
   DramaDecisionBar,
   dramaSuggestionsForBeat,
@@ -139,8 +139,22 @@ function playerFacingSceneText(raw: string): string {
     .replace(/^\d+[.)、]\s*/, '')
     .replace(/\[(?:setup|inciting|progressive|crisis|climax|resolution)\]\s*/gi, '')
     .trim()
+  // QA P1#5: strip leading craft fields ("值: 安全→隐隐不安 — 间隙: …" leaks
+  // when the description starts inside the field block, so the split-at-dash
+  // rule below misses it). Keep only the text after the last craft field.
+  const craftField = /(?:值|gap|价值|间隙|risk|风险|value)\s*[:：]\s*([^—–]*?)(?=\s*(?:—|–|$|(?:值|gap|价值|间隙|risk|风险|value)\s*[:：]))/gi
+  const matches = [...s.matchAll(craftField)]
+  if (matches.length > 0) {
+    const afterLast = s.slice((matches[matches.length - 1].index ?? 0) + matches[matches.length - 1][0].length)
+    const tail = afterLast.replace(/^[\s—–-]+/, '').trim()
+    // If anything meaningful follows the craft block keep it; else drop the
+    // whole string (it was pure scaffolding).
+    s = tail.length > 8 ? tail : ''
+  }
   // Cut at value/gap/risk craft fields (em/en dash or hyphen variants).
   s = s.split(/\s*[—–\-]\s*(?:value|gap|risk)\s*[:：]/i)[0]?.trim() ?? s
+  // QA P1#5: stage-direction tech marks leaking into scene cards (〔turn_to → Walter〕).
+  s = s.replace(/〔\s*turn_to\s*→\s*[^〕]*〕/gi, '').replace(/\[\s*turn_to\s*→\s*[^\]]*\]/gi, '')
   return s.replace(/\s+/g, ' ').replace(/^[\s\-—–]+|[\s\-—–]+$/g, '')
 }
 
@@ -889,6 +903,13 @@ function App() {
 
   // After migrateProductSurfaceBeforePaint, pre-v2 LS already has enteredWorld=false.
   const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
+  /* Playbook F1/C1: knowledge track doubles as the onboarding-done flag (one tap);
+     drama coach mark is one-shot. */
+  const [knowledgeTrack, setKnowledgeTrack] = usePersistedState<KnowledgeTrack | null>(
+    'knowledgeTrack',
+    null,
+  )
+  const [dramaHintSeen, setDramaHintSeen] = usePersistedState<boolean>('dramaHintSeen', false)
 
   // P0-4: when switching to a character that already has a saved relation,
   // surface a brief inline notice so the user understands the relation
@@ -1342,7 +1363,23 @@ function App() {
       setColdOpenError(null)
     } catch (e) {
       // Keep hasEnteredWorld false; surface message on cold open for retry.
-      setColdOpenError(e instanceof Error ? e.message : String(e))
+      // QA P0#4: raw English tech errors ("Failed to create session") give the
+      // player nothing. Detect the common env-failure signatures and add a
+      // self-check line (backend down / DB schema behind / quota).
+      const raw = e instanceof Error ? e.message : String(e)
+      const zh = language === 'zh'
+      const lowered = raw.toLowerCase()
+      let hint: string | null = null
+      if (lowered.includes('failed to create session') || lowered.includes('fetch') || lowered.includes('network')) {
+        hint = zh
+          ? '自查：① 后端是否在跑（uvicorn main:app --port 8001）？② 数据库是否落后迁移（cd backend && alembic upgrade head）？'
+          : 'Self-check: 1) is the backend running (uvicorn main:app --port 8001)? 2) is the DB behind on migrations (cd backend && alembic upgrade head)?'
+      } else if (lowered.includes('402') || lowered.includes('quota')) {
+        hint = zh
+          ? '模型额度用完了：换自己的 key 或等明天免费额度。'
+          : 'Model quota is used up: connect your own key or wait for tomorrow.'
+      }
+      setColdOpenError(hint ? `${raw}\n${hint}` : raw)
     } finally {
       coldOpenStartingRef.current = false
       setColdOpenStarting(false)
@@ -1575,8 +1612,15 @@ function App() {
     setStoryTask('')
     setError(null)
     setColdOpenChoiceId(null)
+    // QA P0#3: returning to the landing must re-enter through the cold open,
+    // not fall through to the legacy idle setup form. Resetting the
+    // knowledge track keeps the brief → crisis → cast chain as the single
+    // entry; forcing surface='story' prevents a stale 'direct' surface from
+    // rendering the old setup screen after reset.
+    setKnowledgeTrack(null)
+    setSurface('story')
     setHasEnteredWorld(false)
-  }, [story, setHasEnteredWorld])
+  }, [story, setHasEnteredWorld, setKnowledgeTrack, setSurface])
 
   const storyContextSummary = useMemo(() => {
     const spoken = story.events
@@ -1798,7 +1842,7 @@ function App() {
     (currentStoryEvent?.data?.emotion_state as string | undefined)
       ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined),
     language,
-  )
+  ) || (language === 'zh' ? '未定' : 'Unset')
 
   const handleContinueChapter = useCallback(async () => {
     const base = defaultStoryPrompt(language)
@@ -1824,12 +1868,14 @@ function App() {
     await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
-  /* ---- Cold open (crisis first; cast after choice) ---- */
+  /* ---- Cold open (brief question → crisis → cast) ---- */
   if (!hasEnteredWorld) {
     return (
       <>
         <ColdOpenLanding
           language={language}
+          knowledgeTrack={knowledgeTrack}
+          onKnowledgePick={(t) => setKnowledgeTrack(t)}
           onStart={handleColdOpenStart}
           onOpenSettings={() => {
             setColdOpenError(null)
@@ -2006,6 +2052,26 @@ function App() {
               <span>{t.tension}</span>
               <strong title={storyTensionLabel}>{storyTensionLabel}</strong>
             </div>
+            {/* QA P2#10: language switch reachable in-game, not only on the
+                cold open toolbar. Quiet pill, same seg-control grammar. */}
+            <div className="story-hud__lang" role="group" aria-label={language === 'zh' ? '语言' : 'Language'}>
+              <button
+                type="button"
+                className={language === 'zh' ? 'is-active' : ''}
+                onClick={() => setLanguage('zh')}
+                aria-pressed={language === 'zh'}
+              >
+                中文
+              </button>
+              <button
+                type="button"
+                className={language === 'en' ? 'is-active' : ''}
+                onClick={() => setLanguage('en')}
+                aria-pressed={language === 'en'}
+              >
+                EN
+              </button>
+            </div>
             {/* Model/quota only when credits are low — not permanent HUD chrome. */}
             {!quota.byok && quota.remaining <= 2 && (
               <div className="story-hud__metric story-hud__connection story-hud__connection--low">
@@ -2077,13 +2143,24 @@ function App() {
             </div>
           )}
 
-          {/* Error */}
+          {/* Error / interrupted — always speaks plainly and offers an exit (QA P0#1/#2) */}
           {story.connectionState === 'error' && (
             <div className="story-error">
-              <p>⚠ {story.getCharState(selectedCharId).error}</p>
+              <p>
+                ⚠{' '}
+                {story.streamFailure?.kind === 'timeout'
+                  ? (language === 'zh'
+                    ? '剧情演出中断了 90 秒没有回应。进度已保存——可以直接重试。'
+                    : 'The story stalled mid-beat with no response for 90s. Your progress is saved — retry now.')
+                  : story.streamFailure?.kind === 'network'
+                    ? (language === 'zh'
+                      ? '与导演的连接断开，且自动重连未成功。进度已保存——可以重试。'
+                      : 'The connection dropped and auto-reconnect failed. Your progress is saved — retry.')
+                    : story.getCharState(selectedCharId).error}
+              </p>
               {story.sessionId && (
                 <button type="button" onClick={story.reconnect}>
-                  {t.reconnect}
+                  {language === 'zh' ? '重试演出' : t.reconnect}
                 </button>
               )}
               <button type="button" onClick={story.reset}>
@@ -2300,12 +2377,19 @@ function App() {
                 )}
               </div>
 
-              {/* Consequences: thin strip, never primary reading surface. */}
-              {latestWorldDeltaText && (
-                <div className="story-delta-strip" aria-label={t.eventWorldDelta}>
-                  <span>{t.eventWorldDelta}</span>
-                  <p>{latestWorldDeltaText}</p>
-                </div>
+              {/* Consequences: thin strip, never primary reading surface.
+                  QA P1#6: the 96-char preview truncated mid-sentence with no
+                  way to read the rest — make the full text expandable. */}
+              {latestWorldDelta && (
+                <details className="story-delta-strip" aria-label={t.eventWorldDelta}>
+                  <summary>
+                    <span>{t.eventWorldDelta}</span>
+                    <p>{latestWorldDeltaText}</p>
+                  </summary>
+                  <p className="story-delta-strip__full">
+                    {getStoryEventTimelineSummary(latestWorldDelta, language, 4000)}
+                  </p>
+                </details>
               )}
 
               {/* Streaming indicator — diegetic, no SaaS dots */}
@@ -2329,7 +2413,15 @@ function App() {
                     suggestions={dramaSuggestions}
                     freeValue={decisionFree}
                     onFreeChange={setDecisionFree}
+                    firstTimeHint={
+                      story.beatIndex === 0 && !dramaHintSeen
+                        ? language === 'zh'
+                          ? '点快捷行动，或直接打字——你要说的话、做的事，都算数。'
+                          : 'Tap a move, or type your own — what you say or do all counts.'
+                        : undefined
+                    }
                     onPick={(s) => {
+                      setDramaHintSeen(true)
                       void story.sendAction(
                         'redirect',
                         { redirect_prompt: s.payload },
@@ -2338,11 +2430,13 @@ function App() {
                       setDecisionFree('')
                     }}
                     onContinue={() => {
+                      setDramaHintSeen(true)
                       void story.sendAction('continue', undefined, selectedCharId)
                     }}
                     onFreeSubmit={() => {
                       const text = decisionFree.trim()
                       if (!text) return
+                      setDramaHintSeen(true)
                       void story.sendAction(
                         'redirect',
                         { redirect_prompt: text },
@@ -2414,6 +2508,17 @@ function App() {
                   <h2>
                     {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
                   </h2>
+                  {/* QA P1#7: chat was a dead end — no visible way back to a
+                      live story. Offer the return only when one exists. */}
+                  {story.sessionId && story.connectionState !== 'idle' && (
+                    <button
+                      type="button"
+                      className="chat-header__back-to-story"
+                      onClick={() => setSurface('story')}
+                    >
+                      {language === 'zh' ? '← 返回剧情' : '← Back to the story'}
+                    </button>
+                  )}
                   {showSavePrompt && (
                     <div className="save-prompt">
                       {t.savePrompt}
