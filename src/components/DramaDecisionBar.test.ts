@@ -146,14 +146,23 @@ test('free submit label stays tertiary Decide / 决定', () => {
   assert.equal(DRAMA_DECISION_COPY.en.freeSubmit, 'Decide')
 })
 
-test('COLD_OPEN_PROMPTS has all choice keys with en and zh seeds', () => {
+test('COLD_OPEN_PROMPTS has all choice keys with per-track en and zh seeds', () => {
   for (const key of CHOICE_KEYS) {
     assert.ok(key in COLD_OPEN_PROMPTS, `missing choice key: ${key}`)
     const entry = COLD_OPEN_PROMPTS[key]
-    assert.equal(typeof entry.en, 'string')
-    assert.equal(typeof entry.zh, 'string')
-    assert.ok(entry.en.trim().length > 0, `${key}.en empty`)
-    assert.ok(entry.zh.trim().length > 0, `${key}.zh empty`)
+    for (const track of ['fresh', 'fan'] as const) {
+      assert.ok(
+        typeof entry.en[track] === 'string' && entry.en[track].trim().length > 0,
+        `${key}.en.${track} missing or empty`,
+      )
+      assert.ok(
+        typeof entry.zh[track] === 'string' && entry.zh[track].trim().length > 0,
+        `${key}.zh.${track} missing or empty`,
+      )
+    }
+    // Fresh track must not assume show knowledge: it introduces who Walter is.
+    assert.ok(/Walter White/.test(entry.en.fresh), `${key}.en.fresh must name Walter White`)
+    assert.ok(entry.zh.fresh.includes('沃尔特'), `${key}.zh.fresh must name 沃尔特`)
   }
   assert.deepEqual(
     Object.keys(COLD_OPEN_PROMPTS).sort(),
@@ -170,6 +179,22 @@ test('buildBeatPauseSuggestions still returns three kind-diverse options', () =>
   )
   const withHint = buildBeatPauseSuggestions('zh', '现金')
   assert.ok(withHint.some((s) => s.payload.includes('现金')))
+})
+
+test('beat-pause labels rotate across beats so consecutive pauses differ (QA P2#9)', () => {
+  const beat1 = buildBeatPauseSuggestions('zh', undefined, 1)
+  const beat2 = buildBeatPauseSuggestions('zh', undefined, 2)
+  const beat5 = buildBeatPauseSuggestions('zh', undefined, 5)
+  assert.notDeepEqual(beat1.map((s) => s.label), beat2.map((s) => s.label))
+  // Pool wraps: beat 5 === beat 1 (pool of 4, (5-1)%4=0)
+  assert.deepEqual(beat5.map((s) => s.label), beat1.map((s) => s.label))
+  // Payload grammar unchanged across rotation
+  assert.deepEqual(beat1.map((s) => s.id), beat2.map((s) => s.id))
+  // Deterministic: same beat → same labels
+  assert.deepEqual(
+    buildBeatPauseSuggestions('en', undefined, 3).map((s) => s.label),
+    buildBeatPauseSuggestions('en', undefined, 3).map((s) => s.label),
+  )
 })
 
 test('dramaSuggestionsForBeat: cold chips only on beat 0; beat 1+ drop call_saul crisis labels', () => {

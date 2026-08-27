@@ -116,8 +116,30 @@ class TestDirectorRuntimeProfile:
 
         settings = _make_settings()
 
-        assert settings.director_model_route == "stepfun/step-3.7-flash"
+        # QA 2026-08-27: MiniMax is now the preferred default route whenever
+        # its platform key exists (StepFun exhaustion paid 10s retries/call).
+        assert settings.director_model_route == "minimax/MiniMax-M3"
         assert settings.enable_dossier_updates is True
+
+    def test_stepfun_only_env_falls_back_to_stepfun_route(self, monkeypatch):
+        monkeypatch.setenv("STEPFUN_API_KEY", "sf-x")
+        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        monkeypatch.setenv("DATABASE_URL", _DB_URL)
+        monkeypatch.delenv("DIRECTOR_MODEL_ROUTE", raising=False)
+
+        settings = _make_settings()
+
+        assert settings.director_model_route == "stepfun/step-3.7-flash"
+
+    def test_explicit_route_env_still_wins(self, monkeypatch):
+        monkeypatch.setenv("MINIMAX_API_KEY", "mk-x")
+        monkeypatch.setenv("STEPFUN_API_KEY", "sf-x")
+        monkeypatch.setenv("DATABASE_URL", _DB_URL)
+        monkeypatch.setenv("DIRECTOR_MODEL_ROUTE", "stepfun/step-3.7-flash")
+
+        settings = _make_settings()
+
+        assert settings.director_model_route == "stepfun/step-3.7-flash"
 
     def test_vercel_profile_can_select_minimax_and_defer_dossiers(self, monkeypatch):
         monkeypatch.setenv("MINIMAX_API_KEY", "mk-x")
