@@ -43,10 +43,12 @@ from models.schemas import (
     SessionResponse,
     AgentEvent,
 )
+from api.game_routes import router as game_router
 import time
 import httpx
 
 router = APIRouter()
+router.include_router(game_router)
 logger = logging.getLogger(__name__)
 
 
