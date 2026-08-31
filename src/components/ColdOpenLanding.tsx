@@ -9,6 +9,7 @@
 
 import { useCallback, useId, useState, type CSSProperties } from 'react'
 import { Silhouette } from '../lib/silhouette'
+import { ElementSquare } from '../lib/ElementSquare'
 
 import type { ColdOpenChoiceId, ColdOpenLanguage, KnowledgeTrack } from './coldOpenCopy'
 import {
@@ -128,7 +129,11 @@ export function ColdOpenLanding({
       aria-busy={starting || undefined}
       aria-labelledby={phase === 'crisis' ? titleId : castTitleId}
     >
-      <div className="cold-open__bg" aria-hidden="true" />
+      <div
+        className="cold-open__bg"
+        style={{ backgroundImage: 'url(/backgrounds/hero-desert-noir.jpg)' }}
+        aria-hidden="true"
+      />
       <div className="cold-open__vignette" aria-hidden="true" />
       <div className="cold-open__grain" aria-hidden="true" />
 
@@ -181,6 +186,13 @@ export function ColdOpenLanding({
       ) : null}
 
       <div className="cold-open__content">
+        <div className="cold-open__wordmark" aria-hidden="true">
+          <div className="cold-open__wordmark-squares">
+            <ElementSquare symbol="Br" num="35" size={54} green />
+            <ElementSquare symbol="Ba" num="56" size={54} />
+          </div>
+          <p className="cold-open__wordmark-sub">BREAKING BAD · ROLEPLAY</p>
+        </div>
         {!knowledgeTrack ? (
           /* Brief (phase 0): value line + knowledge question. One tap either way. */
           <div className="cold-open__stage cold-open__stage--brief" key="brief">
@@ -232,7 +244,12 @@ export function ColdOpenLanding({
                   <button
                     key={id}
                     type="button"
-                    className="cold-open__choice"
+                    className={[
+                      'cold-open__choice',
+                      id === PRIMARY_CHOICES[0] ? 'cold-open__choice--primary' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
                     onClick={() => handleChoice(id)}
                     autoFocus={index === 0}
                     disabled={starting}

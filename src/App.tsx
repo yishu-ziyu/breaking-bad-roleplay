@@ -30,6 +30,8 @@ import { useConnection } from './hooks/useConnection'
 import { useQuota, parseQuotaError } from './hooks/useQuota'
 import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
+import { pickStageBackdrop, pickStageBackdropInfo } from './lib/stageBackdrops'
+import { ElementSquare } from './lib/ElementSquare'
 import { resolveGifUrl } from './lib/gifResolver'
 import {
   STAGE_DWELL_MS,
@@ -61,6 +63,26 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
 }
 
 const STORY_CARD_EVENT_TYPES = new Set(['scene_change', 'agent_speak', 'agent_think', 'agent_act'])
+
+/** Mono slate tags for stage meta + shot list (film-style EN abbreviations). */
+const STORY_EVENT_KIND_EN: Record<string, string> = {
+  scene_change: 'SCENE',
+  agent_speak: 'LINE',
+  agent_think: 'INNER',
+  agent_act: 'ACTION',
+}
+
+/** Emotion → 0-10 tension dial for the HUD ten-block gauge. */
+const STAGE_TENSION_LEVEL: Record<string, number> = {
+  calm: 2,
+  resigned: 3,
+  guilty: 4,
+  fearful: 5,
+  manipulative: 6,
+  tense: 6,
+  desperate: 7,
+  angry: 8,
+}
 
 function resolveStoryEventGif(evt: StoryEvent): string | null {
   if (evt.type !== 'agent_speak') return null
@@ -553,6 +575,10 @@ const uiText: Record<Language, Record<string, string>> = {
     stageNext: 'Next card',
     backToLive: 'Back to latest',
     storyStartHint: 'Tip: press ⌘/Ctrl+Enter to start',
+    shotList: 'SHOT LIST',
+    directorBusy: 'Director analyzing the task…',
+    interLabel: 'INTERMISSION · YOUR NEXT MOVE',
+    interSub: 'The director awaits your call',
   },
   zh: {
     tagline: '进入阿尔伯克基的角色档案、压力现场与随选择改写的剧情。',
@@ -673,6 +699,10 @@ const uiText: Record<Language, Record<string, string>> = {
     stageNext: '下一张',
     backToLive: '回到最新',
     storyStartHint: '提示：按 ⌘/Ctrl+Enter 快速开始',
+    shotList: '分镜 · SHOT LIST',
+    directorBusy: '导演正在分析任务…',
+    interLabel: '幕间 · 你的下一步',
+    interSub: '导演等待你的抉择',
   },
 }
 
@@ -1656,6 +1686,15 @@ function App() {
     [story.events],
   )
 
+  // Shot list = same card events, numbered sequentially (拍 01, 02, …).
+  // status / outline / beat_ready stay off the list; deltas keep the thin strip.
+  const shotListEntries = useMemo(
+    () => story.events
+      .map((evt, i) => ({ evt, i }))
+      .filter(({ evt }) => STORY_CARD_EVENT_TYPES.has(evt.type)),
+    [story.events],
+  )
+
   // Dwell ~7s per card so think/speak/scene don't flash past the reader.
   useEffect(() => {
     if (stageCardIndices.length === 0) {
@@ -1844,6 +1883,53 @@ function App() {
     language,
   ) || (language === 'zh' ? '未定' : 'Unset')
 
+  /* ---- Stage v2 derived chrome (story-stage-v2) ---- */
+  const stageNightNo = Math.max(story.beatIndex, 1)
+  const stageEmotionRaw = (
+    (currentStoryEvent?.data?.emotion_state as string | undefined)
+    ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined)
+    ?? ''
+  ).trim().toLowerCase()
+  const stageTensionLevel = STAGE_TENSION_LEVEL[stageEmotionRaw] ?? 4
+  const stageBackdropInfo = pickStageBackdropInfo(storyLocation)
+  // SCENE numbering = scene cards shown so far (design: SCENE 01 · 拍 n/m).
+  const stageSceneNo = useMemo(() => {
+    let n = 0
+    if (stageCardIndices.length > 0) {
+      const stop = Math.min(Math.max(activeStagePos, 0), stageCardIndices.length - 1)
+      for (let p = 0; p <= stop; p += 1) {
+        if (story.events[stageCardIndices[p]]?.type === 'scene_change') n += 1
+      }
+    }
+    return Math.max(n, 1)
+  }, [activeStagePos, stageCardIndices, story.events])
+  const stageMetaKind = stageCardIndices.length > 0
+    ? `SCENE ${String(stageSceneNo).padStart(2, '0')} · ${language === 'zh' ? '拍' : 'Shot'} ${activeStagePos + 1}/${stageCardIndices.length} · ${currentStoryTypeChip}`
+    : currentStoryTypeChip
+  const stageSlugline = [
+    stageBackdropInfo.label.split(' · ')[0],
+    storyLocation,
+    storyWorldClock,
+  ].filter(Boolean).join(' · ')
+
+  // Backdrop crossfade: two stacked layers, same grammar as chat scene-layer.
+  const [currentStageBg, setCurrentStageBg] = useState<string>(() => pickStageBackdrop(''))
+  const [prevStageBg, setPrevStageBg] = useState<string | null>(null)
+  const [stageBgReady, setStageBgReady] = useState(false)
+  useEffect(() => {
+    if (stageBackdropInfo.url === currentStageBg) return
+    const id = window.setTimeout(() => {
+      setStageBgReady(false)
+      setPrevStageBg(currentStageBg)
+      setCurrentStageBg(stageBackdropInfo.url)
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [stageBackdropInfo.url, currentStageBg])
+  useEffect(() => {
+    const id = window.setTimeout(() => setStageBgReady(true), 50)
+    return () => window.clearTimeout(id)
+  }, [currentStageBg])
+
   const handleContinueChapter = useCallback(async () => {
     const base = defaultStoryPrompt(language)
     const prompt = language === 'zh'
@@ -2031,25 +2117,27 @@ function App() {
         /* ---------- Story View ---------- */
         <section className="story-panel story-panel--drama">
           <header className="story-header story-hud story-hud--minimal">
-            <div className="story-hud__brand">
-              <span className="brand-icon" aria-hidden="true" />
-              <div>
-                <p>{t.schema}</p>
-                <h2>{t.narrativeStream}</h2>
+            {/* Stage v2 HUD left: element square + NIGHT n title card (design hud-night). */}
+            <div className="story-hud__night">
+              <ElementSquare symbol="N" num={stageNightNo} green size={30} />
+              <div className="story-hud__night-txt">
+                <span className="story-hud__night-en">NIGHT {String(stageNightNo).padStart(2, '0')}</span>
+                <span className="story-hud__night-cn">{storyBeatLabel}</span>
               </div>
             </div>
-            <div className="story-hud__metric">
-              <span>{t.scene}</span>
-              <strong>{storyBeatLabel}</strong>
-            </div>
-            <div className="story-hud__metric story-hud__metric--wide">
+            <div className="story-hud__metric story-hud__metric--slug">
               <span>{t.location}</span>
               <strong>{storyLocation}</strong>
               <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
               {storyWorldClock && <small className="world-clock">{storyWorldClock}</small>}
             </div>
-            <div className="story-hud__metric">
+            <div className="story-hud__metric story-hud__metric--tension">
               <span>{t.tension}</span>
+              <span className="story-hud__tengrid" role="img" aria-label={storyTensionLabel}>
+                {Array.from({ length: 10 }, (_, i) => (
+                  <i key={i} className={i < stageTensionLevel ? 'is-on' : undefined} />
+                ))}
+              </span>
               <strong title={storyTensionLabel}>{storyTensionLabel}</strong>
             </div>
             {/* QA P2#10: language switch reachable in-game, not only on the
@@ -2072,18 +2160,17 @@ function App() {
                 EN
               </button>
             </div>
-            {/* Model/quota only when credits are low — not permanent HUD chrome. */}
-            {!quota.byok && quota.remaining <= 2 && (
-              <div className="story-hud__metric story-hud__connection story-hud__connection--low">
-                <span>{t.model}</span>
-                <ConnectionChip conn={connection} language={language} compact />
-                <small className="quota-pill quota-pill--compact is-low">
-                  {language === 'zh'
-                    ? `${quota.tier === 'user' ? '登录' : '游客'} ${quota.remaining}`
-                    : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}`}
-                </small>
-              </div>
-            )}
+            {/* Stage v2 HUD right: credits always on, amber mono (design hud-credits). */}
+            <div
+              className={`story-hud__credits${!quota.byok && quota.remaining <= 2 ? ' is-low' : ''}`}
+              title={quota.byok ? undefined : `${quota.remaining}/${quota.limit}`}
+            >
+              {quota.byok
+                ? (language === 'zh' ? '自备密钥 · 不占额度' : 'BYOK · unmetered')
+                : (language === 'zh'
+                  ? `额度 ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`
+                  : `CREDITS ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`)}
+            </div>
             <button
               type="button"
               className="story-hud__chat-link"
@@ -2206,8 +2293,21 @@ function App() {
                     'story-scene-card',
                     `story-scene-card--${currentStoryEventType}`,
                     storyEmotionClass ? `story-scene-card--emotion-${storyEmotionClass}` : '',
+                    stageBgReady ? 'is-bg-crossfade' : '',
                   ].filter(Boolean).join(' ')}
                 >
+                  {/* Backdrop: two stacked layers crossfade (chat scene-layer grammar). */}
+                  <div
+                    className="story-scene-card__bg story-scene-card__bg--prev"
+                    style={{ backgroundImage: prevStageBg ? `url(${prevStageBg})` : 'none' } as CSSProperties}
+                    aria-hidden="true"
+                  />
+                  <div
+                    className="story-scene-card__bg story-scene-card__bg--current"
+                    style={{ backgroundImage: `url(${currentStageBg})` } as CSSProperties}
+                    aria-hidden="true"
+                  />
+                  <div className="story-scene-card__veil" aria-hidden="true" />
                   <div
                     className="story-scene-card__paper"
                     key={
@@ -2216,10 +2316,9 @@ function App() {
                       ?? currentStoryEventType
                     }
                   >
+                    {/* Meta row: slate line left, clock/place + pager + gif right. */}
                     <div className="story-scene-card__meta">
-                      <span className={`story-scene-card__chip story-scene-card__chip--${currentStoryEventType}`}>
-                        {currentStoryTypeChip}
-                      </span>
+                      <span className="story-scene-card__kind">{stageMetaKind}</span>
                       {/* Think/act: character stays in meta; speak uses a dialogue heading below. */}
                       {!isSpeakCard
                         && currentStoryHeading
@@ -2261,15 +2360,24 @@ function App() {
                       >
                         {storyGifHidden ? t.gifToggleShow : t.gifToggleHide}
                       </button>
+                      <span className="story-scene-card__tm">{[storyWorldClock, storyLocation].filter(Boolean).join(' · ')}</span>
                     </div>
+                    {/* Scene card: film title block — mono slugline + serif 900 title. */}
+                    {isSceneCard && (
+                      <div className="story-scene-card__scene-block">
+                        <p className="story-scene-card__scene-label">{stageSlugline}</p>
+                        <h3 className="story-scene-card__title">{storyLocation}</h3>
+                      </div>
+                    )}
+                    {/* Speak: left portrait fades into the backdrop (wide screens only). */}
+                    {isSpeakCard && currentStorySpeakerId && (
+                      <div className="story-scene-card__portrait" aria-hidden="true">
+                        <img src={`/avatars/desert-noir/${currentStorySpeakerId}.jpg`} alt="" />
+                      </div>
+                    )}
                     {/* Disco Elysium weight: character name is the dialogue heading. */}
                     {isSpeakCard && currentStoryHeading && (
                       <h3 className="story-scene-card__name">{currentStoryHeading}</h3>
-                    )}
-                    {isSceneCard && (
-                      <p className="story-scene-card__scene-label">
-                        {language === 'zh' ? '场景转换' : 'Scene'}
-                      </p>
                     )}
                     <p className={[
                       'story-scene-card__quote',
@@ -2300,7 +2408,10 @@ function App() {
                 {timelineRailOpen ? (
                   <aside className="story-timeline" aria-label={t.sceneTimeline}>
                     <div className="story-timeline__head">
-                      <h3>{t.sceneTimeline}</h3>
+                      <h3>{t.shotList}</h3>
+                      <span className="story-timeline__count">
+                        {shotListEntries.length} {language === 'zh' ? '拍' : 'shots'}
+                      </span>
                       <button
                         type="button"
                         className="story-timeline__toggle"
@@ -2310,53 +2421,30 @@ function App() {
                         {t.timelineCollapse}
                       </button>
                     </div>
-                    <p className="story-timeline__hint">{t.timelineHint}</p>
+                    {/* status/outline/beat_ready never render as cards here —
+                        they compress into one thin diegetic line (design rail-status). */}
+                    <p className="story-timeline__status" aria-live="polite">{t.directorBusy}</p>
                     <div className="story-events" ref={storyEventsRef}>
-                      {story.events.map((evt, i) => {
-                        const isCardType = STORY_CARD_EVENT_TYPES.has(evt.type)
+                      {shotListEntries.map(({ evt, i }, shotNo) => {
                         const isActive = evt === currentStoryEvent
                         const summary = getStoryEventTimelineSummary(evt, language)
-                        if (!summary && evt.type !== 'error' && evt.type !== 'complete') {
-                          if (evt.type === 'status' || evt.type === 'outline' || evt.type === 'beat_ready') {
-                            return null
-                          }
-                        }
-                        const isAct = evt.type === 'agent_act'
-                        const isThink = evt.type === 'agent_think'
-                        const isDelta = evt.type === 'world_state_delta'
                         return (
                           <button
                             key={`${i}-${evt.type}-${evt.received_at ?? ''}`}
                             type="button"
                             className={[
                               'story-event',
+                              'story-shot',
                               `story-event--${evt.type}`,
+                              'story-event--selectable',
                               isActive ? 'is-active' : '',
-                              isCardType ? 'story-event--selectable' : '',
-                              isAct ? 'story-event--stage-dir' : '',
-                              isThink ? 'story-event--inner' : '',
-                              isDelta ? 'story-event--delta-thin' : '',
                             ].filter(Boolean).join(' ')}
-                            onClick={() => {
-                              if (isCardType) setPinnedStoryEventIndex(i)
-                            }}
-                            disabled={!isCardType}
+                            onClick={() => setPinnedStoryEventIndex(i)}
                           >
-                            <span className="story-event__dot" aria-hidden="true" />
-                            {!isAct && (
-                              <strong className={isThink ? 'story-event__label--inner' : undefined}>
-                                {getEventTitle(evt, language)}
-                              </strong>
-                            )}
-                            {summary && (
-                              <p className={[
-                                'story-event__summary',
-                                isThink ? 'thought' : '',
-                                isAct ? 'stage-dir' : '',
-                              ].filter(Boolean).join(' ')}>
-                                {summary}
-                              </p>
-                            )}
+                            <span className="story-shot__tag">
+                              {language === 'zh' ? '拍' : 'SHOT'} {String(shotNo + 1).padStart(2, '0')} · {STORY_EVENT_KIND_EN[evt.type] ?? 'SHOT'}
+                            </span>
+                            <p className="story-shot__sum">{summary || getEventTypeChip(evt, language)}</p>
                           </button>
                         )
                       })}
@@ -2408,6 +2496,12 @@ function App() {
               {/* Decision layer: say / do / observe + free text (AI Dungeon grammar). */}
               {story.connectionState === 'beat_paused' && (
                 <div className="beat-paused beat-paused--drama">
+                  {/* Stage v2: intermission header strip (design inter-head). */}
+                  <div className="beat-paused__interhead">
+                    <span className="beat-paused__intersq" aria-hidden="true" />
+                    <span>{t.interLabel}</span>
+                    <small>{t.interSub}</small>
+                  </div>
                   <DramaDecisionBar
                     language={language}
                     suggestions={dramaSuggestions}
