@@ -139,3 +139,4 @@ Horizon crosswalk: [`continuity/KNOWLEDGE_HORIZONS.md`](./continuity/KNOWLEDGE_H
 - 不把 Fandom/Wikiquote 的 CC BY-SA 当成底层剧集对白版权授权。
 - 不声称应用或输出是 Sony/AMC 官方产品。
 - 若需要真实对白、剧本片段、剧照、音频或视频片段，走 Sony 官方授权路径。
+- 对外 demo / 展示以素材库架构与安全边界为主视觉，不把剧照、剧本或其他受版权保护内容当作主画面。
