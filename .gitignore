@@ -30,16 +30,21 @@ __pycache__/
 .vercel
 .vercel_python_packages/
 
-# Work artifacts (local only)
-.ship/
+# Build output
 dist/
-.claude/commands/
+
+# Local AI-tool / test-run artifacts (do not commit)
+.claude/
+.trae/
+.playwright-mcp/
+.promptfoo/
+.ship/
+.bin/
+looper-output/
+.hermes.md
 
 # Voice clone raw samples (local only)
 materials/breaking-bad/voice-archetypes/samples/
-
-# Promptfoo evaluation results (CI-generated, not committed)
-.promptfoo/results.json
 
 # Agent harness runtime (local trials)
 backend/agents/harness/data/lessons.json
