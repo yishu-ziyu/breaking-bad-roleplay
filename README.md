@@ -107,3 +107,5 @@ The project-local Breaking Bad material library lives in `materials/breaking-bad
 - `DESIGN.md`: retrieval-library architecture and copyright-safe layering.
 - `SOURCES.md`: source directory for official pages, creator interviews, podcasts, critical analysis, wiki references, and licensing routes.
 - `INGESTION_SCHEMA.md`: JSONL schemas for sources, episodes, voice rules, production notes, relationship dynamics, and retrieval units.
+
+Public demos should present this as **素材库架构 + 安全边界** (material-library architecture and safety/copyright boundaries), not as AMC/Sony IP stills, scripts, or other copyrighted content as the hero visual. Do not add, copy, or showcase copyrighted stills or scripts as primary marketing material.
