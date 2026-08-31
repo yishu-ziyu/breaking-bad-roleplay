@@ -265,3 +265,110 @@
   --chrome-border: rgba(196, 154, 58, 0.35); /* single dust-gold edge */
   --accent-gold: var(--color-bb-yellow);     /* #f7ce46 — one CTA gold */
 }
+
+/* =================================================================
+   DESERT-NOIR OVERRIDE (2026-08 Open Design 整站重设计落地)
+   -----------------------------------------------------------------
+   原则：变量名不变、值翻转为 desert-noir 暗色体系，下游 CSS 自动换肤。
+   品牌方向见 Open Design 项目 bbr-full-redesign / brand-spec.md：
+   - 近黑炭绿舞台 + 骨白衬线对白
+   - 唯一强调色 = Heisenberg 绿；琥珀只用于额度/警告
+   - 元素周期表方块是唯一装饰母题
+   ================================================================= */
+:root {
+  /* 1. Core palette (oklch 直出，浏览器原生支持) */
+  --dn-bg: oklch(0.145 0.015 165);        /* near-black charcoal green */
+  --dn-bg-2: oklch(0.175 0.018 165);      /* gradient lift */
+  --dn-surface: oklch(0.195 0.020 165);   /* raised panels */
+  --dn-surface-2: oklch(0.225 0.022 165); /* hover / active panels */
+  --dn-fg: oklch(0.93 0.012 95);          /* bone white */
+  --dn-muted: oklch(0.65 0.020 160);      /* sage gray */
+  --dn-muted-hi: oklch(0.75 0.018 160);
+  --dn-border: oklch(0.30 0.020 160);     /* 1px hairline structural */
+  --dn-accent: oklch(0.60 0.120 155);     /* Heisenberg green — the only accent */
+  --dn-accent-hi: oklch(0.68 0.120 155);
+  --dn-amber: oklch(0.76 0.130 85);       /* credits / warnings only */
+  --dn-danger: oklch(0.60 0.180 30);
+
+  /* 2. Type roles */
+  --dn-font-display: "Bebas Neue", "Noto Serif SC", sans-serif;
+  --dn-font-mono: "IBM Plex Mono", "Maple Mono", ui-monospace, monospace;
+
+  /* 3. Remap legacy tokens → desert-noir values（名字不变，值换肤） */
+  --night-bg: var(--dn-bg);
+  --night-bg-2: var(--dn-bg-2);
+  --paper: var(--dn-surface);
+  --paper-ink: var(--dn-fg);
+  --chrome-border: color-mix(in oklch, var(--dn-border) 80%, transparent);
+  --accent-gold: var(--dn-accent);
+
+  --color-bb-charcoal: var(--dn-bg);
+  --color-bb-ink: var(--dn-bg);
+
+  --color-surface-cream: var(--dn-surface);
+  --color-surface-paper: var(--dn-surface);
+  --color-surface-paper-2: var(--dn-bg-2);
+  --color-surface-paper-3: var(--dn-bg);
+  --color-surface-paper-4: var(--dn-bg);
+  --color-surface-code: oklch(0.17 0.018 165);
+  --color-surface-warm: var(--dn-bg-2);
+  --color-surface-warm-2: var(--dn-surface);
+  --color-surface-warm-3: var(--dn-bg);
+  --color-surface-yellow-soft: color-mix(in oklch, var(--dn-accent) 14%, var(--dn-bg));
+  --color-surface-dark-1: var(--dn-bg);
+  --color-surface-dark-2: var(--dn-bg-2);
+
+  --color-text-ink: var(--dn-fg);
+  --color-text-strong: var(--dn-fg);
+  --color-text-muted: var(--dn-muted);
+  --color-text-muted-2: var(--dn-muted-hi);
+  --color-text-muted-3: var(--dn-muted);
+  --color-text-on-dark: var(--dn-fg);
+  --color-text-link: var(--dn-accent-hi);
+  --color-text-link-hover: var(--dn-accent);
+
+  --color-border-soft: color-mix(in oklch, var(--dn-border) 55%, transparent);
+  --color-border-soft-2: color-mix(in oklch, var(--dn-border) 65%, transparent);
+  --color-border-soft-3: color-mix(in oklch, var(--dn-border) 75%, transparent);
+  --color-border-soft-4: var(--dn-border);
+  --color-border-soft-5: var(--dn-border);
+  --color-border-medium: var(--dn-border);
+  --color-border-charcoal-soft: color-mix(in oklch, var(--dn-border) 50%, transparent);
+  --color-border-on-dark: color-mix(in oklch, var(--dn-border) 90%, transparent);
+  --color-border-on-dark-2: color-mix(in oklch, var(--dn-border) 60%, transparent);
+  --color-border-light-soft: color-mix(in oklch, var(--dn-border) 45%, transparent);
+
+  --color-error-bg: color-mix(in oklch, var(--dn-danger) 16%, var(--dn-bg));
+  --color-error-text: oklch(0.80 0.140 30);
+  --color-overlay-bg: color-mix(in oklch, var(--dn-bg) 88%, transparent);
+  --color-avatar-border: var(--dn-border);
+
+  --color-ring-yellow: color-mix(in oklch, var(--dn-accent) 32%, transparent);
+  --color-ring-yellow-2: color-mix(in oklch, var(--dn-accent) 25%, transparent);
+  --color-ring-yellow-3: color-mix(in oklch, var(--dn-accent) 20%, transparent);
+  --color-ring-yellow-4: color-mix(in oklch, var(--dn-accent) 40%, transparent);
+  --color-ring-yellow-5: color-mix(in oklch, var(--dn-accent) 8%, transparent);
+  --color-ring-olive: color-mix(in oklch, var(--dn-accent) 20%, transparent);
+  --color-glow-warm-1: color-mix(in oklch, var(--dn-accent) 18%, transparent);
+  --color-glow-warm-2: color-mix(in oklch, var(--dn-amber) 14%, transparent);
+
+  /* 4. Radius: corners stay tight (2–4px)，hairline 分隔取代圆角卡片 */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 5px;
+  --radius-xl: 6px;
+  --radius-2xl: 7px;
+
+  /* 5. Shadows: 暗底上用 hairline 与提亮面分层，阴影压到最弱 */
+  --shadow-soft: 0 0 0 1px color-mix(in oklch, var(--dn-border) 40%, transparent);
+  --shadow-soft-2: 0 0 0 1px var(--dn-border);
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-dramatic: 0 24px 64px rgba(0, 0, 0, 0.6);
+  --shadow-pane: 12px 0 32px rgba(0, 0, 0, 0.35);
+  --shadow-glow-yellow: 0 0 0 1px color-mix(in oklch, var(--dn-accent) 30%, transparent);
+  --shadow-glow-yellow-2: 0 0 0 1px color-mix(in oklch, var(--dn-accent) 45%, transparent);
+
+  /* 6. Scene overlay: 沙漠夜色统一压暗 */
+  --scene-overlay-tint: color-mix(in oklch, var(--dn-bg) 30%, transparent);
+  --scene-overlay-tint-2: color-mix(in oklch, var(--dn-bg) 55%, transparent);
+}
