@@ -1084,6 +1084,15 @@ function App() {
     story.setConnectionSessionId(connection.connectionSessionId)
   }, [connection.connectionSessionId, story])
 
+  // P3: teach the story stream to self-heal a 410 binding_expired by
+  // re-binding once from the local vault (force: the old id is dead).
+  useEffect(() => {
+    story.setBindingRecover(async () => {
+      const sid = await connection.ensureBound({ force: true })
+      return sid || null
+    })
+  }, [connection, story])
+
   // Refresh free credits after each story beat pause/complete.
   useEffect(() => {
     if (

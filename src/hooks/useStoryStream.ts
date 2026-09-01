@@ -233,8 +233,10 @@ export interface UseStoryStreamReturn {
   autoContinued: boolean
   isResuming: boolean
   resumeToast: string | null
-  /** Classified failure for the interrupted-state UI (QA P0#1/#2). */
-  streamFailure: { kind: 'timeout' | 'network' | 'http' | 'unknown'; message: string } | null
+  /** Classified failure for the interrupted-state UI (QA P0#1/#2).
+   * 'binding' = P3: the saved BYOK key link expired (server restart) and
+   * the one automatic rebind from the local vault did not recover it. */
+  streamFailure: { kind: 'timeout' | 'network' | 'http' | 'binding' | 'unknown'; message: string } | null
   startStory: (
     taskPrompt: string,
     characterId?: string,
@@ -243,6 +245,10 @@ export interface UseStoryStreamReturn {
     connectionSessionId?: string | null,
   ) => Promise<void>
   setConnectionSessionId: (id: string | null) => void
+  /** P3: wire the BYOK rebind path (App -> useConnection.ensureBound).
+   * Returns a fresh connection session id or null when no vault key can
+   * re-bind. Called at most once per story attempt on HTTP 410. */
+  setBindingRecover: (fn: (() => Promise<string | null>) | null) => void
   sendAction: (action: StoryAction, params?: StoryActionParams, characterId?: string) => Promise<void>
   reconnect: () => void
   reset: () => void
@@ -287,6 +293,11 @@ export function useStoryStream(): UseStoryStreamReturn {
   /* One silent reconnect per stall — a transient proxy drop should not need
    * player attention. */
   const stallReconnectRef = useRef(false)
+  /* P3: the server answers 410 binding_expired when a BYOK bind id outlives
+   * the process that created it (restart / TTL). Recovery = re-bind from the
+   * client-side vault exactly once, silently. */
+  const bindingRecoverRef = useRef<(() => Promise<string | null>) | null>(null)
+  const bindingRecoverTriedRef = useRef(false)
   // Persist across beat_paused → continue (stream is closed after each beat).
   const languageRef = useRef<string>(readPersistedStoryLanguage())
   const voiceExampleRef = useRef<string | null>(null)
@@ -351,6 +362,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     setAutoContinued(false)
     setStreamFailure(null)
     stallReconnectRef.current = false
+    bindingRecoverTriedRef.current = false
     setConnectionState('idle')
     sessionRef.current = null
     // Keep language/voice for the next continue within the same UI session;
@@ -381,6 +393,15 @@ export function useStoryStream(): UseStoryStreamReturn {
   const setConnectionSessionId = useCallback((id: string | null) => {
     connectionSessionRef.current = id
   }, [])
+
+  // P3: App wires this to useConnection.ensureBound({force:true}) so a
+  // 410 binding_expired can self-heal once from the local vault.
+  const setBindingRecover = useCallback(
+    (fn: (() => Promise<string | null>) | null) => {
+      bindingRecoverRef.current = fn
+    },
+    [],
+  )
 
   const connectStream = useCallback((sid: string, voiceExample?: string | null, language?: string) => {
     closeEventSource()
@@ -435,6 +456,7 @@ export function useStoryStream(): UseStoryStreamReturn {
           setBeatIndex((prev) => parsedBeatIndex ?? prev + 1)
           setAutoContinued(false)
           stallReconnectRef.current = false
+          bindingRecoverTriedRef.current = false
           setStreamFailure(null)
           setConnectionState(isFinal ? 'streaming' : 'beat_paused')
           closeEventSource()
@@ -443,6 +465,7 @@ export function useStoryStream(): UseStoryStreamReturn {
         if (eventType === 'complete') {
           appendEvent({ type: 'complete', data: payload.data ?? {} })
           stallReconnectRef.current = false
+          bindingRecoverTriedRef.current = false
           setStreamFailure(null)
           setConnectionState('complete')
           closeEventSource()
@@ -469,6 +492,38 @@ export function useStoryStream(): UseStoryStreamReturn {
         // reconnect (which re-bills the beat).
         onActivity: () => armStallWatchdog(sid),
         onHttpError: (status, body) => {
+          // P3: lost BYOK binding (server restarted after we bound).
+          // One silent rebind from the vault, then resume the SAME beat —
+          // the platform meter is never touched on this path.
+          if (status === 410) {
+            const recover = bindingRecoverRef.current
+            if (recover && !bindingRecoverTriedRef.current) {
+              bindingRecoverTriedRef.current = true
+              void (async () => {
+                const newSid = await recover()
+                if (newSid) {
+                  connectionSessionRef.current = newSid
+                  connectStream(sid, undefined, undefined)
+                } else {
+                  setStreamFailure({
+                    kind: 'binding',
+                    message:
+                      'Your saved provider-key link expired and could not be restored. Reconnect your key — your story progress is saved.',
+                  })
+                  setConnectionState('error')
+                }
+              })()
+              return
+            }
+            setStreamFailure({
+              kind: 'binding',
+              message:
+                'Your saved provider-key link expired (server restart). Reconnect your key to continue — your story progress is saved.',
+            })
+            setConnectionState('error')
+            closeEventSource()
+            return
+          }
           const detail = (body as { detail?: { message?: string } | string } | null)?.detail
           const rawMsg =
             (detail && typeof detail === 'object' && detail.message)
@@ -535,6 +590,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     setSessionError(null)
     setStreamFailure(null)
     stallReconnectRef.current = false
+    bindingRecoverTriedRef.current = false
     setConnectionState('connecting')
     const resolvedLanguage = language || readPersistedStoryLanguage() || 'en'
     languageRef.current = resolvedLanguage
@@ -835,6 +891,7 @@ export function useStoryStream(): UseStoryStreamReturn {
     autoContinued,
     streamFailure,
     setConnectionSessionId,
+    setBindingRecover,
     isResuming,
     resumeToast,
     startStory,

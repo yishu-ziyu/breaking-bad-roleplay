@@ -261,6 +261,14 @@ Rules:
 - Platform demo = **shared server keys = your bill**. BYOK = user vault + RAM bind.
 - Never put API keys in frontend.
 
+### BYOK binding & quota tiers (P3, 2026-09-01)
+
+- **绑定丢失绝不静默扣平台钱**：请求带 `X-Connection-Session` 但服务端 RAM 里查不到（重启/TTL）→ 一律 `410 binding_expired`。前端（story stream）自动从本地 vault 重绑一次并续播；chat/TTS 走 ConnectionSheet 重连。**运维看到 410 突增 = 刚重启过，属正常自愈，不是故障。**
+- **配额三层**：Redis（配了 REDIS_URL 时）→ **Postgres `quota_usage`/`quota_usage_global`（重启不重置、多 worker 一致）** → 内存（仅兜底，5 分钟退避重试 DB 层）。上线前必须 `alembic upgrade head` 到 `d4e5f6a7b8c9`，否则 DB 层报错自动降级内存并打 WARNING。
+- **BYOK 的 API key 永不落库**（`byok_connections` 表只有 provider/model/base_url/region/掩码尾号），key 仍只在进程 RAM。
+- 因此 **单 worker 约束仍然成立**：`main._enforce_runtime_invariants()` 会在 `WEB_CONCURRENCY>1 且无 REDIS_URL` 时**拒绝启动**（这是有意的 fail-fast，别注释掉；要扩容先解决共享 key 存储问题）。
+- P2 配套：stream 未交付 `beat_ready` 会原路退款（`QuotaSnapshot.cost` + refund）；Director 未交付的 beat 认领会回退（rewind），重连重试的是同一个 beat。
+
 ### Commits
 
 - English conventional commits.

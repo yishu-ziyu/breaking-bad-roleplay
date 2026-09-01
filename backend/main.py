@@ -22,6 +22,42 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _enforce_runtime_invariants() -> None:
+    """P3 (full-stack review): make the single-worker invariant explicit.
+
+    BYOK API keys live in the process-RAM connection store by design (they
+    are never persisted). With Redis also absent, that only works while one
+    uvicorn process serves all traffic: a second worker cannot see worker
+    A's bindings, and players would loop on binding_expired rebinds. Rather
+    than let that degrade silently, refuse to start. Scale out safely by
+    setting REDIS_URL (shared rate limiting) — and revisit the key store
+    before multi-worker becomes a real requirement.
+
+    Quota counters no longer depend on this (durable DB tier since P3).
+    """
+    import os
+
+    raw = os.environ.get("WEB_CONCURRENCY", "1")
+    try:
+        workers = int(raw)
+    except ValueError:
+        workers = 1
+    redis_configured = bool((getattr(settings, "redis_url", "") or "").strip())
+    if workers > 1 and not redis_configured:
+        raise RuntimeError(
+            "Refusing to start: WEB_CONCURRENCY=%s without REDIS_URL. "
+            "BYOK key bindings are per-process RAM; multiple workers would "
+            "lose them silently. Set REDIS_URL (required for shared rate "
+            "limits) before scaling out, or run a single worker."
+            % workers
+        )
+    if workers <= 1:
+        logger.info(
+            "runtime invariants OK: single worker, quota tier=%s",
+            "redis" if redis_configured else "postgres-durable",
+        )
+
+
 def _parse_allowed_origins(raw: str, app_env: str) -> list[str]:
     """Parse the ALLOWED_ORIGINS env var into a list of CORS origins.
 
@@ -53,6 +89,10 @@ def _parse_allowed_origins(raw: str, app_env: str) -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # P3: fail fast on configurations that would silently corrupt billing
+    # (multi-worker without Redis). See _enforce_runtime_invariants.
+    _enforce_runtime_invariants()
+
     # Schema management is handled exclusively by Alembic. The app does NOT
     # create tables at startup — run `alembic upgrade head` before starting
     # the server (dev and prod alike). create_all was removed because it
