@@ -1112,11 +1112,10 @@ async def list_session_messages(
     # Cap limit at 500 regardless of what the client asks for.
     effective_limit = min(limit, 500)
 
-    # H3: select only the primary-key column instead of the full row.
-    # ``Session.messages`` / ``character_states`` / ``character_dossiers``
-    # are configured lazy="selectin", so loading a full Session row would
-    # trigger 3 extra SELECTs pulling in all messages/states/dossiers —
-    # data we don't need just to verify the session exists.
+    # H3/P4: this row select used to claim "PK-only" but still loaded the
+    # full ORM row; the real fix is in db/models.py — the history
+    # relationships are lazy="raise", so this is now exactly ONE SELECT
+    # (owner_token_hash is needed below for the ownership check).
     existence = await db.execute(
         select(SessionModel).where(SessionModel.id == session_id)
     )
