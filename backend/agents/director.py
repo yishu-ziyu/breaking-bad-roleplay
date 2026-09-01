@@ -813,6 +813,47 @@ class DirectorAgent:
             data={"message": _status_message("complete", language)},
         )
 
+    async def _rewind_beat_claim(
+        self, session_factory: Any, session_id: str, beat_index: int
+    ) -> None:
+        """Undo a beat claim whose generation never completed (P2).
+
+        The claim advances ``next_beat_index`` before the long beat
+        generation. If the generator dies mid-beat (LLM exception) or the
+        client aborts (aclose through the SSE heartbeat wrapper), the
+        advance would silently skip a paid-for beat forever. Rewind it —
+        but ONLY while the stored value is still ``beat_index + 1``, so a
+        concurrent request that claimed a later beat is never clobbered.
+        """
+        from db.models import Session as SessionModel
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(SessionModel)
+                .where(SessionModel.id == session_id)
+                .with_for_update()
+            )
+            story_session = result.scalar_one_or_none()
+            if story_session is None:
+                return
+            stored = int(getattr(story_session, "next_beat_index", 0) or 0)
+            if stored != beat_index + 1:
+                logger.info(
+                    "skip beat rewind for session %s: index already at %s "
+                    "(advanced past claim %s)",
+                    session_id,
+                    stored,
+                    beat_index,
+                )
+                return
+            story_session.next_beat_index = beat_index
+            await session.commit()
+        logger.info(
+            "rewound undelivered beat claim %s for session %s",
+            beat_index,
+            session_id,
+        )
+
     async def process_next_beat(
         self,
         *,
@@ -922,66 +963,90 @@ class DirectorAgent:
             story_session.plot_outline = outline_text
             await session.commit()
 
-        scene_desc = scenes[beat_index]
-        current_scene = self._short_scene_name(scene_desc)
-        previous_scene = (
-            self._short_scene_name(scenes[beat_index - 1]) if beat_index > 0 else ""
-        )
-        previous_scene_desc = scenes[beat_index - 1] if beat_index > 0 else ""
-        active_character_id = resolve_backend_character_id(active_character_raw)
-        ready_event: AgentEvent | None = None
-
-        async for event in self._generate_beat(
-            task=task,
-            outline=outline_text,
-            beat_index=beat_index,
-            context={
-                "previous_scene": previous_scene,
-                "previous_scene_desc": previous_scene_desc,
-                "current_scene": current_scene,
-            },
-            scene_desc=scene_desc,
-            session_factory=session_factory,
-            session_id=session_id,
-            active_character_id=active_character_id,
-            voice_example=voice_example,
-            language=language,
-            zh_guard=zh_guard,
-        ):
-            if event.type == "beat_ready":
-                ready_event = event
-            else:
-                yield event
-
-        next_beat_index = beat_index + 1
-        is_final = next_beat_index >= len(scenes)
-        async with session_factory() as session:
-            result = await session.execute(
-                select(SessionModel).where(SessionModel.id == session_id)
+        # P2 (full-stack review): the claim above spent next_beat_index, but
+        # the beat is only really "bought" when its final beat_ready is
+        # emitted (all content persisted). Any earlier exit — generation
+        # exception, or client abort closing this generator via the SSE
+        # heartbeat wrapper — rewinds the claim so the reconnect re-renders
+        # the SAME beat instead of silently skipping it.
+        beat_delivered = False
+        try:
+            scene_desc = scenes[beat_index]
+            current_scene = self._short_scene_name(scene_desc)
+            previous_scene = (
+                self._short_scene_name(scenes[beat_index - 1]) if beat_index > 0 else ""
             )
-            story_session = result.scalar_one_or_none()
-            if story_session is None:
-                raise ValueError("Session not found")
-            story_session.plot_outline = outline_text
-            story_session.status = "complete" if is_final else "waiting"
-            await session.commit()
+            previous_scene_desc = scenes[beat_index - 1] if beat_index > 0 else ""
+            active_character_id = resolve_backend_character_id(active_character_raw)
+            ready_event: AgentEvent | None = None
 
-        ready_data = dict(ready_event.data) if ready_event is not None else {
-            "beat_id": f"beat_{next_beat_index}",
-            "beat_summary": scene_desc,
-        }
-        ready_data["is_final"] = is_final
-        yield AgentEvent(
-            type="beat_ready",
-            data=ready_data,
-            model_route=ready_event.model_route if ready_event is not None else None,
-        )
+            async for event in self._generate_beat(
+                task=task,
+                outline=outline_text,
+                beat_index=beat_index,
+                context={
+                    "previous_scene": previous_scene,
+                    "previous_scene_desc": previous_scene_desc,
+                    "current_scene": current_scene,
+                },
+                scene_desc=scene_desc,
+                session_factory=session_factory,
+                session_id=session_id,
+                active_character_id=active_character_id,
+                voice_example=voice_example,
+                language=language,
+                zh_guard=zh_guard,
+            ):
+                if event.type == "beat_ready":
+                    ready_event = event
+                else:
+                    yield event
 
-        if is_final:
+            next_beat_index = beat_index + 1
+            is_final = next_beat_index >= len(scenes)
+            async with session_factory() as session:
+                result = await session.execute(
+                    select(SessionModel).where(SessionModel.id == session_id)
+                )
+                story_session = result.scalar_one_or_none()
+                if story_session is None:
+                    raise ValueError("Session not found")
+                story_session.plot_outline = outline_text
+                story_session.status = "complete" if is_final else "waiting"
+                await session.commit()
+
+            ready_data = dict(ready_event.data) if ready_event is not None else {
+                "beat_id": f"beat_{next_beat_index}",
+                "beat_summary": scene_desc,
+            }
+            ready_data["is_final"] = is_final
+            # From here the beat is persisted and being delivered: the claim
+            # is final. (A consumer that dies right here loses only the wire,
+            # not the content — /messages recovery rebuilds it.)
+            beat_delivered = True
             yield AgentEvent(
-                type="complete",
-                data={"message": _status_message("complete", language)},
+                type="beat_ready",
+                data=ready_data,
+                model_route=ready_event.model_route if ready_event is not None else None,
             )
+
+            if is_final:
+                yield AgentEvent(
+                    type="complete",
+                    data={"message": _status_message("complete", language)},
+                )
+        finally:
+            if not beat_delivered:
+                try:
+                    await self._rewind_beat_claim(
+                        session_factory, session_id, beat_index
+                    )
+                except Exception:
+                    logger.exception(
+                        "beat rewind failed for session %s (beat %s)",
+                        session_id,
+                        beat_index,
+                    )
 
     # ------------------------------------------------------------------
     # Outline generation

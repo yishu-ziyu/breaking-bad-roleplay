@@ -137,6 +137,11 @@ class QuotaSnapshot:
     byok: bool = False
     # "guest" | "user" | "byok"
     tier: str = "guest"
+    # P2 (full-stack review): credits actually charged by
+    # enforce_platform_quota for this call, so an undelivered billed action
+    # (e.g. a story stream that died before beat_ready) can be refunded
+    # exactly what it paid. 0 = nothing was charged (BYOK / free actions).
+    cost: int = 0
 
 
 @dataclass
@@ -226,6 +231,27 @@ class _MemoryQuotaStore:
             snap.global_used = g_used + cost
             snap.global_remaining = max(0, global_limit - snap.global_used)
             return QuotaDecision(allowed=True, reason=None, snapshot=snap, http_status=200)
+
+    def refund(
+        self, identity: str, day: str, cost: int, limit: int, global_limit: int
+    ) -> QuotaSnapshot:
+        """Give back previously consumed credits, clamped at zero (P2)."""
+        with self._lock:
+            self._purge_old_days(day)
+            used = max(0, self._used.get((day, identity), 0) - cost)
+            g_used = max(0, self._global.get(day, 0) - cost)
+            self._used[(day, identity)] = used
+            self._global[day] = g_used
+        return QuotaSnapshot(
+            identity=identity,
+            day=day,
+            used=used,
+            limit=limit,
+            remaining=max(0, limit - used),
+            global_used=g_used,
+            global_limit=global_limit,
+            global_remaining=max(0, global_limit - g_used),
+        )
 
     def check_rate_limit(self, ip: str, max_hits: int, window_sec: int) -> bool:
         """Return True if allowed, False if rate limited."""
@@ -383,6 +409,51 @@ return {1}
             http_status=402 if not allowed and reason == "free_quota_exhausted" else 429,
         )
 
+    _REFUND_LUA = """
+local used = tonumber(redis.call('DECRBY', KEYS[1], ARGV[1]))
+if used < 0 then redis.call('SET', KEYS[1], 0); used = 0 end
+local g_used = tonumber(redis.call('DECRBY', KEYS[2], ARGV[1]))
+if g_used < 0 then redis.call('SET', KEYS[2], 0); g_used = 0 end
+redis.call('EXPIRE', KEYS[1], 86400)
+redis.call('EXPIRE', KEYS[2], 86400)
+return {used, g_used}
+"""
+
+    async def refund(
+        self, identity: str, day: str, cost: int, limit: int, global_limit: int
+    ) -> QuotaSnapshot:
+        """Give back consumed credits; falls back to memory without Redis (P2)."""
+        if cost <= 0:
+            return await self.snapshot(identity, day, limit, global_limit)
+        if not await self._ensure_redis():
+            return self._memory.refund(identity, day, cost, limit, global_limit)
+
+        identity_key = f"quota:{day}:{identity}"
+        global_key = f"quota:{day}:global"
+        try:
+            result = await self._redis_client.eval(  # type: ignore[union-attr]
+                self._REFUND_LUA,
+                2,
+                identity_key,
+                global_key,
+                cost,
+            )
+            used = int(result[0])
+            g_used = int(result[1])
+        except Exception:
+            return self._memory.refund(identity, day, cost, limit, global_limit)
+
+        return QuotaSnapshot(
+            identity=identity,
+            day=day,
+            used=used,
+            limit=limit,
+            remaining=max(0, limit - used),
+            global_used=g_used,
+            global_limit=global_limit,
+            global_remaining=max(0, global_limit - g_used),
+        )
+
     async def check_rate_limit(self, ip: str, max_hits: int, window_sec: int) -> bool:
         if not await self._ensure_redis():
             return self._memory.check_rate_limit(ip, max_hits, window_sec)
@@ -515,7 +586,27 @@ async def enforce_platform_quota(
         global_daily_limit(),
     )
     decision.snapshot.tier = tier
+    if decision.allowed:
+        # P2: remember what we charged so an undelivered billed action can be
+        # refunded by the caller via refund_platform_quota(snapshot).
+        decision.snapshot.cost = cost
     return decision
+
+
+async def refund_platform_quota(snapshot: QuotaSnapshot | None) -> bool:
+    """Return the credits a prior enforce_platform_quota charged for an
+    action that never reached the client (P2). No-op (returns False) for
+    BYOK / unbilled snapshots; True when a refund was recorded."""
+    if snapshot is None or getattr(snapshot, "cost", 0) <= 0:
+        return False
+    await _store.refund(
+        snapshot.identity,
+        snapshot.day,
+        snapshot.cost,
+        snapshot.limit,
+        snapshot.global_limit,
+    )
+    return True
 
 
 async def read_quota_snapshot(
