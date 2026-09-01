@@ -92,11 +92,106 @@ function defaultVault(): VaultBlob {
   }
 }
 
+/* ------------------------------------------------------------------
+   Device key (P5① — full-stack review): the v1 scheme generated an
+   extractable AES key, exported it RAW into localStorage, and kept it
+   next to the ciphertext it protected — "encryption at rest" that any
+   localStorage read (XSS, malicious extension, dotfile sync) unwraps in
+   one shot. v2 keeps the CryptoKey NON-EXTRACTABLE and hands the object
+   itself to IndexedDB (structured clone), where it can be *used* by this
+   origin but never exported. This does not stop a same-origin XSS from
+   *decrypting in place* — only server-side/OS credentials do — but it
+   removes the "copy one string, own every BYOK key forever" failure mode.
+   ------------------------------------------------------------------ */
+
+const IDB_NAME = 'abq_connection_vault'
+const IDB_STORE = 'keys'
+const IDB_KEY_RECORD = 'device_key_v2'
+
+export type VaultKeyStore = {
+  get(): Promise<CryptoKey | null>
+  put(key: CryptoKey): Promise<void>
+}
+
+function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+/** IndexedDB-backed store for the non-extractable CryptoKey. Returns null
+ * when IndexedDB is unavailable (SSR, ancient browser, hard privacy mode). */
+function createIdbKeyStore(): VaultKeyStore | null {
+  if (typeof indexedDB === 'undefined') return null
+  const open = () =>
+    new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, 1)
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore(IDB_STORE)
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+  return {
+    async get() {
+      const db = await open()
+      try {
+        const tx = db.transaction(IDB_STORE, 'readonly')
+        return ((await idbRequest(tx.objectStore(IDB_STORE).get(IDB_KEY_RECORD))) as CryptoKey) ?? null
+      } finally {
+        db.close()
+      }
+    },
+    async put(key: CryptoKey) {
+      const db = await open()
+      try {
+        const tx = db.transaction(IDB_STORE, 'readwrite')
+        tx.objectStore(IDB_STORE).put(key, IDB_KEY_RECORD)
+        await new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+        })
+      } finally {
+        db.close()
+      }
+    },
+  }
+}
+
+let keyStoreOverride: VaultKeyStore | null | undefined
+let idbKeyStore: VaultKeyStore | null | undefined
+
+/** Test seam / embedder hook: pass an in-memory store (unit tests) or
+ * null (force the v1 localStorage fallback path). undefined restores the
+ * production IndexedDB behaviour. */
+export function setVaultKeyStoreForTests(store?: VaultKeyStore | null): void {
+  keyStoreOverride = store
+}
+
+function resolveKeyStore(): VaultKeyStore | null {
+  if (keyStoreOverride !== undefined) return keyStoreOverride
+  if (idbKeyStore === undefined) idbKeyStore = createIdbKeyStore()
+  return idbKeyStore
+}
+
 async function loadOrCreateDeviceKey(): Promise<CryptoKey> {
   const subtle = getSubtle()
   if (typeof window === 'undefined') {
+    // SSR/tests: ephemeral non-extractable key (nothing persists anyway).
     return subtle.generateKey({ name: KEY_ALG, length: 256 }, false, ['encrypt', 'decrypt'])
   }
+  const store = resolveKeyStore()
+  if (store) {
+    const existing = await store.get().catch(() => null)
+    if (existing) return existing
+    const fresh = await subtle.generateKey({ name: KEY_ALG, length: 256 }, false, ['encrypt', 'decrypt'])
+    await store.put(fresh).catch(() => undefined)
+    return fresh
+  }
+  // No IndexedDB (override=null / ancient browser): legacy v1 path —
+  // extractable key material in localStorage. Kept only so those users do
+  // not lose their saved keys; v2 browsers never write DEVICE_KEY_STORAGE.
   const raw = window.localStorage.getItem(DEVICE_KEY_STORAGE)
   if (raw) {
     return subtle.importKey(
@@ -153,7 +248,26 @@ export async function loadVault(): Promise<VaultBlob> {
       return { ...defaultVault(), ...JSON.parse(raw) as VaultBlob }
     }
     const key = await loadOrCreateDeviceKey()
-    return await decryptJson(raw, key)
+    try {
+      return await decryptJson(raw, key)
+    } catch {
+      // P5① migration: envelope written under the old v1 scheme (exported
+      // raw device key in localStorage). Read it once with the v1 key,
+      // re-encrypt under the v2 non-extractable key, destroy the v1 copy.
+      const v1Raw = window.localStorage.getItem(DEVICE_KEY_STORAGE)
+      if (!v1Raw) throw new Error('vault unreadable')
+      const v1Key = await getSubtle().importKey(
+        'raw',
+        toArrayBuffer(fromBase64Url(v1Raw)),
+        { name: KEY_ALG },
+        true,
+        ['encrypt', 'decrypt'],
+      )
+      const blob = await decryptJson(raw, v1Key)
+      await saveVault(blob)
+      window.localStorage.removeItem(DEVICE_KEY_STORAGE)
+      return blob
+    }
   } catch {
     return defaultVault()
   }
