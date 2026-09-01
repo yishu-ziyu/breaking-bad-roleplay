@@ -6,11 +6,8 @@
       "excludeFiles": "{.*,**/.env*,backend/.pytest_cache/**,backend/.venv/**,backend/tests/**,deploy/**,dist/**,docs/**,looper-output/**,node_modules/**,playwright-report/**,public/**,scripts/**,src/**,supabase/**,test*/**}"
     }
   },
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://bb.yishuziyu.cn/api/$1" }
+    { "source": "/api/(.*)", "destination": "https://bb.yishuziyu.cn/api/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
