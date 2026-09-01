@@ -1,0 +1,60 @@
+# bb.yishuziyu.cn — reference nginx config for the breaking-bad-roleplay VM.
+#
+# WHY THIS FILE EXISTS (P1 full-stack review):
+#   The story mode streams SSE (GET /api/session/{id}/stream). Before the
+#   backend heartbeat fix, the Director could keep the stream silent for the
+#   full beat-plan LLM call (up to 120s provider read timeout). nginx's
+#   DEFAULT proxy_read_timeout is 60s, which cut those idle upstreams
+#   mid-beat; the frontend watchdog then fired and the silent reconnect
+#   re-billed the player. The backend now emits `: ping` SSE comment frames
+#   every 15s of Director silence, so the upstream is never idle for long —
+#   but the proxy MUST NOT buffer or shorten that, and the timeouts below
+#   must stay >= the numbers here.
+#
+# DEPLOY: copy to /etc/nginx/conf.d/bb-roleplay.conf on 121.89.90.68,
+# `nginx -t`, then `systemctl reload nginx`. Do NOT touch the
+# gun.yishuziyu.cn server blocks on the same box (see OPS_RUNBOOK).
+
+upstream bb_roleplay_app {
+    server 127.0.0.1:8080;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name bb.yishuziyu.cn;
+
+    ssl_certificate     /etc/letsencrypt/live/bb.yishuziyu.cn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bb.yishuziyu.cn/privkey.pem;
+
+    root /opt/breaking-bad-roleplay/dist;
+    index index.html;
+
+    # --- API (REST + SSE) -------------------------------------------------
+    location /api/ {
+        proxy_pass http://bb_roleplay_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # SSE: no buffering (also belt-and-braced by X-Accel-Buffering: no
+        # from the app), and keep the Connection header empty so the
+        # upstream keepalive pool works with HTTP/1.1.
+        proxy_buffering    off;
+        proxy_cache        off;
+        proxy_set_header   Connection "";
+        # Timeout chain (P1): heartbeat every 15s from the backend; the
+        # frontend stall watchdog gives up after 90s of zero bytes; the
+        # provider read timeout is 120s. 180s here keeps nginx from ever
+        # being the first to cut a stream.
+        proxy_read_timeout  180s;
+        proxy_send_timeout  180s;
+    }
+
+    # --- Static SPA ---------------------------------------------------------
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

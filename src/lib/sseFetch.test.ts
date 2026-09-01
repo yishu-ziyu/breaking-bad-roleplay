@@ -17,4 +17,15 @@ describe('parseSseChunk', () => {
     const { events } = parseSseChunk('event: status\ndata: a\ndata: b\n\n')
     assert.equal(events[0].data, 'a\nb')
   })
+
+  it('counts consumed frames (incl. comment heartbeats) without emitting events', () => {
+    const { events, frames } = parseSseChunk(
+      ': ping\n\nevent: x\ndata: {"ok":true}\n\n: ping\n',
+    )
+    assert.equal(events.length, 1)
+    assert.equal(events[0].event, 'x')
+    // Two complete frames were consumed; the trailing ': ping\n' is a
+    // partial tail and must not count as activity yet.
+    assert.equal(frames, 2)
+  })
 })

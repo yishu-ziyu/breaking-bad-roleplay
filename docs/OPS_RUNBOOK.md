@@ -90,7 +90,7 @@ Facts (do not break `gun.yishuziyu.cn` while doing this):
 | Container name | `bb-roleplay` |
 | App port | `8080` (host `0.0.0.0:8080` -> container `8080`) |
 | Domain | `bb.yishuziyu.cn` -> Nginx -> `127.0.0.1:8080` |
-| Nginx conf | `/etc/nginx/conf.d/bb-roleplay.conf` |
+| Nginx conf | `/etc/nginx/conf.d/bb-roleplay.conf` — reference template now in repo: `deploy/nginx/bb-roleplay.conf.example`（改 SSE/超时前先对齐模板） |
 | IP fallback conf | `/etc/nginx/conf.d/red-herring-ip-api.conf` (bare IP may route here) |
 | TLS | Let's Encrypt: `/etc/letsencrypt/live/bb.yishuziyu.cn/` |
 | Dockerfile CMD | `alembic upgrade head && python3 start.py` |
@@ -223,6 +223,22 @@ curl -sS http://127.0.0.1:8080/ | grep -oE 'assets/index-[^"]+\.css'
 ---
 
 ## 6. Other small habits that matter only here
+
+### SSE heartbeat & the timeout chain (P1, 2026-09-01)
+
+Story streaming (`GET /api/session/{id}/stream`) has a three-layer timeout chain that must stay ordered like this — the proxy must never be the first to cut:
+
+| Layer | Value | Where |
+|-------|-------|-------|
+| Backend heartbeat | `: ping` comment frame every **15s** of Director silence | `SSE_HEARTBEAT_INTERVAL_SECONDS` in `backend/api/routes.py` |
+| Frontend watchdog | **90s** with zero bytes (events *or* pings; pings re-arm it) | `STREAM_STALL_TIMEOUT_MS` in `src/hooks/useStoryStream.ts` |
+| Provider read timeout | **120s** (worst-case LLM latency covered by the pings) | `backend/agents/provider.py` |
+| Nginx | `proxy_read_timeout 180s`, `proxy_buffering off`, `proxy_http_version 1.1` | `/etc/nginx/conf.d/bb-roleplay.conf` — template in repo: `deploy/nginx/bb-roleplay.conf.example` |
+
+Rules:
+- 改任何一层超时/心跳间隔 → 同步改这张表和 nginx 模板；上线前 `nginx -t` + reload。
+- 前端 `onActivity`（`src/lib/sseFetch.ts`）依赖字节级存活信号：如果以后加中间层（CDN、新反代），确认它不吞 SSE 注释帧、不缓冲。
+- `vercel.json` 里 `api/index.py` 的 `maxDuration: 60` 是僵尸条目（/api 已 rewrite 回 VM）；不要把它当真实后端参考，也不要顺手启用。
 
 ### Role GIFs (`src/roleAssets.ts`)
 
