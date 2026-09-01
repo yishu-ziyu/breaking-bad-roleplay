@@ -278,9 +278,11 @@ export function useStoryStream(): UseStoryStreamReturn {
   const sessionRef = useRef<string | null>(null)
   const hasAttemptedResumeRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
-  /* Streaming watchdog: if no SSE event (or terminal state) arrives within
-   * STREAM_STALL_TIMEOUT_MS while we claim to be 'streaming', surface an
-   * interrupted state instead of an eternal spinner. */
+  /* Streaming watchdog: if no bytes at all (event OR heartbeat ping)
+   * arrive within STREAM_STALL_TIMEOUT_MS while we claim to be
+   * 'streaming', surface an interrupted state instead of an eternal
+   * spinner. The backend emits `: ping` every 15s of Director silence, so
+   * this only fires when the connection is genuinely dead. */
   const stallTimerRef = useRef<number | null>(null)
   /* One silent reconnect per stall — a transient proxy drop should not need
    * player attention. */
@@ -325,7 +327,7 @@ export function useStoryStream(): UseStoryStreamReturn {
         setStreamFailure({
           kind: 'timeout',
           message:
-            'The story stalled mid-beat (no response from the director for 90s). Your progress is saved — retry or continue later.',
+            'Lost contact with the director (no response on any channel for 90s). Your progress is saved — retry or continue later.',
         })
         return 'error'
       })
@@ -461,6 +463,11 @@ export function useStoryStream(): UseStoryStreamReturn {
           extra: auth,
         }),
         onEvent: handleEvent,
+        // P1 heartbeat: `: ping` comment frames never reach onEvent, but any
+        // byte from the server proves the connection is alive — re-arm the
+        // watchdog so a slow-but-live Director no longer triggers a stall
+        // reconnect (which re-bills the beat).
+        onActivity: () => armStallWatchdog(sid),
         onHttpError: (status, body) => {
           const detail = (body as { detail?: { message?: string } | string } | null)?.detail
           const rawMsg =

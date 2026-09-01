@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import AsyncGenerator
 import asyncio
+import contextlib
 import logging
 import re
 import uuid
@@ -775,6 +776,53 @@ async def session_action(
 # SSE stream — Director-driven narrative beats
 # ---------------------------------------------------------------------------
 
+# P1 (full-stack review): the beat-plan LLM call can keep the stream silent
+# for up to the provider read timeout (120s). Idle-gap-sensitive proxies
+# (nginx ``proxy_read_timeout`` defaults to 60s) cut such streams mid-beat,
+# which trips the frontend stall watchdog and re-bills on reconnect. Emit an
+# SSE comment frame (``: ping``) whenever the Director goes quiet for longer
+# than this interval. Comment frames are ignored by SSE parsers, so the
+# event contract is unchanged; the frontend uses any received bytes to
+# re-arm its watchdog (see src/lib/sseFetch.ts onActivity).
+SSE_HEARTBEAT_INTERVAL_SECONDS = 15.0
+SSE_PING_FRAME = b": ping\n\n"
+
+
+async def _iter_with_heartbeat(
+    source: AsyncGenerator[AgentEvent, None],
+    interval: float,
+) -> AsyncGenerator[AgentEvent | None, None]:
+    """Yield events from ``source``; yield ``None`` whenever ``interval``
+    seconds pass without a new event, so the caller can emit a keep-alive.
+
+    The pending ``__anext__`` pull runs as a separate task shielded from the
+    timeout, so a heartbeat never cancels in-flight Director work. On caller
+    teardown (client disconnect / exception) the pending pull is cancelled
+    and drained so no task leaks past the response.
+    """
+    pending: asyncio.Task | None = asyncio.ensure_future(source.__anext__())
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(
+                    asyncio.shield(pending), timeout=interval
+                )
+            except asyncio.TimeoutError:
+                yield None
+                continue
+            except StopAsyncIteration:
+                return
+            yield event
+            pending = asyncio.ensure_future(source.__anext__())
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            with contextlib.suppress(BaseException):
+                await pending
+        with contextlib.suppress(Exception):
+            await source.aclose()
+
+
 @router.get("/session/{session_id}/stream")
 async def stream_session(
     request: Request,
@@ -880,13 +928,22 @@ async def stream_session(
         bound_route = _bind_model_route()
         try:
             with use_credentials(bind_override), use_model_route(bound_route):
-                async for event in director.process_next_beat(
-                    session_factory=async_session_factory,
-                    session_id=resolved_session_id,
-                    voice_example=voice_example,
-                    language=language,
-                    zh_guard=zh_guard != "0",
+                async for event in _iter_with_heartbeat(
+                    director.process_next_beat(
+                        session_factory=async_session_factory,
+                        session_id=resolved_session_id,
+                        voice_example=voice_example,
+                        language=language,
+                        zh_guard=zh_guard != "0",
+                    ),
+                    interval=SSE_HEARTBEAT_INTERVAL_SECONDS,
                 ):
+                    if event is None:
+                        # Keep-alive during Director silence (LLM thinking).
+                        # Not an event: skip the per-event stop-signal DB
+                        # check so a slow beat never hammers the pool.
+                        yield SSE_PING_FRAME
+                        continue
                     # Stop-signal check: POST /session/{id}/action with
                     # action=stop flips session.status to "paused" in a
                     # separate request. Re-read it here (column select, so
