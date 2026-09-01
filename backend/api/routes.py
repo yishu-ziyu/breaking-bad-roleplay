@@ -16,13 +16,19 @@ from db.models import (
     Session as SessionModel,
     Message as MessageModel,
     CharacterDossier,
+    ByokConnection,
 )
 from agents.provider import ProviderFacade, MINIMAX_HOST_CN, MINIMAX_HOST_GLOBAL
 from agents.byok_presets import PROVIDER_PRESETS, preset_by_id, known_provider_ids
 from agents.director import DirectorAgent
 from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
-from agents.credential_context import use_credentials, use_model_route, CredentialOverride
+from agents.credential_context import (
+    use_credentials,
+    use_model_route,
+    CredentialOverride,
+    mask_hint,
+)
 from agents.connection_sessions import connection_store, session_public_view
 from agents.session_guard import (
     extract_session_key,
@@ -81,6 +87,9 @@ def _quota_http_exception(decision) -> HTTPException:
             "free_quota_exhausted": "Free demo credits used up for today. Connect your own key to continue.",
             "global_budget_exhausted": "Platform demo is at capacity today. Try again tomorrow or use your own key.",
             "rate_limited": "Too many requests from this network. Slow down or use your own key.",
+            # P3: an expired BYOK bind NEVER degrades to platform billing —
+            # the client rebinds from its vault (progress is already saved).
+            "binding_expired": "Your saved provider-key link expired (server restart). Reconnect your key to continue — your story progress is saved.",
         }.get(decision.reason or "", "Platform free tier unavailable."),
         "remaining": snap.remaining,
         "limit": snap.limit,
@@ -480,6 +489,29 @@ async def connections_bind(payload: ConnectionBindRequest):
         base_url=base_url,
         region=payload.region,
     )
+    # P3 (full-stack review): audit row with METADATA ONLY — the raw API key
+    # never touches the database (RAM store + client-side vault). Best
+    # effort: a missing table (dev without migration) must not break binds.
+    try:
+        ov = session.override
+        async with async_session_factory() as db:
+            db.add(
+                ByokConnection(
+                    id=session.id,
+                    provider_id=ov.provider_id,
+                    model_id=ov.model_id,
+                    base_url=ov.base_url,
+                    region=ov.region,
+                    key_hint=mask_hint(ov.llm_key or ov.tts_key),
+                    has_llm_key=1 if ov.llm_key else 0,
+                    has_tts_key=1 if ov.tts_key else 0,
+                    created_epoch=int(session.created_at),
+                    expires_epoch=int(session.expires_at),
+                )
+            )
+            await db.commit()
+    except Exception:
+        logger.warning("byok_connections audit write failed (bind continues)", exc_info=True)
     return session_public_view(session)
 
 

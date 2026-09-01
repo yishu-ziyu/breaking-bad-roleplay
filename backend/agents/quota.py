@@ -6,9 +6,16 @@ Security goals:
 - BYOK bind sessions skip this meter (user pays their own provider).
 - Identity is guest_id (UUID) + IP hash; guest rotation is limited by IP rate limits.
 
-Persistence: Redis-backed token bucket (``RedisQuotaStore``) for multi-instance
-consistency. Falls back to in-process ``_MemoryQuotaStore`` when Redis is
-unavailable.
+Persistence tiers (P3, full-stack review):
+1. Redis Lua token buckets when ``REDIS_URL`` is configured.
+2. Postgres daily counters (``_DbQuotaStore``, Alembic d4e5f6a7b8c9) —
+   survive restarts and stay coherent across workers without Redis.
+3. In-process ``_MemoryQuotaStore`` only as a last resort.
+
+BYOK gating is tri-state (``connection_store.binding_state``): a presented
+but unresolvable connection id is "binding_lost", never "platform" —
+falling back to platform billing there would silently spend the operator's
+API keys for traffic the user believes runs on their own key.
 """
 
 from __future__ import annotations
@@ -23,6 +30,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+
+from sqlalchemy import text
 
 from config import settings
 
@@ -268,6 +277,138 @@ class _MemoryQuotaStore:
             return True
 
 
+class _QuotaDenied(Exception):
+    """Raised inside the consume transaction to roll back a denied tier."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class _DbQuotaStore:
+    """P3: durable Postgres tier for daily counters (no Redis required).
+
+    Before this tier existed, the production stack (REDIS_URL unset) counted
+    guest credits in an in-process dict: every deploy reset the daily
+    allowance (infinitely farmable) and every extra worker kept its own
+    copy. Consume/refund are two guarded upserts in ONE transaction — the
+    global row rolls back when the identity row would exceed its limit.
+
+    The raw SQL is deliberately portable (Postgres + sqlite) so the unit
+    suite exercises the real statements on aiosqlite. Tables: Alembic
+    revision d4e5f6a7b8c9.
+    """
+
+    _CONSUME_GLOBAL = text(
+        "INSERT INTO quota_usage_global (day, used) VALUES (:day, :cost_ins) "
+        "ON CONFLICT (day) DO UPDATE SET used = used + :cost_add "
+        "WHERE used + :cost_add <= :global_limit"
+    )
+    _CONSUME_IDENTITY = text(
+        "INSERT INTO quota_usage (day, identity, used) "
+        "VALUES (:day, :identity, :cost_ins) "
+        "ON CONFLICT (day, identity) DO UPDATE SET used = used + :cost_add "
+        "WHERE used + :cost_add <= :limit"
+    )
+    _REFUND_IDENTITY = text(
+        "UPDATE quota_usage "
+        "SET used = CASE WHEN used > :cost THEN used - :cost ELSE 0 END "
+        "WHERE day = :day AND identity = :identity"
+    )
+    _REFUND_GLOBAL = text(
+        "UPDATE quota_usage_global "
+        "SET used = CASE WHEN used > :cost THEN used - :cost ELSE 0 END "
+        "WHERE day = :day"
+    )
+    _SELECT_IDENTITY = text(
+        "SELECT used FROM quota_usage WHERE day = :day AND identity = :identity"
+    )
+    _SELECT_GLOBAL = text("SELECT used FROM quota_usage_global WHERE day = :day")
+
+    def __init__(self, session_factory: Any | None = None) -> None:
+        self._injected_factory = session_factory
+
+    def _factory(self):
+        if self._injected_factory is None:
+            from db.session import async_session_factory
+
+            self._injected_factory = async_session_factory
+        return self._injected_factory
+
+    @staticmethod
+    def _params(identity: str, day: str, cost: int, limit: int, global_limit: int) -> dict:
+        # Distinct names because asyncpg + SQLAlchemy text() repeated
+        # named binds are a footgun; the sqlite tier dedupes fine.
+        return {
+            "day": day,
+            "identity": identity,
+            "cost": cost,
+            "cost_ins": cost,
+            "cost_add": cost,
+            "limit": limit,
+            "global_limit": global_limit,
+        }
+
+    async def snapshot(
+        self, identity: str, day: str, limit: int, global_limit: int
+    ) -> QuotaSnapshot:
+        async with self._factory()() as db:
+            used = (
+                await db.execute(
+                    self._SELECT_IDENTITY, {"day": day, "identity": identity}
+                )
+            ).scalar()
+            g_used = (
+                await db.execute(self._SELECT_GLOBAL, {"day": day})
+            ).scalar()
+        used_i = int(used or 0)
+        g_i = int(g_used or 0)
+        return QuotaSnapshot(
+            identity=identity,
+            day=day,
+            used=used_i,
+            limit=limit,
+            remaining=max(0, limit - used_i),
+            global_used=g_i,
+            global_limit=global_limit,
+            global_remaining=max(0, global_limit - g_i),
+        )
+
+    async def try_consume(
+        self, identity: str, day: str, cost: int, limit: int, global_limit: int
+    ) -> QuotaDecision:
+        p = self._params(identity, day, cost, limit, global_limit)
+        try:
+            async with self._factory()() as db:
+                async with db.begin():
+                    g = await db.execute(self._CONSUME_GLOBAL, p)
+                    if g.rowcount != 1:
+                        raise _QuotaDenied("global_budget_exhausted")
+                    i = await db.execute(self._CONSUME_IDENTITY, p)
+                    if i.rowcount != 1:
+                        raise _QuotaDenied("free_quota_exhausted")
+        except _QuotaDenied as denied:
+            snap = await self.snapshot(identity, day, limit, global_limit)
+            return QuotaDecision(
+                allowed=False,
+                reason=denied.reason,
+                snapshot=snap,
+                http_status=402 if denied.reason == "free_quota_exhausted" else 429,
+            )
+        snap = await self.snapshot(identity, day, limit, global_limit)
+        return QuotaDecision(allowed=True, reason=None, snapshot=snap, http_status=200)
+
+    async def refund(
+        self, identity: str, day: str, cost: int, limit: int, global_limit: int
+    ) -> QuotaSnapshot:
+        p = {"day": day, "identity": identity, "cost": cost}
+        async with self._factory()() as db:
+            async with db.begin():
+                await db.execute(self._REFUND_IDENTITY, p)
+                await db.execute(self._REFUND_GLOBAL, p)
+        return await self.snapshot(identity, day, limit, global_limit)
+
+
 class RedisQuotaStore:
     """Redis-backed quota store, atomic across multi-instance.
 
@@ -306,8 +447,54 @@ return {1}
 
     def __init__(self, memory_fallback: _MemoryQuotaStore | None = None):
         self._memory = memory_fallback or _MemoryQuotaStore()
+        self._db = _DbQuotaStore()
+        self._db_failed_at = 0.0
         self._redis_client: Any = None
         self._redis_available = False
+
+    # -- fallback chain (P3): Redis -> durable DB tier -> in-process memory --
+
+    def _db_tier(self) -> _DbQuotaStore | None:
+        """None when the DB tier is in its 5-minute failure backoff."""
+        if self._db_failed_at and time.time() - self._db_failed_at < 300:
+            return None
+        return self._db
+
+    def _mark_db_failed(self, exc: Exception) -> None:
+        first = self._db_failed_at == 0.0
+        self._db_failed_at = time.time()
+        logger.warning(
+            "quota: DB tier unavailable (%s), using memory fallback%s",
+            exc,
+            " — retrying in 300s" if not first else " for 300s",
+        )
+
+    async def _fallback_snapshot(self, identity, day, limit, global_limit) -> QuotaSnapshot:
+        db_tier = self._db_tier()
+        if db_tier is not None:
+            try:
+                return await db_tier.snapshot(identity, day, limit, global_limit)
+            except Exception as exc:
+                self._mark_db_failed(exc)
+        return self._memory.snapshot(identity, day, limit, global_limit)
+
+    async def _fallback_consume(self, identity, day, cost, limit, global_limit) -> QuotaDecision:
+        db_tier = self._db_tier()
+        if db_tier is not None:
+            try:
+                return await db_tier.try_consume(identity, day, cost, limit, global_limit)
+            except Exception as exc:
+                self._mark_db_failed(exc)
+        return self._memory.try_consume(identity, day, cost, limit, global_limit)
+
+    async def _fallback_refund(self, identity, day, cost, limit, global_limit) -> QuotaSnapshot:
+        db_tier = self._db_tier()
+        if db_tier is not None:
+            try:
+                return await db_tier.refund(identity, day, cost, limit, global_limit)
+            except Exception as exc:
+                self._mark_db_failed(exc)
+        return self._memory.refund(identity, day, cost, limit, global_limit)
 
     async def _ensure_redis(self) -> bool:
         """Try to connect to Redis. Returns True if successful."""
@@ -339,7 +526,7 @@ return {1}
         self, identity: str, day: str, limit: int, global_limit: int
     ) -> QuotaSnapshot:
         if not await self._ensure_redis():
-            return self._memory.snapshot(identity, day, limit, global_limit)
+            return await self._fallback_snapshot(identity, day, limit, global_limit)
 
         identity_key = f"quota:{day}:{identity}"
         global_key = f"quota:{day}:global"
@@ -347,7 +534,7 @@ return {1}
             used = int(await self._redis_client.get(identity_key) or 0)  # type: ignore[union-attr]
             g_used = int(await self._redis_client.get(global_key) or 0)  # type: ignore[union-attr]
         except Exception:
-            return self._memory.snapshot(identity, day, limit, global_limit)
+            return await self._fallback_snapshot(identity, day, limit, global_limit)
 
         return QuotaSnapshot(
             identity=identity,
@@ -369,7 +556,7 @@ return {1}
         global_limit: int,
     ) -> QuotaDecision:
         if not await self._ensure_redis():
-            return self._memory.try_consume(identity, day, cost, limit, global_limit)
+            return await self._fallback_consume(identity, day, cost, limit, global_limit)
 
         identity_key = f"quota:{day}:{identity}"
         global_key = f"quota:{day}:global"
@@ -390,7 +577,7 @@ return {1}
             g_used = int(result[2])
             reason = result[3] or None
         except Exception:
-            return self._memory.try_consume(identity, day, cost, limit, global_limit)
+            return await self._fallback_consume(identity, day, cost, limit, global_limit)
 
         snap = QuotaSnapshot(
             identity=identity,
@@ -426,7 +613,7 @@ return {used, g_used}
         if cost <= 0:
             return await self.snapshot(identity, day, limit, global_limit)
         if not await self._ensure_redis():
-            return self._memory.refund(identity, day, cost, limit, global_limit)
+            return await self._fallback_refund(identity, day, cost, limit, global_limit)
 
         identity_key = f"quota:{day}:{identity}"
         global_key = f"quota:{day}:global"
@@ -441,7 +628,7 @@ return {used, g_used}
             used = int(result[0])
             g_used = int(result[1])
         except Exception:
-            return self._memory.refund(identity, day, cost, limit, global_limit)
+            return await self._fallback_refund(identity, day, cost, limit, global_limit)
 
         return QuotaSnapshot(
             identity=identity,
@@ -542,8 +729,23 @@ async def enforce_platform_quota(
     access_token: str | None = None,
 ) -> QuotaDecision:
     """Gate a platform-paid action. Raises nothing — caller maps to HTTPException."""
-    if is_byok(connection_session_id):
+    # P3 (full-stack review): tri-state binding check. Only a genuinely
+    # ABSENT connection id means "platform user". An id that was presented
+    # but no longer resolves (server restart / TTL) must fail honestly with
+    # binding_expired — billing it to the platform would silently spend the
+    # operator's keys for traffic the user believes runs on their own key.
+    from agents.connection_sessions import connection_store
+
+    state = connection_store.binding_state(connection_session_id)
+    if state == "byok":
         return QuotaDecision(allowed=True, reason=None, snapshot=byok_snapshot(), http_status=200)
+    if state == "binding_lost":
+        snap = byok_snapshot()
+        snap.byok = False
+        snap.tier = "byok"
+        return QuotaDecision(
+            allowed=False, reason="binding_expired", snapshot=snap, http_status=410
+        )
 
     resolved_user_id = user_id
     if not resolved_user_id:
