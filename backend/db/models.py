@@ -39,14 +39,25 @@ class Session(Base):
         nullable=False,
     )
 
+    # P4 (full-stack review): lazy="raise" instead of "selectin".
+    # Nothing in the codebase reads these collections — Session rows are
+    # loaded ~4x per story beat (existence check, FOR UPDATE claim, status
+    # write-back, /messages probe) and selectin made every one of those
+    # loads fire 3 extra SELECTs that pulled the session's ENTIRE history,
+    # growing quadratically over a long story and widening the SSE silence
+    # window (a P1 amplifier). raiseload turns any accidental future access
+    # into a loud error instead of a hidden query; explicit selectinload()
+    # remains available where a caller genuinely needs the children.
+    # Cascade deletes stay declarative here; note that no code path
+    # ORM-deletes a Session (child rows rely on FK ondelete="CASCADE").
     messages: Mapped[list["Message"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan", lazy="selectin"
+        back_populates="session", cascade="all, delete-orphan", lazy="raise"
     )
     character_states: Mapped[list["CharacterState"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan", lazy="selectin"
+        back_populates="session", cascade="all, delete-orphan", lazy="raise"
     )
     character_dossiers: Mapped[list["CharacterDossier"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan", lazy="selectin"
+        back_populates="session", cascade="all, delete-orphan", lazy="raise"
     )
 
 
