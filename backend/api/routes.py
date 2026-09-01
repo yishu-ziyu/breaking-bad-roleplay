@@ -35,6 +35,7 @@ from agents.quota import (
     enforce_platform_quota,
     read_quota_snapshot,
     normalize_guest_id,
+    refund_platform_quota,
 )
 from config import settings
 from models.schemas import (
@@ -54,6 +55,21 @@ logger = logging.getLogger(__name__)
 def _guest_id_from_request(request: Request, explicit: str | None = None) -> str | None:
     raw = explicit or request.headers.get("x-guest-id") or request.headers.get("X-Guest-Id")
     return normalize_guest_id(raw)
+
+
+# P2 (full-stack review): refund bookkeeping for the SSE story stream, which
+# bills ``story_beat`` upfront. A refund must survive the response task's
+# cancellation on client disconnect, so it runs as a detached task whose
+# reference is kept here until completion (GC-safety per asyncio docs).
+_pending_quota_refunds: set[asyncio.Task] = set()
+
+
+def _schedule_quota_refund(snapshot) -> None:
+    if snapshot is None or getattr(snapshot, "cost", 0) <= 0:
+        return
+    task = asyncio.ensure_future(refund_platform_quota(snapshot))
+    _pending_quota_refunds.add(task)
+    task.add_done_callback(_pending_quota_refunds.discard)
 
 
 def _quota_http_exception(decision) -> HTTPException:
@@ -898,7 +914,9 @@ async def stream_session(
     access_token = header_token or access_token
 
     # Charge only after the session is known valid (do not bill 404s).
-    await _require_platform_quota(
+    # P2: keep the billed snapshot — the stream refunds this charge if no
+    # beat_ready/complete payload ever reaches the transport.
+    billed = await _require_platform_quota(
         request,
         action="story_beat",
         connection_session_id=connection_session,
@@ -926,6 +944,7 @@ async def stream_session(
 
     async def event_generator() -> AsyncGenerator[bytes, None]:
         bound_route = _bind_model_route()
+        beat_delivered = False
         try:
             with use_credentials(bind_override), use_model_route(bound_route):
                 async for event in _iter_with_heartbeat(
@@ -977,6 +996,9 @@ async def stream_session(
                         f"data: {event.model_dump_json()}\n\n"
                     )
                     yield payload.encode("utf-8")
+                    if event.type in ("beat_ready", "complete"):
+                        # The paid-for beat reached the transport.
+                        beat_delivered = True
         except asyncio.CancelledError:
             # Client disconnected — exit cleanly, no error event.
             return
@@ -994,7 +1016,13 @@ async def stream_session(
                 f"data: {err.model_dump_json()}\n\n"
             ).encode("utf-8")
         finally:
-            pass
+            # P2: the player paid for a beat this stream never delivered
+            # (mid-stream error, client abort, stop before delivery) — give
+            # the credits back. Paired with the Director's beat-claim
+            # rewind, a watchdog reconnect costs 5 net and re-renders the
+            # same beat instead of skipping it.
+            if not beat_delivered:
+                _schedule_quota_refund(billed)
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
