@@ -8,12 +8,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { authHeaders } from '../lib/authHeaders'
 import { getOrCreateGuestId } from '../lib/guestId'
 import { openFetchSse, type SseController } from '../lib/sseFetch'
+import { applyIncomingEvent, type StoryEvent } from '../lib/storyFeed'
 
-export interface StoryEvent {
-  type: string
-  data: Record<string, unknown>
-  received_at?: number
-}
+export type { StoryEvent }
 
 export type StoryConnectionState =
   | 'idle' | 'connecting' | 'streaming'
@@ -53,11 +50,8 @@ interface MessageOut {
 const SESSION_STORAGE_KEY = 'abq_story_session_id'
 const SESSION_KEY_STORAGE = 'abq_story_session_key'
 
-/* ----- Maximum number of events retained in memory.
- * Long streaming sessions can produce hundreds of events; capping the
- * array bounds memory growth and keeps the rendered event feed cheap.
- * Oldest events are dropped when the cap is exceeded. */
-const MAX_EVENTS = 200
+/* ----- Event feed cap: long streaming sessions can produce hundreds of
+ * events; MAX_FEED_EVENTS in lib/storyFeed.ts bounds memory growth. */
 
 function readSavedSessionId(): string | null {
   if (typeof window === 'undefined') return null
@@ -131,17 +125,8 @@ export async function pingSession(sid: string): Promise<SessionProbeResult> {
 const RESUME_EXPIRED_TOAST = 'Your last session expired (deleted or server reset). Start a new one.'
 const RESUME_RETRY_TOAST = 'Could not verify your last session. Try again when the server is reachable.'
 
-/* ----- Event dedup key: identifies duplicate events on reconnect -----
- * SSE events have no unique ID, so we synthesize a key from stable content.
- * Only dedup event types with clear identifying data (agent_speak content,
- * beat_ready beat_id). For other types, fall back to type+received_at so
- * duplicates are allowed (better to show twice than miss an event). */
-function dedupKey(evt: StoryEvent): string {
-  const d = evt.data || {}
-  if (evt.type === 'agent_speak' && d.content) return `speak:${d.character_id}:${d.content}`
-  if (evt.type === 'beat_ready' && d.beat_id) return `beat:${d.beat_id}`
-  return `${evt.type}:${evt.received_at ?? Date.now()}`
-}
+/* Event dedup moved to src/lib/storyFeed.ts (P5②): the old GLOBAL
+ * character+content dedup swallowed legitimate repeated lines. */
 
 export function beatIndexFromBeatId(beatId: unknown): number | null {
   if (typeof beatId !== 'string') return null
@@ -381,13 +366,7 @@ export function useStoryStream(): UseStoryStreamReturn {
   }, [closeEventSource])
 
   const appendEvent = useCallback((evt: StoryEvent) => {
-    setEvents((prev) => {
-      const key = dedupKey(evt)
-      if (prev.some((e) => dedupKey(e) === key)) return prev // skip duplicate
-      const next = [...prev, { ...evt, received_at: Date.now() }]
-      // Bound memory in long sessions: drop oldest events beyond MAX_EVENTS.
-      return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next
-    })
+    setEvents((prev) => applyIncomingEvent(prev, evt))
   }, [])
 
   const setConnectionSessionId = useCallback((id: string | null) => {
