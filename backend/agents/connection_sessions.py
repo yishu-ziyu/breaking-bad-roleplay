@@ -89,6 +89,22 @@ class ConnectionSessionStore:
         with self._lock:
             return self._sessions.pop(session_id, None) is not None
 
+    def binding_state(self, session_id: str | None) -> str:
+        """P3 (full-stack review): tri-state instead of a boolean.
+
+        - "platform": the client presented NO connection id — platform
+          billing is the correct, intended path.
+        - "byok": the id resolves to a live RAM session — skip the meter.
+        - "binding_lost": an id WAS presented but can no longer be resolved
+          (process restart / TTL eviction). This must NEVER be treated as a
+          platform user — that silently spends the operator's keys for
+          traffic the user believes runs on their own key. Callers surface
+          an honest 410 binding_expired; the client rebinds from its vault.
+        """
+        if not session_id:
+            return "platform"
+        return "byok" if self.get(session_id) is not None else "binding_lost"
+
     def _purge_locked(self, now: float) -> None:
         expired = [sid for sid, s in self._sessions.items() if s.is_expired(now)]
         for sid in expired:

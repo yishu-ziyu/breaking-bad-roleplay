@@ -100,7 +100,11 @@ export type QuotaErrorBody = {
 }
 
 export async function parseQuotaError(res: Response): Promise<QuotaErrorBody | null> {
-  if (res.status !== 402 && res.status !== 429) return null
+  // 402/429: meter exhausted. 410 (P3): binding_expired — the server lost
+  // the RAM session behind our saved BYOK bind id; the sheet re-opens so
+  // ensureBound can re-bind from the local vault, and the platform wallet
+  // is never touched in the meantime.
+  if (res.status !== 402 && res.status !== 429 && res.status !== 410) return null
   try {
     const body = await res.json()
     const detail = body?.detail

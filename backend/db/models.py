@@ -123,3 +123,52 @@ class CharacterDossier(Base):
     )
 
     session: Mapped[Optional["Session"]] = relationship(back_populates="character_dossiers")
+
+
+# ---------------------------------------------------------------------------
+# P3 (full-stack review): durable backing for BYOK bindings + daily quota.
+# ---------------------------------------------------------------------------
+
+
+class ByokConnection(Base):
+    """Audit row for a BYOK bind — METADATA ONLY.
+
+    The user's API key never touches the database; it lives in the
+    process-RAM connection store (short TTL) and, client-side, in the
+    encrypted vault. This row exists so ops can see which provider/model a
+    connection id pointed at, and so a lost RAM session surfaces as an
+    honest ``binding_expired`` (client rebinds from its vault) instead of a
+    silent fallback to platform keys.
+    """
+
+    __tablename__ = "byok_connections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    model_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    base_url: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    key_hint: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    has_llm_key: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    has_tts_key: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class QuotaUsage(Base):
+    """Per-identity per-day consumed credits (P3 durable quota tier)."""
+
+    __tablename__ = "quota_usage"
+
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    identity: Mapped[str] = mapped_column(String(191), primary_key=True)
+    used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class QuotaUsageGlobal(Base):
+    """Site-wide per-day consumed credits (P3 durable quota tier)."""
+
+    __tablename__ = "quota_usage_global"
+
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
