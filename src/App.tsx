@@ -1124,7 +1124,10 @@ function App() {
      eliminating the race where one effect would overwrite the other. Flow:
      fetch cloud → merge with local → if merged is empty, insert opener. */
   useEffect(() => {
-    const opener = getVoiceExample(selectedCharId, relation) ?? selectedChar.opener[language]
+    // Player-lab (2026-09-09): the visible opener must match the UI language.
+    // voiceExamples are prompt anchors (mostly zh source text) — they caused
+    // Chinese first lines for EN players. Keep them as a fallback only.
+    const opener = selectedChar.opener[language] ?? getVoiceExample(selectedCharId, relation)
 
     ;(async () => {
       let cloudMsgs: ChatMessage[] = []
@@ -1553,6 +1556,27 @@ function App() {
               toolLog: log.tool_log as string | null,
             })
           })
+        } else if (data.reply_text) {
+          // Harness path returns the direct shape even in crew mode — show it
+          // rather than dropping a billed reply on the floor.
+          debateReplies.push({
+            id: crypto.randomUUID(),
+            sender: selectedCharId,
+            text: data.reply_text as string,
+            emotion: data.emotion_state as string | undefined,
+            gifQuery: data.gif_search_query as string | null,
+            gifUrl: resolveGifUrl(selectedCharId, data.emotion_state as string | null, data.gif_search_query as string | null),
+            thinking: data.thinking as string | undefined,
+            toolExecuted: data.tool_executed as string | null,
+            toolLog: data.tool_log as string | null,
+          })
+        }
+        if (debateReplies.length === 0) {
+          // Billed crew turn produced nothing visible — say so instead of
+          // leaving the player's question hanging in silence.
+          throw new Error(language === 'zh'
+            ? '辩论生成失败（本次不显示内容）。请重试。'
+            : 'The debate came back empty. Please try again.')
         }
         updateMessages(current => [...current, ...debateReplies])
 
