@@ -299,16 +299,21 @@ class _DbQuotaStore:
     revision d4e5f6a7b8c9.
     """
 
+    # The WHERE guards must qualify `used` with the table name: Postgres
+    # raises AmbiguousColumnError for a bare `used` there (old row vs
+    # `excluded`), while sqlite tolerated it — which is why the unit suite
+    # stayed green on aiosqlite while the Postgres tier silently fell back
+    # to memory (quota reset on every worker restart).
     _CONSUME_GLOBAL = text(
         "INSERT INTO quota_usage_global (day, used) VALUES (:day, :cost_ins) "
-        "ON CONFLICT (day) DO UPDATE SET used = used + :cost_add "
-        "WHERE used + :cost_add <= :global_limit"
+        "ON CONFLICT (day) DO UPDATE SET used = quota_usage_global.used + :cost_add "
+        "WHERE quota_usage_global.used + :cost_add <= :global_limit"
     )
     _CONSUME_IDENTITY = text(
         "INSERT INTO quota_usage (day, identity, used) "
         "VALUES (:day, :identity, :cost_ins) "
-        "ON CONFLICT (day, identity) DO UPDATE SET used = used + :cost_add "
-        "WHERE used + :cost_add <= :limit"
+        "ON CONFLICT (day, identity) DO UPDATE SET used = quota_usage.used + :cost_add "
+        "WHERE quota_usage.used + :cost_add <= :limit"
     )
     _REFUND_IDENTITY = text(
         "UPDATE quota_usage "

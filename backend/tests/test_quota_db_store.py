@@ -97,3 +97,47 @@ class TestDbQuotaStore:
         snap = await store.refund("g:clamp", "2099-01-05", 99, 8, 5000)
         assert snap.used == 0
         assert snap.global_used == 0
+
+
+class TestPostgresSafeSQL:
+    """Regression guard (2026-09-09 prod incident).
+
+    Postgres raises AmbiguousColumnError for a bare `used` inside the
+    `ON CONFLICT ... DO UPDATE ... WHERE` guard (old row vs `excluded`);
+    sqlite tolerated it, so this suite stayed green while the deployed
+    Postgres tier silently degraded to the in-memory store. These tests
+    pin the statements to the table-qualified form that both dialects
+    accept.
+    """
+
+    def test_consume_guards_are_table_qualified(self):
+        import re
+
+        from agents.quota import _DbQuotaStore
+
+        for stmt in (_DbQuotaStore._CONSUME_GLOBAL, _DbQuotaStore._CONSUME_IDENTITY):
+            sql = str(stmt)
+            assert "SET used = used" not in sql, sql
+            where = sql.split("WHERE", 1)[1]
+            # Remove the qualified references, then any remaining `used`
+            # token in the WHERE guard is the Postgres-ambiguous form.
+            stripped = where.replace("quota_usage_global.used", "").replace(
+                "quota_usage.used", ""
+            )
+            assert not re.search(r"\bused\b", stripped), (
+                f"unqualified `used` in WHERE guard: {sql}"
+            )
+            assert (
+                "quota_usage_global.used" in sql or "quota_usage.used" in sql
+            ), sql
+
+    async def test_consume_guard_rejects_when_row_would_exceed(self, session_factory):
+        # Behavioral twin of the SQL guard: the WHERE clause must compare the
+        # POST-update usage against the limit (used + cost <= limit).
+        store = _store(session_factory)
+        d1 = await store.try_consume("g:guard", "2099-01-06", 6, 8, 5000)
+        assert d1.allowed
+        d2 = await store.try_consume("g:guard", "2099-01-06", 3, 8, 5000)
+        assert d2.allowed is False  # 6 + 3 > 8
+        d3 = await store.try_consume("g:guard", "2099-01-06", 2, 8, 5000)
+        assert d3.allowed  # 6 + 2 <= 8
