@@ -269,6 +269,20 @@ Rules:
 - 因此 **单 worker 约束仍然成立**：`main._enforce_runtime_invariants()` 会在 `WEB_CONCURRENCY>1 且无 REDIS_URL` 时**拒绝启动**（这是有意的 fail-fast，别注释掉；要扩容先解决共享 key 存储问题）。
 - P2 配套：stream 未交付 `beat_ready` 会原路退款（`QuotaSnapshot.cost` + refund）；Director 未交付的 beat 认领会回退（rewind），重连重试的是同一个 beat。
 
+### Supabase outage → local `bb-postgres` (P0, 2026-09-09)
+
+**Symptom:** `bb-roleplay` crash-looping (3200+ restarts), site down. Log signature: `FATAL: (ENOTFOUND) tenant/user postgres.uacopbotolzdhoidrhjn not found` against the Supabase pooler, and `<ref>.supabase.co` DNS gone → **the Supabase project was paused/removed on Supabase's side**. Nothing in the repo caused it.
+
+**Recovery applied 2026-09-09 (still in effect):**
+- Postgres runs **on the VM**: container `bb-postgres` (postgres:16-alpine), volume `bb-pgdata`, on docker network `bb-net`, DB/user `bb_roleplay`/`breaking_bad_roleplay`, **no host port published** (only reachable inside `bb-net`).
+- `/opt/breaking-bad-roleplay/.env` `DATABASE_URL` → `bb-postgres:5432`. Old Supabase URL preserved in `.env.bak-supabase-20260909`.
+- `scripts/deploy-backend.sh` now creates `bb-net` and runs the app container with `--network bb-net`. **Never drop that flag.**
+- Supabase **Auth is NOT restored**: browser login still hits the dead project until the owner resumes/creates the project in the Supabase dashboard. Guest mode works.
+
+**If Supabase comes back:** edit `.env` DATABASE_URL back, `docker rm -f bb-roleplay`, redeploy via the script. The two DBs will have diverged — ask the owner which is canonical before migrating data.
+
+**Monitoring tell:** `docker ps` showing `bb-roleplay Restarting (1)` = DB unreachable. Read `docker logs --tail 30 bb-roleplay` first, then `docker logs bb-postgres`.
+
 ### Commits
 
 - English conventional commits.
