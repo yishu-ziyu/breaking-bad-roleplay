@@ -2239,24 +2239,34 @@ function App() {
             </div>
           )}
 
-          {/* Error / interrupted — always speaks plainly and offers an exit (QA P0#1/#2) */}
+          {/* Error / interrupted — always speaks plainly and offers an exit (QA P0#1/#2).
+              Quota wall (402) gets its own copy + actions: reconnecting cannot help. */}
           {story.connectionState === 'error' && (
             <div className="story-error">
               <p>
                 ⚠{' '}
-                {story.streamFailure?.kind === 'timeout'
+                {story.streamFailure?.kind === 'quota'
                   ? (language === 'zh'
-                    ? '剧情演出中断了 90 秒没有回应。进度已保存——可以直接重试。'
-                    : 'The story stalled mid-beat with no response for 90s. Your progress is saved — retry now.')
-                  : story.streamFailure?.kind === 'network'
+                    ? '今天的免费体验额度用完了。登录领取早期用户额度，或连接你自己的模型 Key 继续这夜剧情——进度已保存。'
+                    : 'Free demo credits used up for today. Sign in for early-access credits or connect your own key to keep this night going — your progress is saved.')
+                  : story.streamFailure?.kind === 'timeout'
                     ? (language === 'zh'
-                      ? '与导演的连接断开，且自动重连未成功。进度已保存——可以重试。'
-                      : 'The connection dropped and auto-reconnect failed. Your progress is saved — retry.')
-                    : story.getCharState(selectedCharId).error}
+                      ? '剧情演出中断了 90 秒没有回应。进度已保存——可以直接重试。'
+                      : 'The story stalled mid-beat with no response for 90s. Your progress is saved — retry now.')
+                    : story.streamFailure?.kind === 'network'
+                      ? (language === 'zh'
+                        ? '与导演的连接断开，且自动重连未成功。进度已保存——可以重试。'
+                        : 'The connection dropped and auto-reconnect failed. Your progress is saved — retry.')
+                      : story.getCharState(selectedCharId).error}
               </p>
-              {story.sessionId && (
+              {story.sessionId && story.streamFailure?.kind !== 'quota' && (
                 <button type="button" onClick={story.reconnect}>
                   {language === 'zh' ? '重试演出' : t.reconnect}
+                </button>
+              )}
+              {story.streamFailure?.kind === 'quota' && (
+                <button type="button" onClick={() => connection.setSheetOpen(true)}>
+                  {language === 'zh' ? '连接自己的 Key' : 'Connect your own key'}
                 </button>
               )}
               <button type="button" onClick={story.reset}>

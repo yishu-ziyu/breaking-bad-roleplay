@@ -221,7 +221,7 @@ export interface UseStoryStreamReturn {
   /** Classified failure for the interrupted-state UI (QA P0#1/#2).
    * 'binding' = P3: the saved BYOK key link expired (server restart) and
    * the one automatic rebind from the local vault did not recover it. */
-  streamFailure: { kind: 'timeout' | 'network' | 'http' | 'binding' | 'unknown'; message: string } | null
+  streamFailure: { kind: 'timeout' | 'network' | 'http' | 'binding' | 'quota' | 'unknown'; message: string } | null
   startStory: (
     taskPrompt: string,
     characterId?: string,
@@ -517,7 +517,9 @@ export function useStoryStream(): UseStoryStreamReturn {
                   ? 'This story session is locked to another browser.'
                   : 'Could not start the story stream.')
           // QA P0#2: classify provider-exhaustion so the UI can speak plainly.
-          const kind: 'http' = 'http'
+          // 402 gets its own kind: the quota wall needs different actions
+          // (connect key / sign in) than a broken stream (reconnect).
+          const kind: 'http' | 'quota' = status === 402 ? 'quota' : 'http'
           setStreamFailure({
             kind,
             message: status === 402 && !rawMsg
