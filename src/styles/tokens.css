@@ -314,7 +314,12 @@
   --color-surface-warm: var(--dn-bg-2);
   --color-surface-warm-2: var(--dn-surface);
   --color-surface-warm-3: var(--dn-bg);
-  --color-surface-yellow-soft: color-mix(in oklch, var(--dn-accent) 14%, var(--dn-bg));
+  /* Player-lab 2026-09-09: the previous remap (14% accent + dn-bg) turned
+     every text that uses this token near-black on the dark stage — quota
+     error copy, beat-paused lines and badges were literally unreadable.
+     The light-theme value (#fff7d0) IS the intended on-dark highlight; keep
+     it, softened by one step of accent so it sits in the palette. */
+  --color-surface-yellow-soft: color-mix(in oklch, #fff7d0 88%, var(--dn-accent));
   --color-surface-dark-1: var(--dn-bg);
   --color-surface-dark-2: var(--dn-bg-2);
 

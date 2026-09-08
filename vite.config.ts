@@ -2,8 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // Backend API port for dev proxy. Override: VITE_API_PROXY_TARGET=http://127.0.0.1:8002
+// Default 8001 matches the documented backend port (README / CLAUDE.md);
+// 8002 belongs to another project on this machine.
 const apiProxyTarget =
-  process.env.VITE_API_PROXY_TARGET?.trim() || 'http://127.0.0.1:8002'
+  process.env.VITE_API_PROXY_TARGET?.trim() || 'http://127.0.0.1:8001'
 
 export default defineConfig(() => {
   return {

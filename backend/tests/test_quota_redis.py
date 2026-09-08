@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time as _time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("MINIMAX_API_KEY", "test-key")
@@ -38,8 +39,17 @@ class _FakeRequest:
 
 @pytest.fixture
 def store():
-    """RedisQuotaStore with no Redis URL — falls back to memory."""
-    return RedisQuotaStore()
+    """RedisQuotaStore with no Redis — and with the DB tier disabled.
+
+    On a developer machine whose settings.database_url points at a live
+    local Postgres, the middle tier of the fallback chain would answer
+    with REAL persisted usage instead of the memory store these tests
+    assert against. The chain under test here is redis->memory, so the
+    DB tier is explicitly put into its failed-backoff state.
+    """
+    s = RedisQuotaStore()
+    s._db_failed_at = _time.time()
+    return s
 
 
 @pytest.fixture
@@ -218,6 +228,13 @@ async def test_mocked_redis_fallback_on_error():
     store = RedisQuotaStore()
     store._redis_client = mock_redis
     store._redis_available = True
+    # This test verifies the redis->fallback chain. The fallback chain is
+    # Redis -> DB -> memory; a developer machine with a reachable Postgres
+    # (settings.database_url from a real .env) made the DB tier answer with
+    # REAL persisted usage, so the same identity could already be over
+    # limit from an earlier test. The contract under test here is the
+    # memory fallback, so disable the DB tier explicitly.
+    store._db_failed_at = _time.time()
 
     # snapshot fallback
     snap = await store.snapshot("test-id", "2099-01-01", 10, 100)

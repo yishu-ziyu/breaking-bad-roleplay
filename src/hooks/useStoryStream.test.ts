@@ -127,15 +127,17 @@ describe('useStoryStream beat progress helpers', () => {
 describe('useStoryStream streamFailure contract (QA P0#1/#2)', () => {
   it('exposes a classified streamFailure shape on the hook API', async () => {
     // The hook module must export the failure taxonomy used by the error UI:
-    // timeout | network | http | binding | unknown. This guards the watchdog
-    // contract — if someone removes the classification, the interrupted-state
-    // banner in App.tsx loses its plain-language messages and the QA P0
-    // regression returns. ('binding' added by P3: 410 binding_expired.)
+    // timeout | network | http | binding | quota | unknown. This guards the
+    // watchdog contract — if someone removes the classification, the
+    // interrupted-state banner in App.tsx loses its plain-language messages
+    // and the QA P0 regression returns. ('binding' added by P3: 410
+    // binding_expired. 'quota' added 2026-09-09: 402 wall needs its own
+    // actions — reconnect cannot help a spent budget.)
     const source = await (await import('node:fs/promises')).readFile(
       new URL('./useStoryStream.ts', import.meta.url),
       'utf8',
     )
-    assert.match(source, /streamFailure:\s*\{\s*kind:\s*'timeout'\s*\|\s*'network'\s*\|\s*'http'\s*\|\s*'binding'\s*\|\s*'unknown'/)
+    assert.match(source, /streamFailure:\s*\{\s*kind:\s*'timeout'\s*\|\s*'network'\s*\|\s*'http'\s*\|\s*'binding'\s*\|\s*'quota'\s*\|\s*'unknown'/)
     assert.match(source, /STREAM_STALL_TIMEOUT_MS/)
     assert.match(source, /armStallWatchdog/)
   })
