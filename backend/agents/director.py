@@ -2641,6 +2641,28 @@ class DirectorAgent:
             raw = fallback_reply
         # Parse the debate logs
         debate_logs = self._parse_crew_debate_logs(raw, participants_backend)
+        if not debate_logs:
+            # Player-lab 2026-09-09: a parse miss used to return an EMPTY
+            # debate after the chat was already billed (crew costs 2) — the
+            # player's question just hung with no reply and no error. Never
+            # return zero logs: degrade to a single visible line. The raw
+            # text may be prose or fence-wrapped JSON; a bare fence strip is
+            # enough for a degraded display, and if the sanitizer reduces it
+            # to nothing (all stage directions), say so explicitly.
+            fallback_raw = re.sub(r"```[a-z]*\n?|```", "", raw.strip())
+            fallback_text = (
+                sanitize_speak_content(fallback_raw)[:800]
+                or "(The debate stalled mid-generation — try again.)"
+            )
+            debate_logs = [{
+                "sender": backend_primary,
+                "text": fallback_text,
+                "emotion": "tense",
+                "gifQuery": None,
+                "thinking": None,
+                "tool_executed": None,
+                "tool_log": None,
+            }]
         # Map back to frontend IDs
         for log in debate_logs:
             char_id = log.pop("character_id", log.get("sender", "walter"))

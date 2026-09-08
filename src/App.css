@@ -2983,6 +2983,33 @@ button.story-event {
     grid-template-columns: 1fr;
     padding: 0;
   }
+  /* The section-6 HUD restyle sets display:flex (no wrap) unconditionally,
+     which overflowed the 390px viewport: CREDITS pill, Archive tab and the
+     decision bar bled off-screen (page scrollWidth 468 vs 390, player-lab
+     2026-09-09). Let the bar wrap on phones instead. */
+  .story-hud {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .story-hud > * {
+    min-width: 0;
+  }
+  /* Stage card chain: without min-width:0 the scene card's intrinsic width
+     (meta line, reading-measure quote) propagated min-content up and pushed
+     the whole shell to ~468px on a 390px phone — page-level horizontal
+     scroll, decision controls off-screen (player-lab 2026-09-09). */
+  .story-panel,
+  .story-board__brief,
+  .story-board__grid,
+  .story-scene-card,
+  .story-scene-card__paper,
+  .story-scene-card__meta {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .story-panel {
+    overflow-x: hidden;
+  }
   .story-hud__metric,
   .story-hud__brand,
   .story-hud > button {
