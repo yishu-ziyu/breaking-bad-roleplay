@@ -283,6 +283,9 @@ Rules:
 
 **Monitoring tell:** `docker ps` showing `bb-roleplay Restarting (1)` = DB unreachable. Read `docker logs --tail 30 bb-roleplay` first, then `docker logs bb-postgres`.
 
+**VM expiry warning (2026-09-09, owner-confirmed console):** the VM (阿里云 华北6, `Docker-iirl`, 2C4G/50G, IP 121.89.90.68) **expires 2026-10-06 23:59:59**. It now hosts the canonical DB — if it lapses, prod dies AND `bb-postgres` data is lost. Renew before expiry, or migrate (dump → new host → repoint DNS).
+**DB backups:** nightly `/usr/local/bin/bb-backup.sh` on the VM (cron 15 19 * * * UTC = 北京 03:15) dumps `bb-postgres` to `/opt/backups/bb-YYYY-MM-DD.sql.gz`, 7-day retention, log `/var/log/bb-backup.log`. These live on the SAME disk as the DB — for real durability copy one off-box (e.g. `scp root@121.89.90.68:/opt/backups/bb-*.sql.gz .`) before any risky change.
+
 ### Commits
 
 - English conventional commits.
