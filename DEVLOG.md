@@ -416,3 +416,43 @@
 - 部署：Dockerfile（python:3.12-slim，同时服务后端 + 前端静态文件）
 - 入口：`start.py`（读 PORT env，启动 uvicorn）
 - Health：`/api/health`
+
+## 2026-09-09 模拟用户飞轮（4 小时循环）：生产恢复 + 8 项修复
+
+### P0：Supabase 项目被暂停 → 生产宕机数小时
+- 症状：bb-roleplay 容器 crash loop（3200+ 重启），pooler 报 `tenant/user postgres.uacopbotolzdhoidrhjn not found`，`<ref>.supabase.co` DNS 消失 = Supabase 侧暂停/删除项目，仓库内无成因。
+- 恢复：VM 本地 Postgres（`bb-postgres`，卷 bb-pgdata，网络 bb-net，不发布宿主端口）；`.env` DATABASE_URL 切换（旧串存 `.env.bak-supabase-20260909`）；`scripts/deploy-backend.sh` 固化 `--network bb-net`（丢了就是下次宕机）。
+- 遗留：**Supabase Auth 未恢复**（登录/云同步死，游客模式完整）。要恢复登录需项目所有者在 Supabase 控制台 resume/重建项目，两个库已分叉，切回前先定谁是权威。
+- 详见 OPS_RUNBOOK §6 "Supabase outage"。
+
+### 模拟用户测试（EVAL 原则：隔离 persona → 真实入口 → 证据 → 修复 → 复验）
+三个 persona（中文路人性玩家 / 英语怀疑论超粉 / 手机原生零耐心）走真实浏览器，8 项修复：
+
+| 修复 | 根因 | Commit |
+|---|---|---|
+| durable quota SQL Postgres 二义列 | sqlite 宽容掩盖，产线静默降级内存层（重启清零可刷） | ed4818d |
+| 402 配额墙文案近黑不可读 | `--color-surface-yellow-soft` 暗色重映射 14% accent+bg | ed4818d |
+| 配额墙动作误导（Reconnect） | 402 未分类 → `quota` kind + Connect your key | ed4818d |
+| vite 代理默认 8002（别的项目） | 裸 `npm run dev` 静默连错后端 | ed4818d |
+| Crew 扣 2 点后回复整个丢失 | 解析失败 → 200+空 debate_logs，前后端都不兜底 | 7e5a6e8 |
+| EN 界面显示中文开场白 | voiceExamples（prompt 锚点）盖过双语 opener | 7e5a6e8 |
+| 手机端横向溢出 78px（决策控件出屏） | HUD 无条件 flex 无 wrap + 卡链缺 min-width:0 | 7e5a6e8 |
+| deploy 脚本缺 bb-net | 见 P0 | 6888853 |
+
+### 测试资产 +5
+- `test_quota_db_store.py::TestPostgresSafeSQL`（SQL 文本守护）
+- quota redis 回退测试显式禁用 DB 层（原依赖"DB 连不上"，本地有 PG 的开发机必挂——测试隔离教训）
+- `test_crew_empty_debate_fallback.py` ×3
+
+### 佐证良好、不要动的
+- Walter 忠诚度（Grey Matter 探测回复水平很高）；安全探测以剧情内信任考验化解；Direct 侧配额 ErrorBox 本来就可读；重载恢复剧情；选角「Already on the line」；中文全链路（切换/危机/选角/中文节拍）。
+
+### 测试通道伪影教训（本机专属）
+- browser-use 插件对**子代理硬禁用**（Browser is not available in subagent）→ 模拟用户必须主会话亲自跑。
+- IAB 后台标签渲染节流会让截图呈"死按钮"假象 → 判定交互死活必须以 DOM 状态 + localStorage + 后端日志交叉验证。
+- IAB `cua` 坐标与页面 CSS 坐标有固定偏移（本会话实测约 -33,-47，随视口变化）→ 坐标点击前后各测一次偏移。
+- Playwright `press("Enter")` 产生 keyCode 229 → 被 IME 守卫拦截属预期，不是 bug。
+
+### 留观
+- 冷开场桌面首帧 -80px 裁切（疑似入场动画首帧+节流复合；移动端不复现）。
+- Crew 模型输出格式质量（本次空输出的具体比率未测，已有可见兜底）。
