@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
+import { characterPortrait } from './lib/characterPortraits'
 import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream, type StoryEvent } from './hooks/useStoryStream'
@@ -38,6 +39,9 @@ import {
   listStageCardIndices,
 } from './lib/storyStagePacing'
 import './App.css'
+import { HomePreview } from './components/HomePreview'
+import './components/HomePreview.css'
+import './components/ChatRefresh.css'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -973,6 +977,7 @@ function App() {
     })
   }, [productSurface, setHasEnteredWorld, setSurface, setProductSurface])
   const connection = useConnection()
+  const [homePreviewOpen, setHomePreviewOpen] = useState(() => new URLSearchParams(window.location.search).get('home') === 'preview')
   const auth = useAuth()
   const quota = useQuota(connection.connectionSessionId, auth.user?.id ?? null)
   /** Agent harness is lab-only (?lab=1 or /lab) — not part of the drama surface. */
@@ -1988,6 +1993,31 @@ function App() {
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
   /* ---- Cold open (brief question → crisis → cast) ---- */
+  if (homePreviewOpen) {
+    const leaveHomePreview = () => {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('home')
+      url.hash = ''
+      window.history.replaceState(null, '', url)
+      setHomePreviewOpen(false)
+      window.scrollTo(0, 0)
+    }
+    return <HomePreview
+      onStory={() => {
+        setLanguage('zh')
+        setKnowledgeTrack('fresh')
+        setHasEnteredWorld(false)
+        leaveHomePreview()
+      }}
+      onChat={(character) => {
+        setLanguage('zh')
+        setSelectedCharId(character)
+        setSurface('direct')
+        setHasEnteredWorld(true)
+        leaveHomePreview()
+      }}
+    />
+  }
   if (!hasEnteredWorld) {
     return (
       <>
@@ -2414,8 +2444,8 @@ function App() {
                     )}
                     {/* Speak: left portrait fades into the backdrop (wide screens only). */}
                     {isSpeakCard && currentStorySpeakerId && (
-                      <div className="story-scene-card__portrait" aria-hidden="true">
-                        <img src={`/avatars/desert-noir/${currentStorySpeakerId}.jpg`} alt="" />
+                      <div className="story-scene-card__portrait" aria-hidden="true" style={{ overflow: 'hidden' }}>
+                        <img src={characterPortrait(currentStorySpeakerId)} alt="" style={currentStorySpeakerId === 'hank' ? { height: '107%' } : undefined} />
                       </div>
                     )}
                     {/* Disco Elysium weight: character name is the dialogue heading. */}
@@ -2636,14 +2666,14 @@ function App() {
         </section>
       ) : (
         /* ---------- Chat View ---------- */
-        <section className={`chat-panel ${sceneReady ? 'is-crossfade' : ''}`}>
+        <section className={`chat-panel chat-refresh ${sceneReady ? 'is-crossfade' : ''}`}>
           <div className="scene-layer scene-layer--prev" style={{ backgroundImage: prevSceneUrl ? `url(${prevSceneUrl})` : 'none' } as CSSProperties} />
           <div className="scene-layer scene-layer--current" style={{ backgroundImage: `url(${currentSceneUrl})` } as CSSProperties} />
           <header className="chat-header">
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
                   <h2>
-                    {t.chatHeaderWith.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+                    {selectedChar.name}
                   </h2>
                   {/* QA P1#7: chat was a dead end — no visible way back to a
                       live story. Offer the return only when one exists. */}
@@ -2662,7 +2692,7 @@ function App() {
                 </div>
               )}
             </div>
-            <span className="schema-pill">{t.schema}</span>
+            <a className="chat-character-link" href="/?home=preview#characters">{language === 'zh' ? '选择角色' : 'Characters'}</a>
             <label className="chat-header__relation" htmlFor="chat-relation">
               <span className="sr-only">{t.relation}</span>
               <select
@@ -2687,7 +2717,7 @@ function App() {
               return (
                 <article
                   key={msg.id}
-                  className={`msg ${isUser ? 'msg--user' : 'msg--char'}`}
+                  className={`msg ${isUser ? 'msg--user' : 'msg--char'} ${messages.length === 1 && msg.id.startsWith('opener-') ? 'msg--opening' : ''}`}
                   style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}
                 >
                   <div className="msg-avatar" style={{ '--char-color': isUser ? 'var(--color-bb-yellow)' : senderColor } as CSSProperties}>
@@ -2696,7 +2726,7 @@ function App() {
                   <div className="msg-body">
                     <div className="msg-meta">
                       <strong>{isUser ? `${t.you}, ${getRelationLabel(relation, language)}` : senderName}</strong>
-                      {msg.emotion && <span>{msg.emotion}</span>}
+                      {msg.emotion && !msg.id.startsWith('opener-') && <span>{msg.emotion}</span>}
                     </div>
                     <p>{msg.text}</p>
                     {msg.toolExecuted && (
@@ -2719,6 +2749,9 @@ function App() {
               )
             })}
             <div className="chat-end" aria-hidden="true" />
+            {messages.length === 1 && messages[0]?.id.startsWith('opener-') && !isSending && <div className="chat-starters" aria-label={language === 'zh' ? '开场建议' : 'Conversation starters'}>
+              {(language === 'zh' ? ['我想和你谈件事。', '我需要你的建议。', '你最近怎么样？'] : ['I need to talk to you.', 'I could use your advice.', 'How have you been?']).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
+            </div>}
           </div>
 
           {unseenBelow && !chatPinnedToBottom && (
@@ -2741,6 +2774,7 @@ function App() {
 
             <form className="composer" onSubmit={handleSend}>
               <textarea
+                aria-label={language === 'zh' ? '消息' : 'Message'}
                 ref={composerRef}
                 rows={1}
                 value={message}
