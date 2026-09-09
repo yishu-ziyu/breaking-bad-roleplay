@@ -9,6 +9,8 @@ TARBALL="/tmp/bb-deploy.tgz"
 
 echo "=== 1/5 pack code (exclude heavy dirs) ==="
 tar czf "$TARBALL" \
+  --exclude '.env' --exclude '.env.*' \
+  --exclude .video_agent \
   --exclude node_modules \
   --exclude backend/.venv \
   --exclude .git \
@@ -29,9 +31,9 @@ echo "=== 4/5 rebuild + restart container ==="
 # `bb-postgres` container on that network (Supabase project paused, see
 # DEVLOG). Dropping this flag recreates the app container without the
 # network and the DB connect fails => crash loop.
-ssh "$VM" "cd $APP_DIR && docker network create bb-net 2>/dev/null; docker build -t bb-roleplay:latest . && docker stop bb-roleplay || true && docker rm bb-roleplay || true && docker run -d --name bb-roleplay --network bb-net --restart unless-stopped -p 8080:8080 --env-file /opt/breaking-bad-roleplay/.env bb-roleplay:latest"
+ssh "$VM" "cd $APP_DIR && bash scripts/deploy-vm.sh"
 
 echo "=== 5/5 health check ==="
-ssh "$VM" "sleep 5 && docker ps | grep bb-roleplay && curl -sS http://127.0.0.1:8080/api/health || echo 'WARN: health check failed'"
+ssh "$VM" 'for attempt in $(seq 1 15); do if curl -fsS http://127.0.0.1:8080/api/health; then exit 0; fi; sleep 2; done; exit 1'
 
 echo "=== done ==="
