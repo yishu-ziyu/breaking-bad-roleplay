@@ -1,0 +1,679 @@
+.hp {
+  --hp-ink:#24372f;
+  --hp-paper:#eeeade;
+  --hp-accent:#a34430;
+  min-height:100vh;
+  width:100%;
+  background:var(--hp-paper);
+  color:var(--hp-ink);
+  font-family:"Noto Sans SC","PingFang SC",sans-serif;
+  font-size:15px;
+  line-height:1.8;
+  text-align:left;
+  overflow-x:clip
+}
+.hp *,.hp *::before,.hp *::after {
+  box-sizing:border-box
+}
+.hp h1,.hp h2,.hp h3,.hp p,.hp figure {
+  margin:0
+}
+.hp a {
+  color:inherit;
+  text-decoration:none
+}
+.hp button {
+  font:inherit;
+  cursor:pointer
+}
+.hp a:focus-visible,.hp button:focus-visible {
+  outline:3px solid #c48645;
+  outline-offset:5px
+}
+.hp-nav {
+  height:64px;
+  padding:0 5%;
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  background:#16201d;
+  color:#f0eddf
+}
+.hp-brand {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  font:600 30px/1 Georgia,serif;
+  letter-spacing:-1px
+}
+.hp-brand span {
+  font:9px/1.4 "Noto Sans SC",sans-serif;
+  letter-spacing:1.5px
+}
+.hp-nav nav {
+  display:flex;
+  justify-content:flex-end;
+  gap:28px
+}
+.hp-nav nav,.hp-back {
+  font-size:11px;
+  letter-spacing:1px;
+  color:#c3c8bb
+}
+.hp-nav a:hover {
+  color:#ddb367
+}
+.hp-cover {
+  background:#101b18;
+  color:#eee8d5
+}
+.hp-cover-inner {
+  max-width:1440px;
+  height:clamp(470px,45vw,650px);
+  margin:auto;
+  position:relative;
+  overflow:hidden
+}
+.hp-cover-art {
+  position:absolute;
+  inset:0 0 0 auto;
+  width:61%;
+  height:100%;
+  object-fit:cover;
+  object-position:center 30%
+}
+.hp-cover-type {
+  position:absolute;
+  left:7%;
+  top:50%;
+  transform:translateY(-50%);
+  z-index:1
+}
+.hp-cover-kicker {
+  font-size:10px;
+  letter-spacing:3px;
+  color:#cdb980;
+  margin-bottom:20px!important
+}
+.hp-cover h1 {
+  font-family:"Bebas Neue",Impact,"Arial Narrow",sans-serif;
+  font-size:clamp(93px,10.5vw,153px);
+  font-weight:400;
+  letter-spacing:2px;
+  line-height:.88
+}
+.hp-cover h1 span {
+  display:block
+}
+.hp-cover h1 span:last-child {
+  color:#d5b269;
+  margin-top:10px
+}
+.hp-cover-chinese {
+  margin-top:30px!important;
+  font-family:"Noto Serif SC","Songti SC",serif;
+  font-size:20px;
+  letter-spacing:4px
+}
+.hp-cover-credit {
+  position:absolute;
+  bottom:23px;
+  right:35px;
+  color:#eddfbb;
+  font-size:9px;
+  letter-spacing:2px
+}
+.hp-entry {
+  display:flex;
+  justify-content:center;
+  flex-wrap:wrap;
+  gap:14px;
+  padding:32px 24px 0
+}
+.hp-primary,.hp-secondary {
+  min-height:48px;
+  min-width:165px;
+  padding:11px 28px;
+  border:1px solid var(--hp-accent);
+  border-radius:2px;
+  text-align:center;
+  font-size:14px;
+  letter-spacing:1px;
+  transition:background .18s,color .18s
+}
+.hp-primary {
+  background:var(--hp-accent);
+  color:#fff7e9
+}
+.hp a.hp-secondary {
+  color:var(--hp-accent);
+  background:transparent
+}
+.hp-primary:hover {
+  background:#873522
+}
+.hp a.hp-secondary:hover {
+  background:#e3dbcb
+}
+.hp-entry p {
+  flex-basis:100%;
+  text-align:center;
+  color:#666e60;
+  font-size:11px
+}
+.hp-introduction {
+  max-width:690px;
+  margin:auto;
+  padding:61px 24px 64px;
+  text-align:center;
+  scroll-margin-top:24px
+}
+.hp-eyebrow {
+  color:#7c816c;
+  font:10px/1.6 "Noto Sans SC",sans-serif;
+  letter-spacing:2.4px
+}
+.hp h2 {
+  font:500 31px/1.6 "Noto Serif SC","Songti SC",serif;
+  letter-spacing:1px
+}
+.hp-introduction h2 {
+  margin:11px 0 21px
+}
+.hp-introduction>p:not(.hp-eyebrow) {
+  color:#596255;
+  font-size:15px;
+  line-height:2;
+  margin:13px 0
+}
+.hp a.hp-text-link {
+  display:inline-block;
+  color:var(--hp-accent);
+  border-bottom:1px solid #a3443050;
+  margin-top:11px;
+  font-size:13px
+}
+.hp-section-heading {
+  text-align:center;
+  margin-bottom:32px
+}
+.hp-section-heading h2 {
+  margin-top:9px
+}
+.hp-gameplay {
+  max-width:1010px;
+  padding:0 35px 67px;
+  margin:auto;
+  scroll-margin-top:30px
+}
+.hp-screen {
+  display:grid;
+  grid-template-columns:40% 60%;
+  min-height:370px;
+  background:#172721;
+  color:#f0ecd9
+}
+.hp-screen-art {
+  position:relative;
+  min-height:370px;
+  overflow:hidden
+}
+.hp-screen-art img {
+  display:block;
+  width:100%;
+  height:100%;
+  position:absolute;
+  object-fit:cover;
+  object-position:52% 25%
+}
+.hp-screen-art>span {
+  position:absolute;
+  bottom:17px;
+  left:20px;
+  font-size:9px;
+  letter-spacing:2px;
+  color:#e6d8b5
+}
+.hp-screen-content {
+  padding:27px 35px 20px;
+  display:flex;
+  flex-direction:column
+}
+.hp-screen-meta {
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  font-size:10px;
+  color:#b4bda4;
+  letter-spacing:1px
+}
+.hp-screen-content h3 {
+  font:500 22px/1.5 "Noto Serif SC","Songti SC",serif;
+  margin:25px 0 20px
+}
+.hp-excerpt {
+  display:grid;
+  grid-template-columns:27px 1fr;
+  gap:14px;
+  flex:1
+}
+.hp-excerpt>span {
+  font-size:10px;
+  color:#bcaa76;
+  margin-top:7px
+}
+.hp-excerpt p {
+  font:400 17px/1.9 "Noto Serif SC","Songti SC",serif
+}
+.hp-replay {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  border-top:1px solid #b4bda425;
+  margin-top:25px;
+  padding-top:15px
+}
+.hp-replay p {
+  font-size:9px;
+  color:#b1baa3
+}
+.hp-replay>div {
+  display:flex;
+  gap:6px
+}
+.hp-replay button {
+  min-height:36px;
+  padding:5px 11px;
+  background:transparent;
+  border:1px solid #a2ad923f;
+  border-radius:0;
+  color:#c8ceb9;
+  font-size:11px
+}
+.hp-replay button[aria-pressed=true] {
+  color:#172721;
+  border-color:#cfb477;
+  background:#cfb477
+}
+.hp-caption {
+  text-align:center;
+  color:#707765;
+  font-size:12px;
+  margin-top:17px!important
+}
+.hp-characters {
+  max-width:1170px;
+  margin:auto;
+  padding:0 35px 70px;
+  scroll-margin-top:30px
+}
+.hp-characters .hp-section-heading {
+  padding-top:47px;
+  border-top:1px solid #303b2725
+}
+.hp-cast-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:33px 23px
+}
+.hp-character {
+  display:block;
+  min-width:0;
+  padding:0;
+  color:inherit;
+  background:transparent;
+  border:0;
+  text-align:left
+}
+.hp-portrait {
+  aspect-ratio:1;
+  width:100%;
+  overflow:hidden;
+  background:#15241e
+}
+.hp-portrait img {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  transition:filter .18s
+}
+.hp-character:hover .hp-portrait img {
+  filter:brightness(1.08)
+}
+/* Hide the bottom strip in the supplied Hank image without modifying the original. */
+.hp-portrait-hank img {
+  height:107%;
+  object-position:center top
+}
+.hp-cast-info {
+  padding:15px 2px 0
+}
+.hp-cast-en {
+  font-size:8px;
+  letter-spacing:1.4px;
+  color:#69725e
+}
+.hp-cast-info h3 {
+  font:500 18px/1.5 "Noto Serif SC","Songti SC",serif;
+  margin:5px 0 8px
+}
+.hp-cast-info p {
+  font-size:12px;
+  line-height:1.8;
+  color:#626d5b;
+  min-height:44px
+}
+.hp-chat-link {
+  display:inline-block;
+  color:var(--hp-accent);
+  border-bottom:1px solid #a3443050;
+  margin-top:11px;
+  font-size:11px
+}
+.hp-play {
+  padding:38px 24px 60px;
+  text-align:center
+}
+.hp-play h2 {
+  font-size:27px
+}
+.hp-play p {
+  color:#626d5b;
+  margin:10px 0 23px;
+  font-size:14px
+}
+.hp-footer {
+  max-width:1100px;
+  margin:auto;
+  border-top:1px solid #303b2725;
+  padding:23px 0;
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  font-size:9px;
+  color:#68715f;
+  letter-spacing:1px
+}
+@media(max-width:900px) {
+  .hp-cover-inner {
+    height:490px
+  }
+  .hp-cover-art {
+    width:66%;
+    object-position:55% center
+  }
+  .hp-cover-type {
+    left:5%
+  }
+  .hp-cover h1 {
+    font-size:99px
+  }
+  .hp-cover-chinese {
+    font-size:16px;
+    letter-spacing:2px
+  }
+  .hp-cover-kicker {
+    font-size:8px;
+    letter-spacing:2px
+  }
+  .hp-screen {
+    grid-template-columns:35% 65%
+  }
+  .hp-screen-content {
+    padding:24px
+  }
+  .hp-excerpt p {
+    font-size:15px
+  }
+  .hp-cast-grid {
+    grid-template-columns:repeat(2,1fr);
+    gap:34px 24px
+  }
+  .hp-characters {
+    max-width:740px
+  }
+  .hp-footer {
+    margin:0 35px
+  }
+}
+@media(max-width:560px) {
+  .hp-nav {
+    height:56px;
+    padding:0 20px
+  }
+  .hp-brand {
+    font-size:26px
+  }
+  .hp-brand span {
+    display:none
+  }
+  .hp-nav nav {
+    gap:17px
+  }
+  .hp-nav nav,.hp-back {
+    font-size:10px
+  }
+  .hp-cover-inner {
+    height:500px
+  }
+  .hp-cover-art {
+    width:100%;
+    object-position:58% top
+  }
+  .hp-cover-type {
+    top:auto;
+    bottom:25px;
+    left:24px;
+    transform:none
+  }
+  .hp-cover h1 {
+    font-size:78px;
+    line-height:.88;
+    letter-spacing:1px
+  }
+  .hp-cover h1 span:last-child {
+    margin-top:5px
+  }
+  .hp-cover-kicker {
+    margin-bottom:15px!important;
+    font-size:8px;
+    color:#e1c484
+  }
+  .hp-cover-chinese {
+    font-size:14px;
+    margin-top:20px!important;
+    letter-spacing:2px
+  }
+  .hp-cover-credit {
+    font-size:7px;
+    bottom:27px;
+    right:18px;
+    writing-mode:vertical-rl
+  }
+  .hp-entry {
+    padding:25px 20px 0;
+    gap:12px
+  }
+  .hp-primary,.hp-secondary {
+    min-width:0;
+    padding:11px 23px;
+    font-size:13px
+  }
+  .hp-entry p {
+    font-size:10px
+  }
+  .hp-introduction {
+    padding:45px 24px 50px
+  }
+  .hp h2 {
+    font-size:25px;
+    letter-spacing:0
+  }
+  .hp-introduction>p:not(.hp-eyebrow) {
+    font-size:14px;
+    line-height:1.95
+  }
+  .hp-wide-break {
+    display:none
+  }
+  .hp-gameplay {
+    padding:0 20px 45px
+  }
+  .hp-section-heading {
+    margin-bottom:25px
+  }
+  .hp-screen {
+    display:block
+  }
+  .hp-screen-art {
+    min-height:0;
+    height:230px
+  }
+  .hp-screen-art img {
+    object-position:center 25%
+  }
+  .hp-screen-art>span {
+    display:none
+  }
+  .hp-screen-content {
+    padding:21px 20px
+  }
+  .hp-screen-content h3 {
+    margin:20px 0 17px
+  }
+  .hp-excerpt {
+    min-height:155px;
+    gap:10px
+  }
+  .hp-excerpt p {
+    font-size:15px
+  }
+  .hp-screen-meta {
+    font-size:9px
+  }
+  .hp-replay {
+    gap:8px;
+    margin-top:17px
+  }
+  .hp-replay p {
+    font-size:8px
+  }
+  .hp-replay button {
+    min-height:40px
+  }
+  .hp-caption {
+    font-size:11px;
+    line-height:1.8
+  }
+  .hp-characters {
+    padding:0 20px 35px
+  }
+  .hp-characters .hp-section-heading {
+    padding-top:35px
+  }
+  .hp-cast-grid {
+    gap:28px 15px
+  }
+  .hp-cast-en {
+    font-size:7px;
+    letter-spacing:.6px
+  }
+  .hp-cast-info {
+    padding-top:10px
+  }
+  .hp-cast-info h3 {
+    font-size:16px
+  }
+  .hp-cast-info p {
+    font-size:11px;
+    min-height:60px
+  }
+  .hp-play {
+    padding:25px 20px 45px
+  }
+  .hp-footer {
+    margin:0 20px;
+    font-size:8px;
+    flex-wrap:wrap
+  }
+  .hp-footer span:nth-child(2) {
+    display:none
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  .hp * {
+    transition:none!important
+  }
+}
+@media(max-width:560px) {
+  .hp-cover-kicker {
+    display:none
+  }
+}
+
+/* Rounded illustration silhouettes balanced with straight type and open text. */
+.hp { --hp-paper: #f1eee5; --hp-accent: #a34935; }
+.hp-cover { background: #c9d3bd; color: #20362d; }
+.hp-cover-inner { height: clamp(490px, 44vw, 620px); }
+.hp-cover-art {
+  width: min(66%, 840px);
+  height: 116%;
+  top: -8%;
+  right: -3%;
+  border-radius: 50%;
+  object-position: center 28%;
+}
+.hp-cover-type { left: 6%; top: 45%; }
+.hp-cover h1 { font-size: clamp(93px, 10vw, 144px); }
+.hp-cover h1 span:last-child { color: #934735; }
+.hp-cover-kicker { color: #4d624d; }
+.hp-cover-chinese { font-weight: 500; }
+.hp-cover-credit { bottom: 42px; right: 5%; color: #f1e5c5; }
+.hp-game-mark {
+  position: relative;
+  z-index: 2;
+  width: max-content;
+  margin: -66px auto 0;
+  text-align: center;
+}
+.hp-game-mark img {
+  display: block;
+  width: 138px;
+  height: 138px;
+  object-fit: cover;
+  object-position: center top;
+  border: 9px solid var(--hp-paper);
+  border-radius: 38px;
+  background: var(--hp-paper);
+}
+.hp-game-mark span { display: block; margin-top: 4px; font: 18px/1.5 Georgia, serif; }
+.hp-entry { padding-top: 22px; }
+.hp-primary, .hp-secondary { border-radius: 13px; }
+.hp-screen { border-radius: 26px; overflow: hidden; }
+.hp-portrait { border-radius: 24px; }
+.hp-replay button { border-radius: 20px; min-width: 54px; }
+.hp-introduction { padding-top: 48px; }
+@media (max-width: 900px) {
+  .hp-cover-inner { height: 480px; }
+  .hp-cover-art { width: 72%; right: -12%; }
+  .hp-cover h1 { font-size: 96px; }
+}
+@media (max-width: 560px) {
+  .hp-cover-inner { height: 540px; }
+  .hp-cover-art {
+    width: 106%; height: 76%; top: -6%; right: -21%;
+    object-position: center 27%;
+  }
+  .hp-cover-type { left: 24px; top: auto; bottom: 75px; transform: none; }
+  .hp-cover h1 { font-size: 65px; }
+  .hp-cover-chinese { font-size: 13px; margin-top: 16px !important; }
+  .hp-cover-credit { display: none; }
+  .hp-game-mark { margin-top: -53px; }
+  .hp-game-mark img { width: 112px; height: 112px; border-radius: 32px; border-width: 8px; }
+  .hp-game-mark span { font-size: 16px; }
+  .hp-screen { border-radius: 22px; }
+  .hp-portrait { border-radius: 18px; }
+  .hp-introduction { padding-top: 40px; }
+}
