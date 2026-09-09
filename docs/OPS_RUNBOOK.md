@@ -277,9 +277,13 @@ Rules:
 - Postgres runs **on the VM**: container `bb-postgres` (postgres:16-alpine), volume `bb-pgdata`, on docker network `bb-net`, DB/user `bb_roleplay`/`breaking_bad_roleplay`, **no host port published** (only reachable inside `bb-net`).
 - `/opt/breaking-bad-roleplay/.env` `DATABASE_URL` → `bb-postgres:5432`. Old Supabase URL preserved in `.env.bak-supabase-20260909`.
 - `scripts/deploy-backend.sh` now creates `bb-net` and runs the app container with `--network bb-net`. **Never drop that flag.**
-- Supabase **Auth is NOT restored**: browser login still hits the dead project until the owner resumes/creates the project in the Supabase dashboard. Guest mode works.
+- Initially Auth remained unavailable. Follow-up recovery on the same day resumed the original project and restored frontend/backend Auth configuration (see below).
 
-**If Supabase comes back:** edit `.env` DATABASE_URL back, `docker rm -f bb-roleplay`, redeploy via the script. The two DBs will have diverged — ask the owner which is canonical before migrating data.
+**Auth recovery (2026-09-09):** resume the existing Supabase project in its dashboard. Keep `.env` `DATABASE_URL` pointing at `bb-postgres`; restoring Auth does not require migrating story data. Browser profile sync uses the existing Supabase tables directly. Never switch the story DB back without reconciling the diverged data.
+
+**Required deployment configuration:** the VM `.env.local` must contain `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. `scripts/deploy-vm.sh` passes these to the Docker frontend build and supplies the corresponding `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` to the backend for token verification. Only public client keys belong here, never a service-role key. The uploader excludes all `.env*` files to preserve VM configuration. Build failure stops deployment before the running container is removed; health-check failure exits nonzero.
+
+The restored legacy backend tables had no RLS. `supabase/migrations/20260909033000_lock_backend_tables.sql` was applied through the dashboard SQL editor: five backend-only tables now deny anonymous/player API access. Existing player-profile tables retain their user-scoped policies. Ordinary password login, production `tier=user`, profile read/write, and cross-user isolation were verified with temporary accounts, then cleaned up.
 
 **Monitoring tell:** `docker ps` showing `bb-roleplay Restarting (1)` = DB unreachable. Read `docker logs --tail 30 bb-roleplay` first, then `docker logs bb-postgres`.
 
