@@ -1,13 +1,14 @@
 /**
  * Silhouette Component (P0-C / desert-noir P2)
  *
- * 头像渲染链：优先 /avatars/desert-noir/<id>.jpg 油画风立绘（近黑背景+绿/琥珀轮廓光），
+ * 头像渲染链：优先用户提供的新版插画，沃尔特保留 desert-noir 原图；
  * 加载失败回退旧 PNG/SVG 剪影，再失败回退首字母方块。
  * 用法：<Silhouette characterId="walter" name="Walter" size={42} />
  */
 
 import { useState } from 'react'
 import type { CharacterId } from '../roleProfiles'
+import { characterPortrait } from './characterPortraits'
 
 // PNG portraits when present; others (e.g. hank) load /avatars/<id>.svg directly.
 const portraitAvatarIds = new Set<CharacterId>([
@@ -28,7 +29,7 @@ interface SilhouetteProps {
 
 export function Silhouette({ characterId, name, size = 42 }: SilhouetteProps) {
   const [failedSrcs, setFailedSrcs] = useState<string[]>([])
-  const desertNoirSrc = `/avatars/desert-noir/${characterId}.jpg`
+  const desertNoirSrc = characterPortrait(characterId)
   const primarySrc = portraitAvatarIds.has(characterId)
     ? `/avatars/${characterId}.png`
     : `/avatars/${characterId}.svg`
@@ -51,16 +52,21 @@ export function Silhouette({ characterId, name, size = 42 }: SilhouetteProps) {
     )
   }
 
-  return (
+  const cropHank = characterId === 'hank' && src === desertNoirSrc
+  const avatar = (
     <img
       src={src}
       alt={name}
       className="silhouette-avatar"
       width={size}
       height={size}
+      style={cropHank ? { height: '107%' } : undefined}
       onError={() => {
         setFailedSrcs(prev => prev.includes(src) ? prev : [...prev, src])
       }}
     />
   )
+  return cropHank
+    ? <span style={{ display: 'block', width: '100%', height: '100%', overflow: 'hidden' }}>{avatar}</span>
+    : avatar
 }
