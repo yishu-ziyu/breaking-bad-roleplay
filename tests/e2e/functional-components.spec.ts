@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installMockEventSource, expectDirectorControls } from './mockSse'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173'
 
@@ -6,6 +7,9 @@ async function gotoFresh(page: Page) {
   // Bypass landing screen so tests land directly in the app
   await page.addInitScript(() => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
+    window.localStorage.setItem('abq_view', JSON.stringify('chat'))
+    window.localStorage.setItem('abq_surface', JSON.stringify('direct'))
   })
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
@@ -21,48 +25,9 @@ async function seedRawStorage(page: Page, values: Record<string, string>) {
     for (const [key, value] of Object.entries(data)) {
       window.localStorage.setItem(key, value)
     }
-  }, { ...values, abq_enteredWorld: 'true' })
+  }, { ...values, abq_enteredWorld: 'true', abq_productSurface: JSON.stringify('v2-cold-open') })
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
-}
-
-async function installMockEventSource(page: Page) {
-  await page.addInitScript(() => {
-    type MockWindow = Window & {
-      __mockSSE: { emit: (type: string, data: unknown) => void } | null
-    }
-
-    class MockEventSource {
-      handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
-      readyState = 0
-      static CONNECTING = 0
-      static OPEN = 1
-      static CLOSED = 2
-
-      constructor(public url: string) {
-        ;(window as MockWindow).__mockSSE = this
-      }
-
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (!this.handlers.has(type)) this.handlers.set(type, [])
-        this.handlers.get(type)!.push(fn)
-      }
-
-      close() {
-        this.readyState = 2
-      }
-
-      emit(type: string, data: unknown) {
-        const payload = typeof data === 'string' ? data : JSON.stringify(data)
-        const ev = new MessageEvent(type, { data: payload })
-        this.handlers.get(type)?.forEach((fn) => fn(ev))
-      }
-    }
-
-    ;(window as Window & { EventSource: typeof EventSource }).EventSource =
-      MockEventSource as unknown as typeof EventSource
-    ;(window as MockWindow).__mockSSE = null
-  })
 }
 
 async function emitSSE(page: Page, type: string, data: unknown) {
@@ -189,7 +154,7 @@ test('FC-3: Story Stop sends stop action, clears saved session, and returns to i
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1' } })
 
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
   await page.locator('.beat-controls button', { hasText: /Stop/ }).click()
 
   await expect.poll(() => actionLog.some((entry) => entry.action === 'stop')).toBe(true)
@@ -235,9 +200,8 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
     abq_language: JSON.stringify('en'),
   })
   await expect.poll(() => messagesRouteHits).toBeGreaterThanOrEqual(2)
-  await expect(page.locator('.story-scene-card__quote', { hasText: 'Restored line.' })).toBeVisible()
-  await expect(page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'Restored line.' })).toBeVisible()
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expect(page.locator('.story-manuscript__dialogue', { hasText: 'Restored line.' })).toBeVisible()
+  await expectDirectorControls(page)
 
   await page.locator('.beat-controls button', { hasText: /Continue/ }).click()
   await expect.poll(() => actionLog.some((entry) => entry.action === 'continue')).toBe(true)
@@ -255,11 +219,5 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
-  // Stage cards dwell 7s for readability; browse to the newest card via the nav.
-  const stageNext = page.locator('.story-scene-card__nav button[aria-label="Next card"]')
-  while ((await stageNext.count()) > 0 && (await stageNext.isEnabled())) {
-    await stageNext.click()
-  }
-  await expect(page.locator('.story-scene-card__quote', { hasText: 'back online' })).toBeVisible()
-  await expect(page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'back online' })).toBeVisible()
+  await expect(page.locator('.story-manuscript__dialogue', { hasText: 'back online' })).toBeVisible()
 })

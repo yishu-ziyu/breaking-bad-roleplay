@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installMockEventSource } from './mockSse'
 
 /**
  * Cold Open crime-drama path (shell only; no real LLM required).
@@ -31,6 +32,11 @@ async function gotoColdOpen(page: Page, path = '/') {
   })
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+  const brief = page.locator('.cold-open__stage--brief')
+  if (await brief.isVisible()) {
+    await page.getByRole('button', { name: /Yes — start playing|看过，直接开始/ }).click()
+  }
+  await expect(page.locator('.cold-open__stage--crisis')).toBeVisible({ timeout: 10_000 })
 }
 
 /**
@@ -53,6 +59,7 @@ async function seedEnteredWorld(
       localStorage.setItem('abq_productSurface', JSON.stringify(surface))
       localStorage.setItem('abq_character', JSON.stringify('walter'))
       localStorage.setItem('abq_view', JSON.stringify('story'))
+      localStorage.setItem('abq_knowledgeTrack', JSON.stringify('fan'))
       for (const [key, value] of Object.entries(extra)) {
         localStorage.setItem(key, JSON.stringify(value))
       }
@@ -61,69 +68,17 @@ async function seedEnteredWorld(
   )
 }
 
-/**
- * MockEventSource for Story SSE (same contract as sse-story.spec.ts).
- * useStoryStream attaches via addEventListener for typed events.
- */
-async function installMockEventSource(page: Page) {
-  await page.addInitScript(() => {
-    type MockWindow = Window & {
-      __mockSSE: { emit: (type: string, data: unknown) => void } | null
-      __mockSSEInstances: Array<{ readyState: number }>
-    }
-
-    class MockEventSource {
-      url: string
-      handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
-      onopen: ((e: Event) => void) | null = null
-      onerror: ((e: Event) => void) | null = null
-      onmessage: ((e: MessageEvent) => void) | null = null
-      readyState = 0
-      static CONNECTING = 0
-      static OPEN = 1
-      static CLOSED = 2
-      constructor(url: string) {
-        this.url = url
-        ;(window as MockWindow).__mockSSE = this
-        ;(window as MockWindow).__mockSSEInstances.push(this)
-      }
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (!this.handlers.has(type)) this.handlers.set(type, [])
-        this.handlers.get(type)!.push(fn)
-      }
-      removeEventListener(type: string, fn: (e: MessageEvent) => void) {
-        const arr = this.handlers.get(type)
-        if (arr) {
-          const idx = arr.indexOf(fn)
-          if (idx >= 0) arr.splice(idx, 1)
-        }
-      }
-      close() {
-        this.readyState = 2
-      }
-      emit(type: string, data: unknown) {
-        const payload = typeof data === 'string' ? data : JSON.stringify(data)
-        const ev = new MessageEvent(type, { data: payload })
-        const arr = this.handlers.get(type)
-        if (arr) arr.forEach((fn) => fn(ev))
-        if (type === 'message' && this.onmessage) this.onmessage(ev)
-      }
-    }
-    ;(window as Window & { EventSource: typeof EventSource }).EventSource =
-      MockEventSource as unknown as typeof EventSource
-    ;(window as MockWindow).__mockSSE = null
-    ;(window as MockWindow).__mockSSEInstances = []
-  })
-}
-
 async function mockSessionCreate(page: Page, sid = 'cold-open-sid') {
+  const state = { hits: 0 }
   await page.route('**/api/session/create', async (route) => {
+    state.hits += 1
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ session_id: sid }),
     })
   })
+  return state
 }
 
 async function mockActionEndpoint(page: Page) {
@@ -216,19 +171,12 @@ test('cold open: Find Jesse → cast strip with 4 members', async ({ page }) => 
 /*  3. Enter story shell (soft-assert; no real LLM)                   */
 /* ------------------------------------------------------------------ */
 
-test('cold open: cast Walter leaves cold open into story shell or connection sheet', async ({
+test('cold open: cast Walter shows the 场面卡 before any SSE', async ({
   page,
 }) => {
   // Stub session APIs so a live connection path does not hang on network.
-  await mockSessionCreate(page)
+  const create = await mockSessionCreate(page)
   await mockActionEndpoint(page)
-  await page.route('**/api/session/*/stream**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/event-stream',
-      body: '',
-    })
-  })
 
   await gotoColdOpen(page)
   await page.getByRole('button', { name: /寻找杰西|Find Jesse/i }).click()
@@ -239,19 +187,65 @@ test('cold open: cast Walter leaves cold open into story shell or connection she
 
   await page.getByRole('button', { name: /进入角色 沃尔特|Enter as Walter/i }).click()
 
-  // Soft-assert: without canStart stays on cold open with gate; with line enters story.
-  // Wait briefly for either transition.
-  await page.waitForTimeout(400)
-  const leftCold = (await page.locator('.cold-open').count()) === 0
-  if (leftCold) {
-    await expect(page.locator('.app-shell, .story-panel').first()).toBeVisible({
-      timeout: 8_000,
-    })
-  } else {
-    const coldError = page.locator('.cold-open__error, [role="alert"]')
-    const connectionSheet = page.locator('.connection-sheet')
-    await expect(coldError.or(connectionSheet).first()).toBeVisible({ timeout: 8_000 })
-  }
+  await expect(page.locator('.cold-open')).toHaveCount(0)
+  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 8_000 })
+  await expect(page.locator('.story-scene-bill__place')).toBeVisible()
+  await expect(page.locator('.story-scene-bill__crisis')).toBeVisible()
+  await expect(page.getByRole('button', { name: /开演|Raise curtain/i })).toBeVisible()
+  await expect(page.locator('.story-manuscript')).toHaveCount(0)
+  // SSE waits for 开演 — session create must not have fired yet.
+  await expect.poll(() => create.hits).toBe(0)
+})
+
+test('开演 raises the curtain, then SSE reading — still not a third chat thread', async ({
+  page,
+}) => {
+  await installMockEventSource(page)
+  const create = await mockSessionCreate(page, 'curtain-sid')
+  await mockActionEndpoint(page)
+
+  await gotoColdOpen(page)
+  await page.getByRole('button', { name: /寻找杰西|Find Jesse/i }).click()
+  await expect(page.locator('.cold-open__stage--cast')).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: /进入角色 沃尔特|Enter as Walter/i }).click()
+  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 8_000 })
+  await expect.poll(() => create.hits).toBe(0)
+
+  await page.getByRole('button', { name: /开演|Raise curtain/i }).click()
+  await expect.poll(() => create.hits).toBe(1)
+  await page.waitForFunction(
+    () => Boolean((window as Window & { __mockSSE?: unknown }).__mockSSE),
+    { timeout: 5_000 },
+  )
+  await expect(page.locator('.story-scene-bill.is-holding')).toBeVisible()
+  await expect(page.locator('.story-manuscript')).toHaveCount(0)
+  await expect(page.getByText(/Connecting…|Connecting\.\.\./)).toHaveCount(0)
+
+  await emitSSE(page, 'status', { data: { message: 'Director online' } })
+  await emitSSE(page, 'outline', { data: { content: '1. Find Jesse before the headlights arrive.' } })
+  await emitSSE(page, 'scene_change', {
+    data: { description: 'The desert RV, ammonia in the air.', to_scene: 'Desert RV' },
+  })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Walter White',
+      content: 'Jesse. Where the hell are you?',
+      emotion_state: 'tense',
+    },
+  })
+  await emitSSE(page, 'world_state_delta', {
+    data: {
+      deltas: [{ target: 'Jesse', field: 'where', old_value: 'RV', new_value: 'dark' }],
+    },
+  })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1', is_final: false } })
+
+  await expect(page.locator('.story-scene-bill')).toHaveCount(0)
+  await expect(page.locator('.story-manuscript')).toBeVisible()
+  await expect(page.locator('.story-manuscript__prose')).toBeVisible()
+  await expect(page.locator('.story-manuscript__dialogue')).toContainText('Jesse')
+  await expect(page.locator('.story-lore')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.msg--user, .msg--char')).toHaveCount(0)
 })
 
 /* ------------------------------------------------------------------ */

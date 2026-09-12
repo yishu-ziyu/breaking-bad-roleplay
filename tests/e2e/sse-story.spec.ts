@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installMockEventSource, expectDirectorControls } from './mockSse'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 
@@ -10,61 +11,6 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
-
-/**
- * Inject a MockEventSource that replaces window.EventSource before the app
- * mounts. useStoryStream uses es.addEventListener(type, fn) for all 10
- * event types, so the mock faithfully implements addEventListener / emit.
- */
-async function installMockEventSource(page: Page) {
-  await page.addInitScript(() => {
-    type MockWindow = Window & {
-      __mockSSE: { emit: (type: string, data: unknown) => void } | null
-      __mockSSEInstances: Array<{ readyState: number }>
-    }
-
-    class MockEventSource {
-      url: string
-      handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
-      onopen: ((e: Event) => void) | null = null
-      onerror: ((e: Event) => void) | null = null
-      onmessage: ((e: MessageEvent) => void) | null = null
-      readyState = 0
-      static CONNECTING = 0
-      static OPEN = 1
-      static CLOSED = 2
-      constructor(url: string) {
-        this.url = url
-        ;(window as MockWindow).__mockSSE = this
-        ;(window as MockWindow).__mockSSEInstances.push(this)
-      }
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (!this.handlers.has(type)) this.handlers.set(type, [])
-        this.handlers.get(type)!.push(fn)
-      }
-      removeEventListener(type: string, fn: (e: MessageEvent) => void) {
-        const arr = this.handlers.get(type)
-        if (arr) {
-          const idx = arr.indexOf(fn)
-          if (idx >= 0) arr.splice(idx, 1)
-        }
-      }
-      close() {
-        this.readyState = 2
-      }
-      emit(type: string, data: unknown) {
-        const payload = typeof data === 'string' ? data : JSON.stringify(data)
-        const ev = new MessageEvent(type, { data: payload })
-        const arr = this.handlers.get(type)
-        if (arr) arr.forEach((fn) => fn(ev))
-        if (type === 'message' && this.onmessage) this.onmessage(ev)
-      }
-    }
-    ;(window as Window & { EventSource: typeof EventSource }).EventSource = MockEventSource as unknown as typeof EventSource
-    ;(window as MockWindow).__mockSSE = null
-    ;(window as MockWindow).__mockSSEInstances = []
-  })
-}
 
 /** Mock POST /api/session/create — returns { session_id: sid } */
 async function mockSessionCreate(page: Page, sid = 'test-sid') {
@@ -110,15 +56,9 @@ async function mockSSEStates(page: Page): Promise<number[]> {
   ).__mockSSEInstances?.map((source) => source.readyState) ?? [])
 }
 
-/**
- * Stage cards dwell 7s each for readability. Browse to the newest card via
- * the stage nav so assertions don't wait out the paced autoplay.
- */
-async function pinLatestStageCard(page: Page) {
-  const next = page.locator('.story-scene-card__nav button[aria-label="Next card"]')
-  while ((await next.count()) > 0 && (await next.isEnabled())) {
-    await next.click()
-  }
+/** Manuscript is a continuous page — no card pager to pin. */
+async function expectDialogue(page: Page, text: string | RegExp) {
+  await expect(page.locator('.story-manuscript__dialogue').filter({ hasText: text })).toBeVisible()
 }
 
 /** Seed localStorage (abq_ prefix is added by caller, matching persistedState). */
@@ -126,6 +66,8 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
     // Bypass landing screen BEFORE React mounts
     window.localStorage.setItem('abq_enteredWorld', 'true')
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
+    window.localStorage.setItem('abq_knowledgeTrack', JSON.stringify('fan'))
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -208,8 +150,8 @@ async function driveToBeatPaused(
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: beatId, is_final: false } })
 
-  // Wait for beat_paused — BeatControls visible
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expect(page.locator('.beat-paused--drama')).toBeVisible()
+  await expectDirectorControls(page)
 
   return actionLog
 }
@@ -228,24 +170,12 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
-  // Full dialogue lives on the paper stage; timeline keeps a short summary
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__quote')).toContainText(
-    'We need to cook',
-  )
-  await expect(page.locator('.story-event--agent_speak .story-event__summary')).toContainText(
-    'We need to cook',
-  )
-
-  // scene_change summary on timeline
-  await expect(page.locator('.story-event--scene_change .story-event__summary')).toContainText(
-    'Los Pollos',
-  )
-
-  // world_state_delta rendered as summary (no dense list in the rail)
-  await expect(page.locator('.story-event--world_state_delta .story-event__summary')).toContainText(
-    'stress',
-  )
+  // Dialogue + scene live in the manuscript; world facts in the lore rail
+  await expectDialogue(page, 'We need to cook')
+  await expect(page.locator('.story-manuscript__prose')).toContainText('Los Pollos')
+  await expect(page.locator('.story-lore')).toContainText('stress')
+  await expect(page.locator('.story-lore')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.msg--user, .msg--char, .story-scene-card__quote')).toHaveCount(0)
 
   // Beat index indicator shows Beat 1
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
@@ -263,7 +193,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await expect.poll(() => mockSSEStates(page)).toEqual([2])
 })
 
-test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pressure footer, and decision tray', async ({
+test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore, and decision tray', async ({
   page,
 }) => {
   await driveToBeatPaused(page, {
@@ -287,23 +217,32 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pres
   })
 
   await expect(page.locator('.story-hud')).toBeVisible()
-  await expect(page.locator('.story-hud')).toContainText('Scene Board')
+  await expect(page.locator('.story-hud')).toContainText('NIGHT')
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
-  await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos office')
+  await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos')
 
-  await expect(page.locator('.story-outline__summary')).toContainText('2 McKee-structured beats planned')
+  await expect(page.locator('.story-outline__summary')).toContainText(/hard turns|关口/)
   await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
 
-  await expect(page.locator('.story-event--scene_change', { hasText: 'Los Pollos Hermanos office' })).toBeVisible()
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__speaker')).toContainText('Gus Fring')
-  await expect(page.locator('.story-scene-card__quote')).toContainText('A calm conversation prevents')
+  await expect(page.locator('.story-manuscript__prose').filter({ hasText: 'Los Pollos Hermanos office' })).toBeVisible()
+  await expect(page.locator('.story-manuscript__dialogue cite').filter({ hasText: 'Gus Fring' })).toBeVisible()
+  await expectDialogue(page, 'A calm conversation prevents')
 
-  await expect(page.locator('.beat-paused')).toContainText('Choose the next move')
+  await expect(page.locator('.beat-paused')).toContainText(/YOUR NEXT MOVE|你的下一步/)
   await expect(page.locator('.beat-controls button', { hasText: /Continue/ })).toBeVisible()
   await expect(page.locator('.beat-controls button', { hasText: /Redirect/ })).toBeVisible()
   await expect(page.locator('.beat-controls button', { hasText: /Switch Perspective/ })).toBeVisible()
+})
+
+test('TC-SSE-REDRAW: 换一版 this beat sends replay, not a full restart', async ({ page }) => {
+  const actionLog = await driveToBeatPaused(page, { beatId: 'beat-2' })
+  await expect(page.locator('.story-manuscript__redraw')).toBeVisible()
+  await page.locator('.story-manuscript__redraw').click()
+  await expect.poll(() => actionLog.some((e) => e.action === 'replay')).toBe(true)
+  const replay = actionLog.find((e) => e.action === 'replay')
+  expect(replay?.beat_id).toMatch(/beat[_-]2/)
+  expect(actionLog.some((e) => e.action === 'startStory')).toBeFalsy()
 })
 
 /* ------------------------------------------------------------------ */
@@ -358,15 +297,10 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   // Beat index incremented to 2
   await expect(page.locator('.story-hud')).toContainText('Beat 2')
 
-  // New agent_speak content visible on stage + timeline summary
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__quote')).toContainText('The batch is ready.')
-  await expect(
-    page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'The batch is ready.' }),
-  ).toBeVisible()
+  await expectDialogue(page, 'The batch is ready.')
 
   // BeatControls visible again (back to beat_paused)
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
 })
 
 test('TC-SSE-2b: continue reopens stream with language=zh when UI language is zh', async ({
@@ -468,15 +402,10 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
   // backend beat_id instead of continuing the old outline's counter.
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
-  // New agent_speak content visible on stage
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__quote')).toContainText('take him out')
-  await expect(
-    page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'take him out' }),
-  ).toBeVisible()
+  await expectDialogue(page, 'take him out')
 
   // BeatControls visible again — no deadlock
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
 })
 
 /* ------------------------------------------------------------------ */
@@ -493,7 +422,7 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
   await emitSSE(page, 'beat_ready', {
     data: { beat_id: 'beat-2', beat_summary: 'Final confrontation', is_final: true },
   })
-  await expect.poll(() => mockSSEStates(page)).toEqual([2, 0])
+  await expect.poll(() => mockSSEStates(page)).toEqual([2, 2])
 
   // Emit complete event
   await emitSSE(page, 'complete', {
@@ -502,13 +431,12 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
 
   // story-complete UI visible with completion text
   await expect(page.locator('.story-complete')).toBeVisible()
-  await expect(page.locator('.story-complete')).toContainText(/Story complete/)
+  await expect(page.locator('.story-complete')).toContainText(/This scene is over|这一场演完/)
 
   // BeatControls should no longer be visible (state left beat_paused)
   await expect(page.locator('.beat-controls')).toHaveCount(0)
 
-  // complete event rendered in the event feed
-  await expect(page.locator('.story-event--complete')).toBeVisible()
+  await expect(page.locator('.story-complete__hint')).toContainText(/not an infinite chat|不是无限续写/)
   await expect.poll(() => mockSSEStates(page)).toEqual([2, 2])
 
   // Story-complete follow-up actions are present, plus Start Again.
@@ -613,11 +541,7 @@ test('TC-SSE-6: switch_perspective sends target_character and next beat first ag
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2', beat_summary: "Jesse's house" } })
 
-  // Assert first agent_speak of beat 2 is Jesse Pinkman.
-  // driveToBeatPaused already emitted 1 Walter White agent_speak in beat 1,
-  // so beat 2's first agent_speak is the 2nd .story-event--agent_speak in DOM.
-  // Using .nth(1) (not .first()) to target beat 2's first speak.
-  const beat2FirstSpeak = page.locator('.story-event--agent_speak').nth(1)
+  const beat2FirstSpeak = page.locator('.story-manuscript__dialogue').nth(1)
   await expect(beat2FirstSpeak).toContainText('Jesse Pinkman')
 })
 
@@ -630,9 +554,7 @@ test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) 
     outline: '1. RV — cook\n2. White house — Skyler waits',
   })
 
-  // Voice lives on the paper stage for the focused speak beat
-  await pinLatestStageCard(page)
-  const voicePlayer = page.locator('.story-scene-card .voice-player').first()
+  const voicePlayer = page.locator('.story-reading .voice-player').first()
   await expect(voicePlayer).toBeVisible()
   await expect(voicePlayer).toBeEnabled()
   await expect(voicePlayer).toContainText(/Voice|▶/)
@@ -679,6 +601,7 @@ test('TC-SSE-8: switch_perspective via UI hides BeatControls and shows Streaming
   // → BeatControls hidden, Streaming indicator visible
   await expect(page.locator('.beat-controls')).toHaveCount(0)
   await expect(page.locator('.streaming-indicator')).toBeVisible()
+  await expect(page.locator('.story-outline__summary')).toHaveCount(0)
 
   // Emit next beat's events to simulate backend processing switch_perspective
   await emitSSE(page, 'agent_speak', {
@@ -692,7 +615,7 @@ test('TC-SSE-8: switch_perspective via UI hides BeatControls and shows Streaming
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
   // After beat_ready: back to beat_paused, BeatControls visible again
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
 })
 
 /* ------------------------------------------------------------------ */
@@ -730,5 +653,5 @@ test('TC-SSE-9: redirect via UI hides BeatControls and shows Streaming indicator
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
   // After beat_ready: back to beat_paused
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
 })
