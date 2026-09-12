@@ -601,6 +601,7 @@ test('TC-SSE-8: switch_perspective via UI hides BeatControls and shows Streaming
   // → BeatControls hidden, Streaming indicator visible
   await expect(page.locator('.beat-controls')).toHaveCount(0)
   await expect(page.locator('.streaming-indicator')).toBeVisible()
+  await expect(page.locator('.story-outline__summary')).toHaveCount(0)
 
   // Emit next beat's events to simulate backend processing switch_perspective
   await emitSSE(page, 'agent_speak', {

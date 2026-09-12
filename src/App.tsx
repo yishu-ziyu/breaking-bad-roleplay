@@ -89,11 +89,11 @@ function formatStoryPlanPreview(outline: string, lang: Language): string {
   const beats = lines.filter(line => /^\d+[.)]\s+/.test(line))
   const count = Math.max(beats.length, 1)
   if (lang === 'zh') {
-    if (count <= 1) return '局面还在收紧'
+    if (count <= 1) return '这一夜刚起了头'
     if (count <= 3) return '这一夜还有几处关口'
     return `这一夜大约还有 ${count} 处关口`
   }
-  if (count <= 1) return 'The night is still tightening'
+  if (count <= 1) return 'The night is just getting started'
   if (count <= 3) return 'A few hard turns still ahead'
   return `About ${count} hard turns still ahead`
 }
@@ -1944,7 +1944,7 @@ function App() {
                       {outlineExpanded ? t.outlineCollapse : t.outlineExpand}
                     </button>
                   </div>
-                  {!outlineExpanded && (
+                  {!outlineExpanded && story.connectionState !== 'streaming' && (
                     <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
                   )}
                   {outlineExpanded && (
