@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installMockEventSource } from './mockSse'
 
 /**
  * Cold Open crime-drama path (shell only; no real LLM required).
@@ -31,6 +32,11 @@ async function gotoColdOpen(page: Page, path = '/') {
   })
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+  const brief = page.locator('.cold-open__stage--brief')
+  if (await brief.isVisible()) {
+    await page.getByRole('button', { name: /Yes — start playing|看过，直接开始/ }).click()
+  }
+  await expect(page.locator('.cold-open__stage--crisis')).toBeVisible({ timeout: 10_000 })
 }
 
 /**
@@ -53,67 +59,13 @@ async function seedEnteredWorld(
       localStorage.setItem('abq_productSurface', JSON.stringify(surface))
       localStorage.setItem('abq_character', JSON.stringify('walter'))
       localStorage.setItem('abq_view', JSON.stringify('story'))
+      localStorage.setItem('abq_knowledgeTrack', JSON.stringify('fan'))
       for (const [key, value] of Object.entries(extra)) {
         localStorage.setItem(key, JSON.stringify(value))
       }
     },
     { surface: PRODUCT_SURFACE, extra: extras },
   )
-}
-
-/**
- * MockEventSource for Story SSE (same contract as sse-story.spec.ts).
- * useStoryStream attaches via addEventListener for typed events.
- */
-async function installMockEventSource(page: Page) {
-  await page.addInitScript(() => {
-    type MockWindow = Window & {
-      __mockSSE: { emit: (type: string, data: unknown) => void } | null
-      __mockSSEInstances: Array<{ readyState: number }>
-    }
-
-    class MockEventSource {
-      url: string
-      handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
-      onopen: ((e: Event) => void) | null = null
-      onerror: ((e: Event) => void) | null = null
-      onmessage: ((e: MessageEvent) => void) | null = null
-      readyState = 0
-      static CONNECTING = 0
-      static OPEN = 1
-      static CLOSED = 2
-      constructor(url: string) {
-        this.url = url
-        ;(window as MockWindow).__mockSSE = this
-        ;(window as MockWindow).__mockSSEInstances.push(this)
-      }
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (!this.handlers.has(type)) this.handlers.set(type, [])
-        this.handlers.get(type)!.push(fn)
-      }
-      removeEventListener(type: string, fn: (e: MessageEvent) => void) {
-        const arr = this.handlers.get(type)
-        if (arr) {
-          const idx = arr.indexOf(fn)
-          if (idx >= 0) arr.splice(idx, 1)
-        }
-      }
-      close() {
-        this.readyState = 2
-      }
-      emit(type: string, data: unknown) {
-        const payload = typeof data === 'string' ? data : JSON.stringify(data)
-        const ev = new MessageEvent(type, { data: payload })
-        const arr = this.handlers.get(type)
-        if (arr) arr.forEach((fn) => fn(ev))
-        if (type === 'message' && this.onmessage) this.onmessage(ev)
-      }
-    }
-    ;(window as Window & { EventSource: typeof EventSource }).EventSource =
-      MockEventSource as unknown as typeof EventSource
-    ;(window as MockWindow).__mockSSE = null
-    ;(window as MockWindow).__mockSSEInstances = []
-  })
 }
 
 async function mockSessionCreate(page: Page, sid = 'cold-open-sid') {
@@ -225,13 +177,6 @@ test('cold open: cast Walter shows the 场面卡 before any SSE', async ({
   // Stub session APIs so a live connection path does not hang on network.
   const create = await mockSessionCreate(page)
   await mockActionEndpoint(page)
-  await page.route('**/api/session/*/stream**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/event-stream',
-      body: '',
-    })
-  })
 
   await gotoColdOpen(page)
   await page.getByRole('button', { name: /寻找杰西|Find Jesse/i }).click()

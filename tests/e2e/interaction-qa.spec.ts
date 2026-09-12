@@ -5,53 +5,9 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
+import { installMockEventSource, expectDirectorControls } from './mockSse'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
-
-async function installMockEventSource(page: Page) {
-  await page.addInitScript(() => {
-    type MockWindow = Window & { __mockSSE: { emit: (type: string, data: unknown) => void } | null }
-
-    class MockEventSource {
-      url: string
-      handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
-      onopen: ((e: Event) => void) | null = null
-      onerror: ((e: Event) => void) | null = null
-      onmessage: ((e: MessageEvent) => void) | null = null
-      readyState = 0
-      static CONNECTING = 0
-      static OPEN = 1
-      static CLOSED = 2
-      constructor(url: string) {
-        this.url = url
-        ;(window as MockWindow).__mockSSE = this
-      }
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (!this.handlers.has(type)) this.handlers.set(type, [])
-        this.handlers.get(type)!.push(fn)
-      }
-      removeEventListener(type: string, fn: (e: MessageEvent) => void) {
-        const arr = this.handlers.get(type)
-        if (arr) {
-          const idx = arr.indexOf(fn)
-          if (idx >= 0) arr.splice(idx, 1)
-        }
-      }
-      close() {
-        this.readyState = 2
-      }
-      emit(type: string, data: unknown) {
-        const payload = typeof data === 'string' ? data : JSON.stringify(data)
-        const ev = new MessageEvent(type, { data: payload })
-        const arr = this.handlers.get(type)
-        if (arr) arr.forEach((fn) => fn(ev))
-        if (type === 'message' && this.onmessage) this.onmessage(ev)
-      }
-    }
-    ;(window as Window & { EventSource: typeof EventSource }).EventSource = MockEventSource as unknown as typeof EventSource
-    ;(window as MockWindow).__mockSSE = null
-  })
-}
 
 async function mockSessionCreate(page: Page, sid = 'test-sid') {
   await page.route('**/api/session/create', async (route) => {
@@ -88,6 +44,7 @@ async function emitSSE(page: Page, type: string, data: unknown) {
 async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -146,7 +103,7 @@ async function driveToBeatPaused(page: Page, opts: { outline?: string; agentSpea
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: beatId } })
 
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
 
   return actionLog
 }
@@ -265,6 +222,7 @@ test('TC-IX-5: switching character in story setup preserves prompt', async ({ pa
     abq_view: 'story',
   })
 
+  await page.getByRole('button', { name: /档案|Archive/ }).click()
   const textarea = page.locator('.story-setup textarea')
   await textarea.fill('Walter 需要拿到新的甲胺供应。')
 
@@ -399,7 +357,7 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1' } })
 
   // Now beat_paused — BeatControls visible
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
   await expect(page.locator('.story-stream')).toHaveClass(/story-stream--beat_paused/)
 
   await page.waitForTimeout(500)
@@ -533,7 +491,7 @@ test('TC-IX-12: continue action transitions through streaming to next beat', asy
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
   // Back to beat_paused
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
   await expect(page.locator('.story-hud__metric').filter({ hasText: /Beat 2|节点 2/ }).locator('strong')).toBeVisible()
 })
 
