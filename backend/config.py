@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_publishable_key: str = ""
 
+    # P1 AI performance sidecar. Kernel always commits first.
+    # legacy = template lines (no Node). pi = Node ai-runtime / pi-agent.
+    ai_runtime: str = "legacy"
+    ai_runtime_url: str = "http://127.0.0.1:8010"
+    ai_runtime_timeout_ms: int = 20000
+
     @model_validator(mode="after")
     def _require_at_least_one_api_key(self) -> "Settings":
         if not (self.minimax_api_key or self.stepfun_api_key or self.cli_proxy_api_key):
