@@ -5,7 +5,7 @@ import {
   fetchPlotGraph,
   shortMapLabel,
   type PlotGraphData,
-} from './PlotGraphPanel.tsx'
+} from '../lib/plotGraph.ts'
 
 test('fetchPlotGraph hits session plot-graph endpoint with language', async () => {
   const calls: string[] = []
