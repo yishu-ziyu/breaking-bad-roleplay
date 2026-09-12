@@ -147,6 +147,8 @@ Player surfaces never show McKee craft scaffolding or validator internals.
 
 ## Phased delivery / PR map
 
+Rows without ✅/☑ are historical intent, **not** a binding backlog. See [docs/PLANNING.md](../PLANNING.md).
+
 | Phase / PR | Ship | Success |
 |------------|------|---------|
 | **P0** | ADR + Pydantic contracts + CONTEXT | Round-trip tests ✅ |

@@ -1,8 +1,8 @@
 # Layering: `backend/agents/` vs `backend/scenes/`
 
-> **Status:** accepted (Loop 13)
+> **Status:** accepted (as-built Story-mode layering)
 > **Source decisions:** DEC-0005 (Propose → Validate → Repair → Commit),
-> DEC-0003 (McKee Story engine), Loop 12 P4 sole-writer invariant.
+> DEC-0003 (McKee Story engine), sole-writer invariant in `backend/scenes/state_reducer.py`.
 > **Owners:** `backend/agents/` = LLM-facing proposal/emitter code.
 > `backend/scenes/` = deterministic correctness, validation, scoring,
 > and state-reduction code.

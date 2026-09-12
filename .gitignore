@@ -31,7 +31,8 @@ __pycache__/
 .vercel_python_packages/
 
 # Work artifacts (local only)
-.ship/
+.ship/*
+!.ship/README.md
 dist/
 .claude/commands/
 

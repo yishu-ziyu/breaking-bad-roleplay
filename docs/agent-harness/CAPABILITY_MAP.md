@@ -89,4 +89,4 @@ POST /api/agent/*           ✓     story/chat routes (separate)
 
 ## Residual (next sprint)
 
-See [GAP_AUDIT.md](./GAP_AUDIT.md) — wire lessons into assembler, bridge dossier/board, optional Director guardrail hook. Do not replace Continuity Board or golden harness.
+Historical gap notes (not a backlog): [GAP_AUDIT.md](../archive/plans/agent-harness/GAP_AUDIT.md). See [PLANNING.md](../PLANNING.md).

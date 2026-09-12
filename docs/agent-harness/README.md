@@ -6,7 +6,7 @@ Maps [ai-agent-book](file:///Users/mahaoxuan/Desktop/AI产品经理/ai-agent-boo
 **Harness:** Context + Tools + Constrain + Verify + Correct  
 (+ Memory layers, Trajectory, Lessons, Multi-agent orchestrator)
 
-See [CAPABILITY_MAP.md](./CAPABILITY_MAP.md) for chapter → module status.
+See [CAPABILITY_MAP.md](./CAPABILITY_MAP.md) for chapter → module status. Sprint/gap write-ups are archived under [docs/archive/plans/agent-harness/](../archive/plans/agent-harness/) and are not a product backlog ([PLANNING.md](../PLANNING.md)).
 
 ## Package layout
 

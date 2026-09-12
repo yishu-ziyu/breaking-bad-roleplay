@@ -1,6 +1,6 @@
 # CONTEXT — ABQ Roleplay Lab (Breaking Bad Roleplay)
 
-Shared product language. Update when hard decisions land.
+Shared product language for **what already shipped**. Historical roadmaps are not constraints: [docs/PLANNING.md](docs/PLANNING.md).
 
 ## Characters (playable)
 
@@ -12,7 +12,7 @@ Shared product language. Update when hard decisions land.
 | saul | Saul | 索尔 | Criminal lawyer comic |
 | mike | Mike | 麦克 | Never 米克 |
 | gus | Gus | 古斯 | Controlled threat |
-| hank | Hank | 汉克 | **Loop N new** — DEA; optional Story lead |
+| hank | Hank | 汉克 | DEA; optional Story lead |
 
 ## Hank (v1)
 
@@ -20,7 +20,7 @@ Shared product language. Update when hard decisions land.
 - **Relations:** `family member`, `DEA partner`, `suspect under watch`, `neighbor`, `friend of the family`.
 - **Voice:** Loud loyalty — jokes, minerals/beer life texture, protective of family, investigative pressure on suspects, vulnerability under the tough shell. Not a cool generic cop.
 - **Assets:** Minimal GIFs (4–8), silhouette/portrait fallback; **no** cloned TTS (browser/default fallback).
-- **Out of scope (Hank loop):** Marie as playable; real DEA how-to; full GIF catalog.
+- **Safety:** no real DEA how-to. Marie playable / clone TTS / full GIF catalog were loop-scope notes, not a binding next queue ([PLANNING.md](docs/PLANNING.md)).
 - **GIF rule:** first-frame visual audit required (no emotion-tag-only random Giphy).
 
 ## Story engine (McKee v2 — DEC-0003)
@@ -43,16 +43,14 @@ Shared product language. Update when hard decisions land.
 | Director | **Beat Contract** — not final lines |
 | Character Policy | **Turn Proposal** (action + **inner_monologue** + speech strategy + line) |
 | World Validator | hard legality (`backend/scenes/validator.py`) |
-| Narrative Critic | soft score (later) |
+| Narrative Critic | soft score (`scenes/critic.py`) |
 | State Reducer | deterministic Continuity Board (`backend/scenes/state_reducer.py`) |
-| Stage Compiler | future: 3D cues from closed action ontology |
 
 - ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
 - Contracts: `backend/agents/narrative_contracts.py`
 - Scenes package: `backend/scenes/` (ontology, mode, validator, reducer)
-- **P0–P3 as-built:** Beat Contract + Character Policy act/think/speak; World Validator; State Reducer-lite; **Soft Critic** (`scenes/critic.py`, weighted 30/25/20/15/10); Golden Beats **50** under `backend/eval/golden_beats/` (hard + soft harness).
-- Stage Compiler / 3D still open.
-- Training ladder: golden set → hard evaluator → soft critic → only then SFT/DPO.
+- **As-built:** Beat Contract + Character Policy act/think/speak; World Validator; State Reducer-lite; **Soft Critic** (`scenes/critic.py`, weighted 30/25/20/15/10); Golden Beats **50** under `backend/eval/golden_beats/` (hard + soft harness).
+- Unshipped stage/3D/SFT ideas in older ADRs are historical, not a must-do ([PLANNING.md](docs/PLANNING.md)).
 
 ## Modes
 

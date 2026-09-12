@@ -1,17 +1,13 @@
 # Breaking Bad Roleplay — 项目开发规范
 
-## 当前状态
+## 当前状态（as-built）
 
-- Loops 1-7 全部完成
-- Loop 4: 6 P0 playability fixes + memory write-read cycle (dossier injection)
-- Loop 5: Character consistency eval system (+21 tests, 4-dimension rubric)
-- Loop 6: GIF relevance audit + skipGif escape hatch (+5 tests)
-- Loop 7: Crew mode per-character prompt injection + DEC-0001 native function calling (+27 tests)
-- Loop N: playable Hank (`hank` / 汉克) — Direct+Crew+Story; DEC-0002
-- Loop N+1: McKee Story engine v2 — DEC-0003; `backend/agents/mckee_story.py` wired into director outline/beat
-- 当前测试: Hank + McKee unit suites; full suite re-run before ship
 - 线上服务: https://bb.yishuziyu.cn
-- 下一轮: McKee 质量门禁（价值翻转验收）/ Marie 可玩 / 克隆 TTS（按优先级）
+- Playable: Walter, Jesse, Skyler, Saul, Mike, Gus, Hank — Direct / Crew / Story
+- McKee Story engine v2: `backend/agents/mckee_story.py` (DEC-0003)
+- Narrative pipeline as shipped: DEC-0005 (Propose → Validate → Repair → Commit)
+
+Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **not product constraints**. See [docs/PLANNING.md](docs/PLANNING.md).
 
 ## 项目特有运维（必读）
 
@@ -49,33 +45,9 @@
 - E2E：`npx playwright test`
 - 数据库迁移：Alembic（`cd backend && alembic upgrade head`）
 
-## 开发工作流：YishuShip 11 阶段循环
+## 历史循环（不约束产品）
 
-PM Intake -> Research -> Definition -> Dev -> QA -> Review -> E2E -> Market -> Score -> Handoff -> Growth -> PM Intake（下一轮）
-
-循环不只在 Dev 结束。完整走完 11 个阶段后才进入下一轮。
-
-停止条件（满足任意一条即停）：
-- 总分 >= 7/10 连续 2 轮
-- 同一 blocker 连续 2 轮未解决
-- 预算耗尽（tokens / USD / 时间）
-- 用户明确叫停
-
-### 每个阶段的产出物
-
-| 阶段 | 产出文件 |
-|------|----------|
-| PM Intake | `.ship/tasks/<task_id>/product/` 下的 00-product-type.yaml, 01-strategy.md, 02-research.md, 03-problem-solution.md |
-| Research | `.ship/loop-N-research.md` |
-| Definition | `.ship/loop-N-brief.md` |
-| Dev | 代码 diff + `.ship/loop-N-dev-report.md` |
-| QA | `.ship/loop-N-qa-report.md` |
-| Review | `.ship/loop-N-review.md` |
-| E2E | `.ship/loop-N-e2e-report.md` |
-| Market | `.ship/loop-N-market.md` |
-| Score | `.ship/loop-N-scorecard.md` |
-| Handoff | `.ship/loop-N-handoff.md` |
-| Growth | `.ship/loop-N-growth/` 目录（4 个文件） |
+YishuShip 11 阶段与 `.ship/loop-N-*` 产出是历史流程，已归档。不要把它们当成必须继续执行的产品计划。归档入口：[docs/PLANNING.md](docs/PLANNING.md)。
 
 ## 强制 SDD + BDD + TDD 闭环
 
@@ -168,6 +140,7 @@ vercel --prod --yes            # Vercel 生产（见 docs/OPS_RUNBOOK.md）
 
 ## 相关文档
 
+- `docs/PLANNING.md` — 历史计划仅供参考，不约束产品
 - `docs/OPS_RUNBOOK.md` — 改完怎么 commit / push / 双轨部署 / live smoke
 - `docs/FREE_TIER_SECURITY.md` — 平台免费额度与安全边界
 - `DEVLOG.md` — 历史部署与坑位时间线

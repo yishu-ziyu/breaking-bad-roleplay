@@ -40,7 +40,7 @@
    - 路径：`intelligence/{era_family}/{character}/`（先做 `s1/walter`）。
    - 内容：identity era、decision rules、forbidden、scene DNA。
    - 注入：Story Character Policy 路径（与 Continuity Board 同缝）；Direct 仅在显式 `era` 时注入。
-   - **禁止**把全季心理学混进早期会话。见 `docs/narrative/intelligence_architecture_review.md`。
+   - **禁止**把全季心理学混进早期会话。当时的架构评论已归档：`docs/archive/plans/narrative/intelligence_architecture_review.md`（不约束下一轮，见 `docs/PLANNING.md`）。
 
 ## 推荐数据表
 
