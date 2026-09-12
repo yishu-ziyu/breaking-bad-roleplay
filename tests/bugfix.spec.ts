@@ -26,8 +26,10 @@ describe('B4: Story event rendering', () => {
   })
 
   it('Story event keys should reference event.id or event.type', () => {
-    const source = readFileSync(`${PROJECT_ROOT}src/App.tsx`, 'utf8')
-    const hasIdReference = /key=.*evt\.(type|id)/.test(source)
+    const app = readFileSync(`${PROJECT_ROOT}src/App.tsx`, 'utf8')
+    const reading = readFileSync(`${PROJECT_ROOT}src/components/StoryReadingSurface.tsx`, 'utf8')
+    const hasIdReference = /key=.*evt\.(type|id)/.test(app)
+      || /key=\{block\.id\}/.test(reading)
     assert.ok(hasIdReference, 'Key should reference event.id or event.type for stability')
   })
 })

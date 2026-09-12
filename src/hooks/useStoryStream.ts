@@ -9,6 +9,7 @@ import { authHeaders } from '../lib/authHeaders'
 import { getOrCreateGuestId } from '../lib/guestId'
 import { openFetchSse, type SseController } from '../lib/sseFetch'
 import { applyIncomingEvent, type StoryEvent } from '../lib/storyFeed'
+import { trimFeedForBeatRedraw } from '../lib/storyReading'
 
 export type { StoryEvent }
 
@@ -235,6 +236,8 @@ export interface UseStoryStreamReturn {
    * re-bind. Called at most once per story attempt on HTTP 410. */
   setBindingRecover: (fn: (() => Promise<string | null>) | null) => void
   sendAction: (action: StoryAction, params?: StoryActionParams, characterId?: string) => Promise<void>
+  appendLocalEvent: (evt: StoryEvent) => void
+  redrawBeat: (beatId: string, characterId?: string) => Promise<void>
   reconnect: () => void
   reset: () => void
   resumeSession: (sid: string) => Promise<void>
@@ -772,6 +775,11 @@ export function useStoryStream(): UseStoryStreamReturn {
     }
   }, [clearStorySessionState, connectStream])
 
+  const redrawBeat = useCallback(async (beatId: string, characterId?: string) => {
+    setEvents((prev) => trimFeedForBeatRedraw(prev, beatId))
+    await sendAction('replay', { beat_id: beatId }, characterId)
+  }, [sendAction])
+
   const reconnect = useCallback(() => {
     const sid = sessionRef.current
     if (!sid) return
@@ -877,6 +885,8 @@ export function useStoryStream(): UseStoryStreamReturn {
     resumeToast,
     startStory,
     sendAction,
+    appendLocalEvent: appendEvent,
+    redrawBeat,
     reconnect,
     reset,
     resumeSession,
