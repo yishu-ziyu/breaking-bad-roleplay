@@ -251,6 +251,7 @@ Rules:
 ### Voice / TTS
 
 - Six cast clones (Walter/Jesse/Skyler/Saul/Mike/Gus). Casting config under `materials/breaking-bad/voice-archetypes/`.
+- Do not claim “official actor voice”. Authorized samples only; never commit raw show rips. Rights: `materials/breaking-bad/voice-archetypes/STRATEGY.md`.
 - Chat Voice button: every non-user message with `connectionSessionId`, not only opener.
 - TTS costs free-tier credits (`tts` unit). Respect quota gates.
 

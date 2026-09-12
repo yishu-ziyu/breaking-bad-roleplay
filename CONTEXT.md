@@ -43,13 +43,13 @@ Shared product language for **what already shipped**. Historical roadmaps are no
 | Director | **Beat Contract** — not final lines |
 | Character Policy | **Turn Proposal** (action + **inner_monologue** + speech strategy + line) |
 | World Validator | hard legality (`backend/scenes/validator.py`) |
-| Narrative Critic | soft score (`scenes/critic.py`) |
+| Narrative Critic | evaluation-only (`scenes/critic.py`; golden harness / tests, not Director runtime) |
 | State Reducer | deterministic Continuity Board (`backend/scenes/state_reducer.py`) |
 
 - ADR: `docs/decisions/DEC-0005-propose-validate-commit-narrative.md`
 - Contracts: `backend/agents/narrative_contracts.py`
 - Scenes package: `backend/scenes/` (ontology, mode, validator, reducer)
-- **As-built:** Beat Contract + Character Policy act/think/speak; World Validator; State Reducer-lite; **Soft Critic** (`scenes/critic.py`, weighted 30/25/20/15/10); Golden Beats **50** under `backend/eval/golden_beats/` (hard + soft harness).
+- **As-built:** Beat Contract + Character Policy act/think/speak; World Validator; State Reducer-lite; Golden Beats **50** under `backend/eval/golden_beats/` (hard + soft harness). Soft Critic (`scenes/critic.py`, weighted 30/25/20/15/10) scores eval/golden pairs; Director does not call it at runtime.
 - Unshipped stage/3D/SFT ideas in older ADRs are historical, not a must-do ([PLANNING.md](docs/PLANNING.md)).
 
 ## Modes
@@ -71,3 +71,4 @@ Shared product language for **what already shipped**. Historical roadmaps are no
 ## Safety
 
 - Fictional drama only; no real-world crime, chemistry, violence, or evasion instructions.
+- TTS / clone: no “official actor voice” claim; authorized samples only; do not commit raw show rips. Live rules: `materials/breaking-bad/voice-archetypes/STRATEGY.md`.

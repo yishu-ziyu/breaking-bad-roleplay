@@ -14,6 +14,6 @@ See [docs/PLANNING.md](../../PLANNING.md).
 | `decisions/DEC-0007-gameplay-rebuild.md` | proposed ADR (never accepted) |
 | `PROJECT_INTAKE.md` | `docs/PROJECT_INTAKE.md` |
 | `agent-harness/` | sprint/gap write-ups |
-| `voice-archetypes/STRATEGY.md` | clone-TTS plan |
+| `voice-archetypes/STRATEGY.md` | clone-TTS **pipeline** (rights stay live in `materials/.../STRATEGY.md`) |
 | `taste-calibration/gaps.md` | “close before next ship” |
 | `narrative/intelligence_architecture_review.md` | next-work review |

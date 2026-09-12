@@ -179,6 +179,7 @@ Rows without ✅/☑ are historical intent, **not** a binding backlog. See [docs
 - Knowledge hard fail clears monologue; removed actors cannot speak
 - Validated turns feed Continuity Board via reducer (alongside legacy deltas)
 - Golden harness: preferred must hard-pass; losers must hit listed error codes
+- Soft Critic (`scenes/critic.py`) is evaluation-only; Director does not call `score_turn` at runtime.
 - **P4 (Loop 12)** — `backend/tests/scenes/test_sole_writer.py` is a static AST
   walker that freezes the sole-writer invariant: zero `apply_delta_facts`
   references and zero direct writes to `shared_facts` / `present_cast` /

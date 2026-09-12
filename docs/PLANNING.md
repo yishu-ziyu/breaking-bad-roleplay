@@ -8,6 +8,7 @@ Direction can be redone. Do not treat archived loop artifacts as specs.
 
 - Live as-built behavior (characters, Direct / Crew / Story, McKee as shipped)
 - Safety: fictional drama only; no real-world crime, chemistry, violence, or evasion how-to
+- Voice/TTS rights: no “official actor voice” claim; authorized samples only; no raw show rips in git (`materials/breaking-bad/voice-archetypes/STRATEGY.md`)
 - Ops that keep the site running: [OPS_RUNBOOK.md](OPS_RUNBOOK.md)
 - ADRs that describe what already shipped: DEC-0001, DEC-0002, DEC-0003, DEC-0005, DEC-0006
 - Tests, code, and prompts that implement shipped behavior
