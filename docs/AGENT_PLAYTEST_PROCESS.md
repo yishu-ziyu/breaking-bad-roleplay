@@ -1,5 +1,7 @@
 # Agent Playtest Process
 
+Historical “next loop” language here is not a product roadmap. See [PLANNING.md](PLANNING.md).
+
 Use this process for gameplay, story, character voice, GIF, UI flow, or retention changes.
 Skip it for pure dependency bumps, formatting, deployment plumbing, or one-line bug fixes.
 
