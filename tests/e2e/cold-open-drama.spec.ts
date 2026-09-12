@@ -197,6 +197,57 @@ test('cold open: cast Walter shows the 场面卡 before any SSE', async ({
   await expect.poll(() => create.hits).toBe(0)
 })
 
+test('开演 raises the curtain, then SSE reading — still not a third chat thread', async ({
+  page,
+}) => {
+  await installMockEventSource(page)
+  const create = await mockSessionCreate(page, 'curtain-sid')
+  await mockActionEndpoint(page)
+
+  await gotoColdOpen(page)
+  await page.getByRole('button', { name: /寻找杰西|Find Jesse/i }).click()
+  await expect(page.locator('.cold-open__stage--cast')).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: /进入角色 沃尔特|Enter as Walter/i }).click()
+  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 8_000 })
+  await expect.poll(() => create.hits).toBe(0)
+
+  await page.getByRole('button', { name: /开演|Raise curtain/i }).click()
+  await expect.poll(() => create.hits).toBe(1)
+  await page.waitForFunction(
+    () => Boolean((window as Window & { __mockSSE?: unknown }).__mockSSE),
+    { timeout: 5_000 },
+  )
+  await expect(page.locator('.story-scene-bill.is-holding')).toBeVisible()
+  await expect(page.locator('.story-manuscript')).toHaveCount(0)
+  await expect(page.getByText(/Connecting…|Connecting\.\.\./)).toHaveCount(0)
+
+  await emitSSE(page, 'status', { data: { message: 'Director online' } })
+  await emitSSE(page, 'outline', { data: { content: '1. Find Jesse before the headlights arrive.' } })
+  await emitSSE(page, 'scene_change', {
+    data: { description: 'The desert RV, ammonia in the air.', to_scene: 'Desert RV' },
+  })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Walter White',
+      content: 'Jesse. Where the hell are you?',
+      emotion_state: 'tense',
+    },
+  })
+  await emitSSE(page, 'world_state_delta', {
+    data: {
+      deltas: [{ target: 'Jesse', field: 'where', old_value: 'RV', new_value: 'dark' }],
+    },
+  })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1', is_final: false } })
+
+  await expect(page.locator('.story-scene-bill')).toHaveCount(0)
+  await expect(page.locator('.story-manuscript')).toBeVisible()
+  await expect(page.locator('.story-manuscript__prose')).toBeVisible()
+  await expect(page.locator('.story-manuscript__dialogue')).toContainText('Jesse')
+  await expect(page.locator('.story-lore')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.msg--user, .msg--char')).toHaveCount(0)
+})
+
 /* ------------------------------------------------------------------ */
 /*  4. Agent Harness lab-only                                         */
 /* ------------------------------------------------------------------ */
