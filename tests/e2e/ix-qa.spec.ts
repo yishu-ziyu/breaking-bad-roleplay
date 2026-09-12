@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installMockEventSource, expectDirectorControls } from './mockSse'
 
-const BASE_URL = 'http://localhost:5173'
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 
 const consoleErrors: string[] = []
 
@@ -23,6 +24,7 @@ async function gotoFresh(page: Page) {
 async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -33,49 +35,6 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
   }, values)
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
-}
-
-async function installMockEventSource(page: Page) {
-  await page.addInitScript(() => {
-    type MockWindow = Window & {
-      __mockSSE: { emit: (type: string, data: unknown) => void } | null
-    }
-
-    class MockEventSource {
-      url: string
-      handlers: Map<string, Array<(e: MessageEvent) => void>> = new Map()
-      onopen: ((e: Event) => void) | null = null
-      onerror: ((e: Event) => void) | null = null
-      onmessage: ((e: MessageEvent) => void) | null = null
-      readyState = 0
-      static CONNECTING = 0
-      static OPEN = 1
-      static CLOSED = 2
-      constructor(url: string) {
-        this.url = url
-        ;(window as MockWindow).__mockSSE = this
-      }
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (!this.handlers.has(type)) this.handlers.set(type, [])
-        this.handlers.get(type)!.push(fn)
-      }
-      removeEventListener(type: string, fn: (e: MessageEvent) => void) {
-        const arr = this.handlers.get(type)
-        if (arr) { const idx = arr.indexOf(fn); if (idx >= 0) arr.splice(idx, 1) }
-      }
-      close() { this.readyState = 2 }
-      emit(type: string, data: unknown) {
-        const payload = typeof data === 'string' ? data : JSON.stringify(data)
-        const ev = new MessageEvent(type, { data: payload })
-        const arr = this.handlers.get(type)
-        if (arr) arr.forEach((fn) => fn(ev))
-        if (type === 'message' && this.onmessage) this.onmessage(ev)
-      }
-    }
-    ;(window as Window & { EventSource: typeof EventSource }).EventSource =
-      MockEventSource as unknown as typeof EventSource
-    ;(window as MockWindow).__mockSSE = null
-  })
 }
 
 async function mockSessionCreate(page: Page, sid = 'r1-ix') {
@@ -139,7 +98,7 @@ async function driveToBeatPaused(page: Page, opts: { outline?: string; agentSpea
     { outline, agentSpeak, beatId },
   )
 
-  await expect(page.locator('.beat-controls')).toBeVisible()
+  await expectDirectorControls(page)
   return actionLog
 }
 
@@ -271,7 +230,7 @@ test.describe('IX-3: BeatControls and decision flow', () => {
     await page.waitForTimeout(500)
     await page.screenshot({ path: '/tmp/bbr-r1-ix-7.png' })
 
-    await expect(page.locator('.beat-controls')).toBeVisible()
+    await expectDirectorControls(page)
     // Beat index increments - verified by beat_ready with beat-2
 
     expect(consoleErrors).toEqual([])
