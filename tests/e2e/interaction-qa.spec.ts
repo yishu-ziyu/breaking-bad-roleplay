@@ -374,13 +374,10 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
   await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
-  // Emit scene_change
   await emitSSE(page, 'scene_change', { data: { description: 'Superlab, underground.' } })
   await page.waitForTimeout(50)
-  await expect(page.locator('.story-event--scene_change')).toBeVisible()
+  await expect(page.locator('.story-manuscript__prose')).toContainText('Superlab')
 
-  // Emit agent_speak — the stage dwells on the scene card (7s pacing),
-  // so browse to the speak card via the stage nav instead of waiting.
   await emitSSE(page, 'agent_speak', {
     data: {
       character_id: 'Walter White',
@@ -390,11 +387,8 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
     },
   })
   await page.waitForTimeout(50)
-  await page.locator('.story-scene-card__nav button[aria-label="Next card"]').click()
-  await expect(page.locator('.story-scene-card__quote')).toContainText('precise')
-  await expect(page.locator('.story-scene-card__live')).toBeVisible()
-  await page.locator('.story-scene-card__live').click()
-  await expect(page.locator('.story-event--agent_speak .story-event__summary')).toContainText('precise')
+  await expect(page.locator('.story-manuscript__dialogue')).toContainText('precise')
+  await expect(page.locator('.msg--user, .msg--char')).toHaveCount(0)
 
   // Continue events to beat_ready
   await emitSSE(page, 'world_state_delta', {

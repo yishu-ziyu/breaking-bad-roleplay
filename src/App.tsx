@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
-import { characterPortrait } from './lib/characterPortraits'
 import { usePersistedState } from './lib/persistedState'
 import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream, type StoryEvent } from './hooks/useStoryStream'
@@ -25,19 +24,22 @@ import {
   dramaSuggestionsForBeat,
   type DramaSuggestion,
 } from './components/DramaDecisionBar'
+import { StorySceneBillboard } from './components/StorySceneBillboard'
+import { StoryReadingSurface } from './components/StoryReadingSurface'
 import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
 import { useConnection } from './hooks/useConnection'
 import { useQuota, parseQuotaError } from './hooks/useQuota'
 import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
-import { pickStageBackdrop, pickStageBackdropInfo } from './lib/stageBackdrops'
 import { ElementSquare } from './lib/ElementSquare'
 import { resolveGifUrl } from './lib/gifResolver'
+import { buildStorySceneBill, holdsSceneCurtain } from './lib/storyScene'
 import {
-  STAGE_DWELL_MS,
-  listStageCardIndices,
-} from './lib/storyStagePacing'
+  buildReadingBlocks,
+  canonicalBeatId,
+  extractOnStageLore,
+} from './lib/storyReading'
 import './App.css'
 import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
@@ -66,16 +68,6 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Marie Schrader': 'marie', 'Marie': 'marie',
 }
 
-const STORY_CARD_EVENT_TYPES = new Set(['scene_change', 'agent_speak', 'agent_think', 'agent_act'])
-
-/** Mono slate tags for stage meta + shot list (film-style EN abbreviations). */
-const STORY_EVENT_KIND_EN: Record<string, string> = {
-  scene_change: 'SCENE',
-  agent_speak: 'LINE',
-  agent_think: 'INNER',
-  agent_act: 'ACTION',
-}
-
 /** Emotion → 0-10 tension dial for the HUD ten-block gauge. */
 const STAGE_TENSION_LEVEL: Record<string, number> = {
   calm: 2,
@@ -86,57 +78,6 @@ const STAGE_TENSION_LEVEL: Record<string, number> = {
   tense: 6,
   desperate: 7,
   angry: 8,
-}
-
-function resolveStoryEventGif(evt: StoryEvent): string | null {
-  if (evt.type !== 'agent_speak') return null
-  if (evt.data.show_gif === false) return null
-  if (!evt.data.gif_search_query && !evt.data.emotion_state) return null
-  const charId = DISPLAY_NAME_TO_ID[evt.data.character_id as string]
-  if (!charId) return null
-  return resolveGifUrl(
-    charId,
-    (evt.data.emotion_state as string) ?? null,
-    (evt.data.gif_search_query as string) ?? null,
-  )
-}
-
-const STORY_EVENT_GIF_CACHE = new WeakMap<StoryEvent, string | null>()
-
-function getStoryEventGif(evt: StoryEvent): string | null {
-  const cached = STORY_EVENT_GIF_CACHE.get(evt)
-  if (cached !== undefined) return cached
-  const resolved = resolveStoryEventGif(evt)
-  STORY_EVENT_GIF_CACHE.set(evt, resolved)
-  return resolved
-}
-
-/** Type chip only (说 / 内心 / 行动 / …) - no character name. */
-function getEventTypeChip(evt: StoryEvent, lang: Language): string {
-  const t = uiText[lang]
-  switch (evt.type) {
-    case 'outline': return t.eventOutline
-    case 'scene_change': return t.eventSceneChange
-    case 'agent_speak': return t.eventSpeaks
-    case 'agent_think': return t.eventThinks
-    case 'agent_act': return t.eventActs
-    case 'beat_ready': return t.eventBeatReady
-    case 'world_state_delta': return t.eventWorldDelta
-    case 'status': return t.eventStatus
-    case 'complete': return t.eventComplete
-    case 'error': return t.eventError
-    default: return evt.type
-  }
-}
-
-function getEventTitle(evt: StoryEvent, lang: Language): string {
-  const charId = (evt.data.character_id as string) ?? ''
-  const chip = getEventTypeChip(evt, lang)
-  // Think / act: type chip alone on the rail (character lives on the stage).
-  if (evt.type === 'agent_think' || evt.type === 'agent_act') return chip
-  // Speak: character name is the primary rail label.
-  if (evt.type === 'agent_speak' && charId) return charId
-  return chip
 }
 
 /** Diegetic outline teaser — never print McKee craft (spine / structure / idea). */
@@ -155,104 +96,6 @@ function formatStoryPlanPreview(outline: string, lang: Language): string {
   if (count <= 1) return 'The night is still tightening'
   if (count <= 3) return 'A few hard turns still ahead'
   return `About ${count} hard turns still ahead`
-}
-
-/** Hide McKee craft scaffolding if a legacy event still embeds it. */
-function playerFacingSceneText(raw: string): string {
-  let s = raw
-    .replace(/^Transitioning to:\s*/i, '')
-    .replace(/^切换至[：:]\s*/, '')
-    .replace(/^\d+[.)、]\s*/, '')
-    .replace(/\[(?:setup|inciting|progressive|crisis|climax|resolution)\]\s*/gi, '')
-    .trim()
-  // QA P1#5: strip leading craft fields ("值: 安全→隐隐不安 — 间隙: …" leaks
-  // when the description starts inside the field block, so the split-at-dash
-  // rule below misses it). Keep only the text after the last craft field.
-  const craftField = /(?:值|gap|价值|间隙|risk|风险|value)\s*[:：]\s*([^—–]*?)(?=\s*(?:—|–|$|(?:值|gap|价值|间隙|risk|风险|value)\s*[:：]))/gi
-  const matches = [...s.matchAll(craftField)]
-  if (matches.length > 0) {
-    const afterLast = s.slice((matches[matches.length - 1].index ?? 0) + matches[matches.length - 1][0].length)
-    const tail = afterLast.replace(/^[\s—–-]+/, '').trim()
-    // If anything meaningful follows the craft block keep it; else drop the
-    // whole string (it was pure scaffolding).
-    s = tail.length > 8 ? tail : ''
-  }
-  // Cut at value/gap/risk craft fields (em/en dash or hyphen variants).
-  s = s.split(/\s*[—–\-]\s*(?:value|gap|risk)\s*[:：]/i)[0]?.trim() ?? s
-  // QA P1#5: stage-direction tech marks leaking into scene cards (〔turn_to → Walter〕).
-  s = s.replace(/〔\s*turn_to\s*→\s*[^〕]*〕/gi, '').replace(/\[\s*turn_to\s*→\s*[^\]]*\]/gi, '')
-  return s.replace(/\s+/g, ' ').replace(/^[\s\-—–]+|[\s\-—–]+$/g, '')
-}
-
-function getStoryEventSummary(evt: StoryEvent, lang: Language): string {
-  switch (evt.type) {
-    case 'scene_change':
-      return playerFacingSceneText((evt.data.description as string) ?? '')
-    case 'agent_speak':
-      return (evt.data.content as string) ?? ''
-    case 'agent_think':
-      return (evt.data.thought_content as string) ?? ''
-    case 'agent_act': {
-      // Stage-direction form: 〔靠向椅背〕
-      const action = ((evt.data.action as string) ?? '').trim()
-      if (!action) return ''
-      const bare = action.replace(/^[〔[]/, '').replace(/[〕\]]$/, '')
-      return `〔${bare}〕`
-    }
-    case 'world_state_delta': {
-      const deltas = evt.data.deltas as Array<Record<string, string>> | undefined
-      if (!deltas?.length) return lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.'
-      const rendered = deltas.map(d => {
-        const hasContent = d.target || d.entity || d.field || d.old_value || d.new_value
-        if (!hasContent) return null
-        const entity = d.target ?? d.entity ?? ''
-        if (!entity && !d.field) return null
-        return `${entity}: ${d.field} ${d.old_value ?? '∅'} → ${d.new_value ?? '∅'}`
-      }).filter(Boolean)
-      return rendered.length > 0 ? rendered.join('\n') : (lang === 'zh' ? '后果正在变化。' : 'Consequences are shifting.')
-    }
-    case 'status':
-    case 'complete':
-    case 'error':
-      return translateBackendMessage(evt.data.message as string, lang)
-    default:
-      return ''
-  }
-}
-
-/* P1-3: translate known backend-emitted English status strings */
-const BACKEND_STATUS_TRANSLATIONS: Record<string, Record<Language, string>> = {
-  'Director is analysing the task...': {
-    en: 'Director is analysing the task...',
-    zh: '局面正在成形…',
-  },
-  'Director outlined {n} beat(s). Beginning roleplay…': {
-    en: 'Director outlined {n} beat(s). Beginning roleplay…',
-    zh: '{n} 段压力要来了。线头动了…',
-  },
-  'No action received - continuing automatically.': {
-    en: 'No action received - continuing automatically.',
-    zh: '未收到玩家操作 - 自动继续…',
-  },
-  'All beats rendered. Roleplay outline complete.': {
-    en: 'All beats rendered. Roleplay outline complete.',
-    zh: '所有场面已落下。这一夜先到这里。',
-  },
-}
-
-function translateBackendMessage(msg: string, lang: Language): string {
-  if (lang === 'en' || !msg) return msg
-  for (const [key, translations] of Object.entries(BACKEND_STATUS_TRANSLATIONS)) {
-    if (msg === key) return translations.zh
-    /* Handle the beat count variant */
-    if (key.includes('{n}') && msg.startsWith('Director outlined ')) {
-      const match = msg.match(/Director outlined (\d+) beat\(s\)\. Beginning roleplay…/)
-      if (match) {
-        return translations.zh.replace('{n}', match[1])
-      }
-    }
-  }
-  return msg
 }
 
 /** Map director emotion_state tags for HUD display (tags stay English for GIFs). */
@@ -274,24 +117,6 @@ function formatEmotionLabel(raw: string | null | undefined, lang: Language): str
   return EMOTION_LABELS[key]?.[lang] ?? raw
 }
 
-/** Sanitize emotion_state for CSS class hooks (alphanumeric + hyphen only). */
-function emotionStageClass(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const safe = raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32)
-  return safe || null
-}
-
-function truncateText(text: string, maxLen: number): string {
-  const cleaned = text.replace(/\s+/g, ' ').trim()
-  if (cleaned.length <= maxLen) return cleaned
-  return `${cleaned.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`
-}
-
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
@@ -301,22 +126,6 @@ function prefersReducedMotion(): boolean {
 /** True while an IME candidate window is open — Enter confirms the candidate, not submit. */
 function isImeComposing(e: ReactKeyboardEvent<HTMLElement>): boolean {
   return e.nativeEvent.isComposing || e.keyCode === 229
-}
-
-function getStoryEventTimelineSummary(evt: StoryEvent, lang: Language, maxLen = 52): string {
-  const full = getStoryEventSummary(evt, lang)
-  // Act: keep one short stage-direction line on the rail.
-  if (evt.type === 'agent_act') return truncateText(full, Math.min(maxLen, 28))
-  // Delta: ultra-short consequence note.
-  if (evt.type === 'world_state_delta') return truncateText(full, Math.min(maxLen, 36))
-  return truncateText(full, maxLen)
-}
-
-function getStoryCardHeading(evt: StoryEvent | null, fallback: string): string {
-  if (!evt) return fallback
-  const characterId = typeof evt.data.character_id === 'string' ? evt.data.character_id : ''
-  if (characterId) return characterId
-  return fallback
 }
 
 function findLastStoryEvent(
@@ -491,7 +300,7 @@ const uiText: Record<Language, Record<string, string>> = {
     connecting: 'Half a bag of cash left in the RV. The night is not done with anyone.',
     streamingUnfold: 'The situation is still unfolding…',
     disconnected: 'Disconnected',
-    storyComplete: 'Story complete. All beats rendered.',
+    storyComplete: 'This scene is over.',
     continue: 'Continue',
     stop: 'Stop',
     storyOutline: 'The situation',
@@ -615,7 +424,7 @@ const uiText: Record<Language, Record<string, string>> = {
     connecting: '房车里还剩半袋现金。夜还没放过任何人。',
     streamingUnfold: '局面还在展开…',
     disconnected: '已断开',
-    storyComplete: '这一夜告一段落。',
+    storyComplete: '这一场演完了。',
     continue: '继续',
     stop: '停止',
     storyOutline: '局面',
@@ -1007,19 +816,14 @@ function App() {
   const [unseenBelow, setUnseenBelow] = useState(false)
   /** Story board: outline collapsed by default to free stage space. */
   const [outlineExpanded, setOutlineExpanded] = useState(false)
-  /** null = auto-follow latest card event; number = user pinned a timeline row. */
-  const [pinnedStoryEventIndex, setPinnedStoryEventIndex] = useState<number | null>(null)
-  /** Position within stage-card indices (not raw event index). */
-  const [stageCardPos, setStageCardPos] = useState(0)
-  const stageShownAtRef = useRef<number | null>(null)
-  /** Beat rail closed by default — stage + dialogue + decision first. */
-  const [timelineRailOpen, setTimelineRailOpen] = useState(false)
-  /** GIF off by default — film stills / stage text, not meme GIFs. */
-  const [storyGifHidden, setStoryGifHidden] = useState(true)
   /** Free-text line for DramaDecisionBar (beat pause). */
   const [decisionFree, setDecisionFree] = useState('')
   /** Cold-open choice id so first-beat chips match the crisis the player picked. */
   const [coldOpenChoiceId, setColdOpenChoiceId] = useState<string | null>(null)
+  /** Seed kept until 开演 actually starts SSE. */
+  const [pendingStoryPrompt, setPendingStoryPrompt] = useState('')
+  /** Talkie curtain: false until the player starts this scene. */
+  const [curtainRaised, setCurtainRaised] = useState(false)
   /** Situation map is opt-in only - never auto-pop on complete. */
   const [plotMapOpen, setPlotMapOpen] = useState(false)
 
@@ -1081,8 +885,12 @@ function App() {
   const [storyTask, setStoryTask] = useState('')
   /** Story setup textarea: autofocus target when the board is idle. */
   const storyTaskRef = useRef<HTMLTextAreaElement>(null)
-  /** Beat rail container: keeps the active beat scrolled into view. */
-  const storyEventsRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (story.connectionState === 'idle' && !story.sessionId) {
+      queueMicrotask(() => setCurtainRaised(false))
+    }
+  }, [story.connectionState, story.sessionId])
 
   // Keep story SSE bind token in sync with connection vault.
   useEffect(() => {
@@ -1315,14 +1123,17 @@ function App() {
     queueMicrotask(() => setSidebarCollapsed(true))
   }, [story.connectionState])
 
-  const handleStartStory = useCallback(async () => {
-    if (!storyTask.trim()) return
+  const beginStoryStream = useCallback(async (prompt: string) => {
+    const seed = prompt.trim()
+    if (!seed) return
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     setError(null)
+    setCurtainRaised(true)
     try {
       if (!connection.view.canStart) {
         connection.setSheetOpen(true)
         setError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
+        setCurtainRaised(false)
         return
       }
       const bindId = await connection.ensureBound()
@@ -1333,11 +1144,12 @@ function App() {
             ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
             : 'Key session is not ready. Re-save your key in the model engine.',
         )
+        setCurtainRaised(false)
         return
       }
       story.setConnectionSessionId(bindId)
       await story.startStory(
-        storyTask,
+        seed,
         selectedCharId,
         getVoiceExample(selectedCharId, relation) ?? null,
         language,
@@ -1345,9 +1157,18 @@ function App() {
       )
       setStoryTask('')
     } catch (e) {
+      setCurtainRaised(false)
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [storyTask, story, selectedCharId, relation, language, connection])
+  }, [story, selectedCharId, relation, language, connection])
+
+  const handleStartStory = useCallback(async () => {
+    await beginStoryStream(storyTask)
+  }, [beginStoryStream, storyTask])
+
+  const handleRaiseCurtain = useCallback(async () => {
+    await beginStoryStream(pendingStoryPrompt || storyTask)
+  }, [beginStoryStream, pendingStoryPrompt, storyTask])
 
   /* ---- Cold open → cast → Story (default product surface) ----
    * Always seed storyTask first so free/prescribed choices share one path:
@@ -1368,70 +1189,25 @@ function App() {
     coldOpenStartingRef.current = true
     setColdOpenStarting(true)
 
-    // Staging only — stay on cold open until connection + startStory succeed.
-    // setSelectedCharId / setColdOpenChoiceId / setStoryTask early OK.
     const charId = payload.characterId as CharacterId
     setSelectedCharId(charId)
     setColdOpenChoiceId(payload.choiceId)
+    setPendingStoryPrompt(payload.storyPrompt)
     setStoryTask(payload.storyPrompt)
+    setCurtainRaised(false)
     setColdOpenError(null)
     setError(null)
     try {
-      if (!connection.view.canStart) {
-        setColdOpenError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
-        connection.setSheetOpen(true)
-        return
-      }
-      const bindId = await connection.ensureBound()
-      if (connection.view.mode === 'byok' && !bindId) {
-        setColdOpenError(
-          language === 'zh'
-            ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
-            : 'Key session is not ready. Re-save your key in the model engine.',
-        )
-        connection.setSheetOpen(true)
-        return
-      }
-      story.setConnectionSessionId(bindId)
-      const cast = characters.find(c => c.id === charId)
-      const rel = relationByChar[charId] ?? cast?.relationOptions[0] ?? relation
-      await story.startStory(
-        payload.storyPrompt,
-        charId,
-        getVoiceExample(charId, rel) ?? null,
-        language,
-        bindId,
-      )
-      // Enter the world only after the story session actually started.
+      // 场面 first: enter Story on the scene billboard. SSE waits for 开演.
       setHasEnteredWorld(true)
       setSurface('story')
       setSidebarCollapsed(true)
-      setStoryTask('')
       setColdOpenError(null)
-    } catch (e) {
-      // Keep hasEnteredWorld false; surface message on cold open for retry.
-      // QA P0#4: raw English tech errors ("Failed to create session") give the
-      // player nothing. Detect the common env-failure signatures and add a
-      // self-check line (backend down / DB schema behind / quota).
-      const raw = e instanceof Error ? e.message : String(e)
-      const zh = language === 'zh'
-      const lowered = raw.toLowerCase()
-      let hint: string | null = null
-      if (lowered.includes('failed to create session') || lowered.includes('fetch') || lowered.includes('network')) {
-        hint = zh
-          ? '自查：① 后端是否在跑（uvicorn main:app --port 8001）？② 数据库是否落后迁移（cd backend && alembic upgrade head）？'
-          : 'Self-check: 1) is the backend running (uvicorn main:app --port 8001)? 2) is the DB behind on migrations (cd backend && alembic upgrade head)?'
-      } else if (lowered.includes('402') || lowered.includes('quota')) {
-        hint = zh
-          ? '模型额度用完了：换自己的 key 或等明天免费额度。'
-          : 'Model quota is used up: connect your own key or wait for tomorrow.'
-      }
-      setColdOpenError(hint ? `${raw}\n${hint}` : raw)
     } finally {
       coldOpenStartingRef.current = false
       setColdOpenStarting(false)
     }
-  }, [connection, language, relation, relationByChar, setHasEnteredWorld, setSelectedCharId, setSurface, story])
+  }, [setHasEnteredWorld, setSelectedCharId, setSurface, story.connectionState])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -1454,7 +1230,7 @@ function App() {
     }
     setIsSending(true)
     setError(null)
-    let bindId: string | null = null
+    let bindId: string | null
     try {
       bindId = await connection.ensureBound()
       if (connection.view.mode === 'byok' && !bindId) {
@@ -1699,138 +1475,45 @@ function App() {
     return [story.outline, spoken].filter(Boolean).join('\n\n')
   }, [story.events, story.outline])
 
-  // Streaming clears manual pin so paced autoplay can own the stage.
-  useEffect(() => {
-    if (story.connectionState !== 'streaming') return
-    queueMicrotask(() => setPinnedStoryEventIndex(null))
-  }, [story.connectionState, story.events.length])
-
-  useEffect(() => {
-    // New session: reset stage pacing only. Do NOT force-open GIF or beat rail
-    // (drama default: GIF off, timeline folded so stage/dialogue/decision win).
-    queueMicrotask(() => {
-      setPinnedStoryEventIndex(null)
-      setOutlineExpanded(false)
-      setTimelineRailOpen(false)
-      setStoryGifHidden(true)
-      setStageCardPos(0)
-      stageShownAtRef.current = null
-    })
-  }, [story.sessionId])
-
-  // Card events only (scene / think / speak / act). Status & deltas stay off-stage.
-  const stageCardIndices = useMemo(
-    () => listStageCardIndices(story.events, STORY_CARD_EVENT_TYPES),
+  const readingBlocks = useMemo(
+    () => buildReadingBlocks(story.events, language),
+    [story.events, language],
+  )
+  const onStageLore = useMemo(
+    () => extractOnStageLore(story.events, language),
+    [story.events, language],
+  )
+  const sceneBill = useMemo(
+    () => buildStorySceneBill({
+      choiceId: coldOpenChoiceId,
+      characterId: selectedCharId,
+      language,
+      knowledgeTrack,
+    }),
+    [coldOpenChoiceId, selectedCharId, language, knowledgeTrack],
+  )
+  const showSceneBill = holdsSceneCurtain({
+    connectionState: story.connectionState,
+    curtainRaised,
+    hasLiveSession: Boolean(story.sessionId),
+  }) && Boolean(coldOpenChoiceId || pendingStoryPrompt)
+  const lastSpeak = useMemo(
+    () => findLastStoryEvent(story.events, evt => evt.type === 'agent_speak'),
     [story.events],
   )
+  const lastSpeakId = lastSpeak
+    ? DISPLAY_NAME_TO_ID[lastSpeak.data.character_id as string]
+    : null
+  const lastSpeakText = typeof lastSpeak?.data.content === 'string' ? lastSpeak.data.content : ''
+  const dramaHint = onStageLore.facts[0]
+    || readingBlocks.find(b => b.kind === 'dialogue' || b.kind === 'narration')?.text.slice(0, 80)
+    || ''
 
-  // Shot list = same card events, numbered sequentially (拍 01, 02, …).
-  // status / outline / beat_ready stay off the list; deltas keep the thin strip.
-  const shotListEntries = useMemo(
-    () => story.events
-      .map((evt, i) => ({ evt, i }))
-      .filter(({ evt }) => STORY_CARD_EVENT_TYPES.has(evt.type)),
-    [story.events],
-  )
-
-  // Dwell ~7s per card so think/speak/scene don't flash past the reader.
-  useEffect(() => {
-    if (stageCardIndices.length === 0) {
-      stageShownAtRef.current = null
-      return
-    }
-    // First card of a session: show immediately.
-    if (stageShownAtRef.current == null) {
-      stageShownAtRef.current = Date.now()
-      setStageCardPos(0)
-      return
-    }
-    // Clamp if history was trimmed (MAX_EVENTS) or session replaced mid-flight.
-    setStageCardPos((pos) => Math.min(pos, stageCardIndices.length - 1))
-  }, [stageCardIndices])
-
-  useEffect(() => {
-    // Manual pin freezes autoplay until cleared.
-    if (pinnedStoryEventIndex != null) return
-    if (stageCardIndices.length === 0) return
-    if (stageCardPos >= stageCardIndices.length - 1) return
-
-    const shownAt = stageShownAtRef.current ?? Date.now()
-    stageShownAtRef.current = shownAt
-    const remaining = Math.max(0, STAGE_DWELL_MS - (Date.now() - shownAt))
-    const id = window.setTimeout(() => {
-      setStageCardPos((pos) => {
-        if (pos >= stageCardIndices.length - 1) return pos
-        stageShownAtRef.current = Date.now()
-        return pos + 1
-      })
-    }, remaining)
-    return () => window.clearTimeout(id)
-  }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos])
-
-  const currentStoryEvent = useMemo(() => {
-    if (
-      pinnedStoryEventIndex != null
-      && pinnedStoryEventIndex >= 0
-      && pinnedStoryEventIndex < story.events.length
-    ) {
-      const pinned = story.events[pinnedStoryEventIndex]
-      if (STORY_CARD_EVENT_TYPES.has(pinned.type)) return pinned
-    }
-    if (stageCardIndices.length === 0) return null
-    const safePos = Math.min(Math.max(stageCardPos, 0), stageCardIndices.length - 1)
-    return story.events[stageCardIndices[safePos]] ?? null
-  }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos, story.events])
-  /** Stage position currently on the paper (pin wins over autoplay pos). */
-  const activeStagePos = useMemo(() => {
-    if (stageCardIndices.length === 0) return 0
-    if (pinnedStoryEventIndex != null) {
-      const idx = stageCardIndices.indexOf(pinnedStoryEventIndex)
-      if (idx >= 0) return idx
-    }
-    return Math.min(Math.max(stageCardPos, 0), stageCardIndices.length - 1)
-  }, [pinnedStoryEventIndex, stageCardIndices, stageCardPos])
-
-  /* Manual browsing pins the card, freezing paced autoplay (same contract
-     as clicking a timeline row). */
-  const stepStageCard = useCallback((delta: number) => {
-    if (stageCardIndices.length === 0) return
-    const next = Math.min(Math.max(activeStagePos + delta, 0), stageCardIndices.length - 1)
-    if (next === activeStagePos) return
-    setPinnedStoryEventIndex(stageCardIndices[next])
-    stageShownAtRef.current = Date.now()
-  }, [activeStagePos, stageCardIndices])
-
-  /* Keep the active beat visible on the rail as autoplay advances. */
-  useEffect(() => {
-    if (!timelineRailOpen) return
-    const container = storyEventsRef.current
-    if (!container) return
-    const active = container.querySelector('.story-event.is-active')
-    if (active instanceof HTMLElement) {
-      active.scrollIntoView({
-        block: 'nearest',
-        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-      })
-    }
-  }, [currentStoryEvent, timelineRailOpen])
-
-  const returnToLiveStage = useCallback(() => {
-    setPinnedStoryEventIndex(null)
-    setStageCardPos(Math.max(stageCardIndices.length - 1, 0))
-    stageShownAtRef.current = Date.now()
-  }, [stageCardIndices])
-
-  /* Stage keyboard nav: ←/→ browse cards; Enter continues at a beat pause.
-     Skips editable / interactive targets so typing and buttons keep working. */
   const storyConnectionState = story.connectionState
   const storySendAction = story.sendAction
   useEffect(() => {
     if (view !== 'story') return
-    const live = storyConnectionState === 'streaming'
-      || storyConnectionState === 'beat_paused'
-      || storyConnectionState === 'complete'
-    if (!live) return
+    if (storyConnectionState !== 'beat_paused') return
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       const tag = target?.tagName
@@ -1840,63 +1523,23 @@ function App() {
         || tag === 'SELECT'
         || target?.isContentEditable
       ) return
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        stepStageCard(-1)
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        stepStageCard(1)
-      } else if (
-        e.key === 'Enter'
-        && storyConnectionState === 'beat_paused'
-        && tag !== 'BUTTON'
-        && tag !== 'A'
-      ) {
+      if (e.key === 'Enter' && tag !== 'BUTTON' && tag !== 'A') {
         e.preventDefault()
         void storySendAction('continue', undefined, selectedCharId)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, storyConnectionState, stepStageCard, storySendAction, selectedCharId])
+  }, [view, storyConnectionState, storySendAction, selectedCharId])
 
-  const currentStoryText = currentStoryEvent ? getStoryEventSummary(currentStoryEvent, language) : t.sceneFallback
-  const currentStoryTypeChip = currentStoryEvent
-    ? getEventTypeChip(currentStoryEvent, language)
-    : t.currentBeat
-  const currentStoryTitle = currentStoryEvent ? getEventTitle(currentStoryEvent, language) : t.currentBeat
-  const currentStoryHeading = getStoryCardHeading(currentStoryEvent, currentStoryTitle)
-  const currentStoryEventType = currentStoryEvent?.type ?? 'empty'
-  const isSpeakCard = currentStoryEventType === 'agent_speak'
-  const isThinkCard = currentStoryEventType === 'agent_think'
-  const isActCard = currentStoryEventType === 'agent_act'
-  const isSceneCard = currentStoryEventType === 'scene_change'
-  const storyEmotionClass = emotionStageClass(
-    (currentStoryEvent?.data?.emotion_state as string | undefined)
-      ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined),
-  )
-  const currentStorySpeakerId = isSpeakCard
-    ? DISPLAY_NAME_TO_ID[currentStoryEvent!.data.character_id as string]
-    : null
-  const currentStorySpeakerText = isSpeakCard
-    ? ((currentStoryEvent!.data.content as string) ?? '')
-    : ''
   const latestWorldDelta = useMemo(
     () => findLastStoryEvent(story.events, evt => evt.type === 'world_state_delta'),
     [story.events],
   )
-  const latestWorldDeltaText = latestWorldDelta
-    ? getStoryEventTimelineSummary(latestWorldDelta, language, 96)
-    : ''
   const storyLocation = useMemo(() => {
-    const latest = findLastStoryEvent(story.events, evt => evt.type === 'scene_change')
-    if (!latest) return t.storyLocationFallback
-    const destination = typeof latest.data.to_scene === 'string' ? latest.data.to_scene : ''
-    const cleaned = playerFacingSceneText(destination || getStoryEventSummary(latest, language))
-    return (cleaned || t.storyLocationFallback).slice(0, 40)
-  }, [language, story, t.storyLocationFallback])
-  // World clock probe: surface the advancing time/weather from the latest
-  // world_state_delta so the player can see the world keep moving.
+    if (onStageLore.location) return onStageLore.location.slice(0, 40)
+    return t.storyLocationFallback
+  }, [onStageLore.location, t.storyLocationFallback])
   const storyWorldClock = useMemo(() => {
     const clock = latestWorldDelta?.data?.world_clock
     if (!Array.isArray(clock) || clock.length !== 3) return null
@@ -1915,58 +1558,11 @@ function App() {
   const storyBeatLabel = language === 'zh'
     ? `节点 ${Math.max(story.beatIndex, 1)}`
     : `Beat ${Math.max(story.beatIndex, 1)}`
-  const storyTensionLabel = formatEmotionLabel(
-    (currentStoryEvent?.data?.emotion_state as string | undefined)
-      ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined),
-    language,
-  ) || (language === 'zh' ? '未定' : 'Unset')
-
-  /* ---- Stage v2 derived chrome (story-stage-v2) ---- */
+  const lastEmotion = findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined
+  const storyTensionLabel = formatEmotionLabel(lastEmotion, language) || (language === 'zh' ? '未定' : 'Unset')
   const stageNightNo = Math.max(story.beatIndex, 1)
-  const stageEmotionRaw = (
-    (currentStoryEvent?.data?.emotion_state as string | undefined)
-    ?? (findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined)
-    ?? ''
-  ).trim().toLowerCase()
+  const stageEmotionRaw = (lastEmotion ?? '').trim().toLowerCase()
   const stageTensionLevel = STAGE_TENSION_LEVEL[stageEmotionRaw] ?? 4
-  const stageBackdropInfo = pickStageBackdropInfo(storyLocation)
-  // SCENE numbering = scene cards shown so far (design: SCENE 01 · 拍 n/m).
-  const stageSceneNo = useMemo(() => {
-    let n = 0
-    if (stageCardIndices.length > 0) {
-      const stop = Math.min(Math.max(activeStagePos, 0), stageCardIndices.length - 1)
-      for (let p = 0; p <= stop; p += 1) {
-        if (story.events[stageCardIndices[p]]?.type === 'scene_change') n += 1
-      }
-    }
-    return Math.max(n, 1)
-  }, [activeStagePos, stageCardIndices, story.events])
-  const stageMetaKind = stageCardIndices.length > 0
-    ? `SCENE ${String(stageSceneNo).padStart(2, '0')} · ${language === 'zh' ? '拍' : 'Shot'} ${activeStagePos + 1}/${stageCardIndices.length} · ${currentStoryTypeChip}`
-    : currentStoryTypeChip
-  const stageSlugline = [
-    stageBackdropInfo.label.split(' · ')[0],
-    storyLocation,
-    storyWorldClock,
-  ].filter(Boolean).join(' · ')
-
-  // Backdrop crossfade: two stacked layers, same grammar as chat scene-layer.
-  const [currentStageBg, setCurrentStageBg] = useState<string>(() => pickStageBackdrop(''))
-  const [prevStageBg, setPrevStageBg] = useState<string | null>(null)
-  const [stageBgReady, setStageBgReady] = useState(false)
-  useEffect(() => {
-    if (stageBackdropInfo.url === currentStageBg) return
-    const id = window.setTimeout(() => {
-      setStageBgReady(false)
-      setPrevStageBg(currentStageBg)
-      setCurrentStageBg(stageBackdropInfo.url)
-    }, 0)
-    return () => window.clearTimeout(id)
-  }, [stageBackdropInfo.url, currentStageBg])
-  useEffect(() => {
-    const id = window.setTimeout(() => setStageBgReady(true), 50)
-    return () => window.clearTimeout(id)
-  }, [currentStageBg])
 
   const handleContinueChapter = useCallback(async () => {
     const base = defaultStoryPrompt(language)
@@ -1985,12 +1581,9 @@ function App() {
   }, [relation, selectedCharId, story, storyContextSummary, language])
 
   const handleReplayBeat = useCallback(async () => {
-    const base = defaultStoryPrompt(language)
-    const prompt = language === 'zh'
-      ? `${base}\n\n用更贴近的角度重演上一拍。同一前提，但揭示之前未明说的动机或恐惧。\n\n先前上下文：\n${storyContextSummary || '暂无上下文。'}`
-      : `${base}\n\nReplay the last beat from a more intimate angle. Keep the same premise, but reveal a hidden motive or unspoken fear that was not explicit before.\n\nPrevious context:\n${storyContextSummary || 'No previous context was captured.'}`
-    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
-  }, [relation, selectedCharId, story, storyContextSummary, language])
+    const beatId = canonicalBeatId(story.currentBeatId, story.beatIndex)
+    await story.redrawBeat(beatId, selectedCharId)
+  }, [story, selectedCharId])
 
   /* ---- Cold open (brief question → crisis → cast) ---- */
   if (homePreviewOpen) {
@@ -2048,7 +1641,7 @@ function App() {
       choiceId: coldOpenChoiceId ?? undefined,
       characterId: selectedCharId,
     },
-    latestWorldDeltaText || currentStoryText.slice(0, 80),
+    dramaHint,
   )
 
   return (
@@ -2243,8 +1836,15 @@ function App() {
             </button>
           </header>
 
-          {/* Idle: task input */}
-          {story.connectionState === 'idle' && (
+          {showSceneBill && (
+            <StorySceneBillboard
+              bill={sceneBill}
+              holding={curtainRaised || story.connectionState === 'connecting'}
+              onRaiseCurtain={() => { void handleRaiseCurtain() }}
+            />
+          )}
+
+          {story.connectionState === 'idle' && !showSceneBill && (
             <div className="story-setup">
               <h3>{t.setStage}</h3>
               <p>{t.setStageHint}</p>
@@ -2284,8 +1884,7 @@ function App() {
             </div>
           )}
 
-          {/* Connecting — diegetic line, no SaaS spinner dots */}
-          {story.connectionState === 'connecting' && (
+          {story.connectionState === 'connecting' && !showSceneBill && (
             <div className="story-status story-status--pulse" aria-live="polite">
               <p>{story.isResuming
                 ? (t.resumingStory)
@@ -2293,8 +1892,6 @@ function App() {
             </div>
           )}
 
-          {/* Error / interrupted — always speaks plainly and offers an exit (QA P0#1/#2).
-              Quota wall (402) gets its own copy + actions: reconnecting cannot help. */}
           {story.connectionState === 'error' && (
             <div className="story-error">
               <p>
@@ -2330,230 +1927,55 @@ function App() {
             </div>
           )}
 
-          {/* Streaming / beat_paused / complete: live event feed */}
           {(story.connectionState === 'streaming'
             || story.connectionState === 'beat_paused'
             || story.connectionState === 'complete') && (
-            <div className={`story-stream story-stream--${story.connectionState}${timelineRailOpen ? '' : ' story-stream--rail-collapsed'}`}>
-              <div className="story-board__brief">
-                {story.outline && (
-                  <div className={`story-outline${outlineExpanded ? ' is-expanded' : ' is-collapsed'}`}>
-                    <div className="story-outline__header">
-                      <strong>{t.storyOutline}</strong>
-                      <button
-                        type="button"
-                        className="story-outline__toggle"
-                        aria-expanded={outlineExpanded}
-                        onClick={() => setOutlineExpanded(v => !v)}
-                      >
-                        {outlineExpanded ? t.outlineCollapse : t.outlineExpand}
-                      </button>
-                    </div>
-                    {!outlineExpanded && (
-                      <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
-                    )}
-                    {outlineExpanded && (
-                      <p className="story-outline__body">{story.outline}</p>
-                    )}
+            <div className={`story-stream story-stream--reading story-stream--${story.connectionState}`}>
+              {story.outline && (
+                <div className={`story-outline${outlineExpanded ? ' is-expanded' : ' is-collapsed'}`}>
+                  <div className="story-outline__header">
+                    <strong>{t.storyOutline}</strong>
+                    <button
+                      type="button"
+                      className="story-outline__toggle"
+                      aria-expanded={outlineExpanded}
+                      onClick={() => setOutlineExpanded(v => !v)}
+                    >
+                      {outlineExpanded ? t.outlineCollapse : t.outlineExpand}
+                    </button>
                   </div>
-                )}
-              </div>
-
-              {/* Stage (~70%) first, narrow beat rail (~25%) second - blueprint. */}
-              <div className="story-board__grid">
-                <section
-                  className={[
-                    'story-scene-card',
-                    `story-scene-card--${currentStoryEventType}`,
-                    storyEmotionClass ? `story-scene-card--emotion-${storyEmotionClass}` : '',
-                    stageBgReady ? 'is-bg-crossfade' : '',
-                  ].filter(Boolean).join(' ')}
-                >
-                  {/* Backdrop: two stacked layers crossfade (chat scene-layer grammar). */}
-                  <div
-                    className="story-scene-card__bg story-scene-card__bg--prev"
-                    style={{ backgroundImage: prevStageBg ? `url(${prevStageBg})` : 'none' } as CSSProperties}
-                    aria-hidden="true"
-                  />
-                  <div
-                    className="story-scene-card__bg story-scene-card__bg--current"
-                    style={{ backgroundImage: `url(${currentStageBg})` } as CSSProperties}
-                    aria-hidden="true"
-                  />
-                  <div className="story-scene-card__veil" aria-hidden="true" />
-                  <div
-                    className="story-scene-card__paper"
-                    key={
-                      pinnedStoryEventIndex
-                      ?? stageCardIndices[stageCardPos]
-                      ?? currentStoryEventType
-                    }
-                  >
-                    {/* Meta row: slate line left, clock/place + pager + gif right. */}
-                    <div className="story-scene-card__meta">
-                      <span className="story-scene-card__kind">{stageMetaKind}</span>
-                      {/* Think/act: character stays in meta; speak uses a dialogue heading below. */}
-                      {!isSpeakCard
-                        && currentStoryHeading
-                        && currentStoryHeading !== currentStoryTypeChip && (
-                        <span className="story-scene-card__speaker">{currentStoryHeading}</span>
-                      )}
-                      {stageCardIndices.length > 1 && (
-                        <span className="story-scene-card__nav">
-                          <button
-                            type="button"
-                            aria-label={t.stagePrev}
-                            title={t.stagePrev}
-                            disabled={activeStagePos <= 0}
-                            onClick={() => stepStageCard(-1)}
-                          >‹</button>
-                          <span className="story-scene-card__pos">{activeStagePos + 1}/{stageCardIndices.length}</span>
-                          <button
-                            type="button"
-                            aria-label={t.stageNext}
-                            title={t.stageNext}
-                            disabled={activeStagePos >= stageCardIndices.length - 1}
-                            onClick={() => stepStageCard(1)}
-                          >›</button>
-                        </span>
-                      )}
-                      {pinnedStoryEventIndex != null && (
-                        <button
-                          type="button"
-                          className="story-scene-card__live"
-                          onClick={returnToLiveStage}
-                        >
-                          {t.backToLive}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="story-scene-card__gif-toggle"
-                        onClick={() => setStoryGifHidden(v => !v)}
-                      >
-                        {storyGifHidden ? t.gifToggleShow : t.gifToggleHide}
-                      </button>
-                      <span className="story-scene-card__tm">{[storyWorldClock, storyLocation].filter(Boolean).join(' · ')}</span>
-                    </div>
-                    {/* Scene card: film title block — mono slugline + serif 900 title. */}
-                    {isSceneCard && (
-                      <div className="story-scene-card__scene-block">
-                        <p className="story-scene-card__scene-label">{stageSlugline}</p>
-                        <h3 className="story-scene-card__title">{storyLocation}</h3>
-                      </div>
-                    )}
-                    {/* Speak: left portrait fades into the backdrop (wide screens only). */}
-                    {isSpeakCard && currentStorySpeakerId && (
-                      <div className="story-scene-card__portrait" aria-hidden="true" style={{ overflow: 'hidden' }}>
-                        <img src={characterPortrait(currentStorySpeakerId)} alt="" style={currentStorySpeakerId === 'hank' ? { height: '107%' } : undefined} />
-                      </div>
-                    )}
-                    {/* Disco Elysium weight: character name is the dialogue heading. */}
-                    {isSpeakCard && currentStoryHeading && (
-                      <h3 className="story-scene-card__name">{currentStoryHeading}</h3>
-                    )}
-                    <p className={[
-                      'story-scene-card__quote',
-                      isThinkCard ? 'is-thought' : '',
-                      isActCard ? 'is-stage-dir' : '',
-                      isSpeakCard ? 'is-speak' : '',
-                      isSceneCard ? 'is-scene' : '',
-                    ].filter(Boolean).join(' ')}>
-                      {currentStoryText}
-                    </p>
-                    {currentStorySpeakerId && currentStorySpeakerText && (
-                      <VoicePlayer
-                        text={currentStorySpeakerText}
-                        characterId={currentStorySpeakerId}
-                        language={language}
-                        connectionSessionId={connection.connectionSessionId}
-                      />
-                    )}
-                    {!storyGifHidden && (
-                      <GifCard
-                        src={currentStoryEvent ? getStoryEventGif(currentStoryEvent) : null}
-                        alt={t.gifTrigger}
-                      />
-                    )}
-                  </div>
-                </section>
-
-                {timelineRailOpen ? (
-                  <aside className="story-timeline" aria-label={t.sceneTimeline}>
-                    <div className="story-timeline__head">
-                      <h3>{t.shotList}</h3>
-                      <span className="story-timeline__count">
-                        {shotListEntries.length} {language === 'zh' ? '拍' : 'shots'}
-                      </span>
-                      <button
-                        type="button"
-                        className="story-timeline__toggle"
-                        aria-expanded
-                        onClick={() => setTimelineRailOpen(false)}
-                      >
-                        {t.timelineCollapse}
-                      </button>
-                    </div>
-                    {/* status/outline/beat_ready never render as cards here —
-                        they compress into one thin diegetic line (design rail-status). */}
-                    <p className="story-timeline__status" aria-live="polite">{t.directorBusy}</p>
-                    <div className="story-events" ref={storyEventsRef}>
-                      {shotListEntries.map(({ evt, i }, shotNo) => {
-                        const isActive = evt === currentStoryEvent
-                        const summary = getStoryEventTimelineSummary(evt, language)
-                        return (
-                          <button
-                            key={`${i}-${evt.type}-${evt.received_at ?? ''}`}
-                            type="button"
-                            className={[
-                              'story-event',
-                              'story-shot',
-                              `story-event--${evt.type}`,
-                              'story-event--selectable',
-                              isActive ? 'is-active' : '',
-                            ].filter(Boolean).join(' ')}
-                            onClick={() => setPinnedStoryEventIndex(i)}
-                          >
-                            <span className="story-shot__tag">
-                              {language === 'zh' ? '拍' : 'SHOT'} {String(shotNo + 1).padStart(2, '0')} · {STORY_EVENT_KIND_EN[evt.type] ?? 'SHOT'}
-                            </span>
-                            <p className="story-shot__sum">{summary || getEventTypeChip(evt, language)}</p>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </aside>
-                ) : (
-                  /* Collapsed: one edge tab only - no empty full-height black rail. */
-                  <button
-                    type="button"
-                    className="story-timeline-handle"
-                    aria-expanded={false}
-                    aria-label={t.timelineExpand}
-                    onClick={() => setTimelineRailOpen(true)}
-                  >
-                    <span className="story-timeline-handle__label">{t.sceneTimeline}</span>
-                    <span className="story-timeline-handle__chev" aria-hidden="true">‹</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Consequences: thin strip, never primary reading surface.
-                  QA P1#6: the 96-char preview truncated mid-sentence with no
-                  way to read the rest — make the full text expandable. */}
-              {latestWorldDelta && (
-                <details className="story-delta-strip" aria-label={t.eventWorldDelta}>
-                  <summary>
-                    <span>{t.eventWorldDelta}</span>
-                    <p>{latestWorldDeltaText}</p>
-                  </summary>
-                  <p className="story-delta-strip__full">
-                    {getStoryEventTimelineSummary(latestWorldDelta, language, 4000)}
-                  </p>
-                </details>
+                  {!outlineExpanded && (
+                    <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
+                  )}
+                  {outlineExpanded && (
+                    <p className="story-outline__body">{story.outline}</p>
+                  )}
+                </div>
               )}
 
-              {/* Streaming indicator — diegetic, no SaaS dots */}
+              <StoryReadingSurface
+                blocks={readingBlocks}
+                lore={onStageLore}
+                language={language}
+                canRedraw={story.connectionState === 'beat_paused' || story.connectionState === 'complete'}
+                onRedrawBeat={() => { void handleReplayBeat() }}
+                slate={(
+                  <p className="story-reading__slate">
+                    {sceneBill.place}
+                    {' · '}
+                    {sceneBill.onStage.map((face) => face.name).join(' / ')}
+                  </p>
+                )}
+                voice={lastSpeakId && lastSpeakText ? (
+                  <VoicePlayer
+                    text={lastSpeakText}
+                    characterId={lastSpeakId}
+                    language={language}
+                    connectionSessionId={connection.connectionSessionId}
+                  />
+                ) : null}
+              />
+
               {story.connectionState === 'streaming' && (
                 <div className="streaming-indicator streaming-indicator--diegetic" aria-live="polite">
                   {story.autoContinued ? (
@@ -2566,10 +1988,8 @@ function App() {
                 </div>
               )}
 
-              {/* Decision layer: say / do / observe + free text (AI Dungeon grammar). */}
               {story.connectionState === 'beat_paused' && (
                 <div className="beat-paused beat-paused--drama">
-                  {/* Stage v2: intermission header strip (design inter-head). */}
                   <div className="beat-paused__interhead">
                     <span className="beat-paused__intersq" aria-hidden="true" />
                     <span>{t.interLabel}</span>
@@ -2589,6 +2009,10 @@ function App() {
                     }
                     onPick={(s) => {
                       setDramaHintSeen(true)
+                      story.appendLocalEvent({
+                        type: 'player_turn',
+                        data: { kind: s.kind, content: s.payload },
+                      })
                       void story.sendAction(
                         'redirect',
                         { redirect_prompt: s.payload },
@@ -2604,6 +2028,10 @@ function App() {
                       const text = decisionFree.trim()
                       if (!text) return
                       setDramaHintSeen(true)
+                      story.appendLocalEvent({
+                        type: 'player_turn',
+                        data: { kind: 'free', content: text },
+                      })
                       void story.sendAction(
                         'redirect',
                         { redirect_prompt: text },
@@ -2635,7 +2063,6 @@ function App() {
                 <div className="story-complete">
                   <p>🎬 {t.storyComplete}</p>
                   <div className="story-complete__actions">
-                    {/* Plot map is the primary complete action — review the spine before branching. */}
                     {story.sessionId && (
                       <button
                         type="button"
@@ -2651,11 +2078,9 @@ function App() {
                     <button type="button" onClick={story.reset}>{t.startAgain}</button>
                   </div>
                   <p className="story-complete__hint">
-                    {story.sessionId
-                      ? (language === 'zh'
-                        ? '先打开局面地图回看因果与未明之处，再选下一章或分叉。'
-                        : 'Open the situation map first — see what landed and what is still fog — then start the next chapter or branch.')
-                      : t.storyCompleteHint}
+                    {language === 'zh'
+                      ? '这一夜先到这里。需要的话再打开局面图，或另开一场——不是无限续写。'
+                      : 'This scene is over. Open the situation map if you need it, or start another night — not an infinite chat.'}
                   </p>
                 </div>
               )}

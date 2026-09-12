@@ -110,15 +110,9 @@ async function mockSSEStates(page: Page): Promise<number[]> {
   ).__mockSSEInstances?.map((source) => source.readyState) ?? [])
 }
 
-/**
- * Stage cards dwell 7s each for readability. Browse to the newest card via
- * the stage nav so assertions don't wait out the paced autoplay.
- */
-async function pinLatestStageCard(page: Page) {
-  const next = page.locator('.story-scene-card__nav button[aria-label="Next card"]')
-  while ((await next.count()) > 0 && (await next.isEnabled())) {
-    await next.click()
-  }
+/** Manuscript is a continuous page — no card pager to pin. */
+async function expectDialogue(page: Page, text: string | RegExp) {
+  await expect(page.locator('.story-manuscript__dialogue')).toContainText(text)
 }
 
 /** Seed localStorage (abq_ prefix is added by caller, matching persistedState). */
@@ -228,24 +222,12 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('methylamine')
 
-  // Full dialogue lives on the paper stage; timeline keeps a short summary
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__quote')).toContainText(
-    'We need to cook',
-  )
-  await expect(page.locator('.story-event--agent_speak .story-event__summary')).toContainText(
-    'We need to cook',
-  )
-
-  // scene_change summary on timeline
-  await expect(page.locator('.story-event--scene_change .story-event__summary')).toContainText(
-    'Los Pollos',
-  )
-
-  // world_state_delta rendered as summary (no dense list in the rail)
-  await expect(page.locator('.story-event--world_state_delta .story-event__summary')).toContainText(
-    'stress',
-  )
+  // Dialogue + scene live in the manuscript; world facts in the lore rail
+  await expectDialogue(page, 'We need to cook')
+  await expect(page.locator('.story-manuscript__prose')).toContainText('Los Pollos')
+  await expect(page.locator('.story-lore')).toContainText('stress')
+  await expect(page.locator('.story-lore')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.msg--user, .msg--char, .story-scene-card__quote')).toHaveCount(0)
 
   // Beat index indicator shows Beat 1
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
@@ -263,7 +245,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await expect.poll(() => mockSSEStates(page)).toEqual([2])
 })
 
-test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pressure footer, and decision tray', async ({
+test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore, and decision tray', async ({
   page,
 }) => {
   await driveToBeatPaused(page, {
@@ -295,15 +277,24 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, scene card, pres
   await page.locator('.story-outline__toggle').click()
   await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
 
-  await expect(page.locator('.story-event--scene_change', { hasText: 'Los Pollos Hermanos office' })).toBeVisible()
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__speaker')).toContainText('Gus Fring')
-  await expect(page.locator('.story-scene-card__quote')).toContainText('A calm conversation prevents')
+  await expect(page.locator('.story-manuscript__prose')).toContainText('Los Pollos Hermanos office')
+  await expect(page.locator('.story-manuscript__dialogue cite')).toContainText('Gus Fring')
+  await expectDialogue(page, 'A calm conversation prevents')
 
   await expect(page.locator('.beat-paused')).toContainText('Choose the next move')
   await expect(page.locator('.beat-controls button', { hasText: /Continue/ })).toBeVisible()
   await expect(page.locator('.beat-controls button', { hasText: /Redirect/ })).toBeVisible()
   await expect(page.locator('.beat-controls button', { hasText: /Switch Perspective/ })).toBeVisible()
+})
+
+test('TC-SSE-REDRAW: 换一版 this beat sends replay, not a full restart', async ({ page }) => {
+  const actionLog = await driveToBeatPaused(page, { beatId: 'beat-2' })
+  await expect(page.locator('.story-manuscript__redraw')).toBeVisible()
+  await page.locator('.story-manuscript__redraw').click()
+  await expect.poll(() => actionLog.some((e) => e.action === 'replay')).toBe(true)
+  const replay = actionLog.find((e) => e.action === 'replay')
+  expect(replay?.beat_id).toMatch(/beat[_-]2/)
+  expect(actionLog.some((e) => e.action === 'startStory')).toBeFalsy()
 })
 
 /* ------------------------------------------------------------------ */
@@ -358,12 +349,7 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   // Beat index incremented to 2
   await expect(page.locator('.story-hud')).toContainText('Beat 2')
 
-  // New agent_speak content visible on stage + timeline summary
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__quote')).toContainText('The batch is ready.')
-  await expect(
-    page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'The batch is ready.' }),
-  ).toBeVisible()
+  await expectDialogue(page, 'The batch is ready.')
 
   // BeatControls visible again (back to beat_paused)
   await expect(page.locator('.beat-controls')).toBeVisible()
@@ -468,12 +454,7 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
   // backend beat_id instead of continuing the old outline's counter.
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
-  // New agent_speak content visible on stage
-  await pinLatestStageCard(page)
-  await expect(page.locator('.story-scene-card__quote')).toContainText('take him out')
-  await expect(
-    page.locator('.story-event--agent_speak .story-event__summary', { hasText: 'take him out' }),
-  ).toBeVisible()
+  await expectDialogue(page, 'take him out')
 
   // BeatControls visible again — no deadlock
   await expect(page.locator('.beat-controls')).toBeVisible()
@@ -502,13 +483,12 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
 
   // story-complete UI visible with completion text
   await expect(page.locator('.story-complete')).toBeVisible()
-  await expect(page.locator('.story-complete')).toContainText(/Story complete/)
+  await expect(page.locator('.story-complete')).toContainText(/This scene is over|这一场演完/)
 
   // BeatControls should no longer be visible (state left beat_paused)
   await expect(page.locator('.beat-controls')).toHaveCount(0)
 
-  // complete event rendered in the event feed
-  await expect(page.locator('.story-event--complete')).toBeVisible()
+  await expect(page.locator('.story-complete__hint')).toContainText(/not an infinite chat|不是无限续写/)
   await expect.poll(() => mockSSEStates(page)).toEqual([2, 2])
 
   // Story-complete follow-up actions are present, plus Start Again.
@@ -613,11 +593,7 @@ test('TC-SSE-6: switch_perspective sends target_character and next beat first ag
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2', beat_summary: "Jesse's house" } })
 
-  // Assert first agent_speak of beat 2 is Jesse Pinkman.
-  // driveToBeatPaused already emitted 1 Walter White agent_speak in beat 1,
-  // so beat 2's first agent_speak is the 2nd .story-event--agent_speak in DOM.
-  // Using .nth(1) (not .first()) to target beat 2's first speak.
-  const beat2FirstSpeak = page.locator('.story-event--agent_speak').nth(1)
+  const beat2FirstSpeak = page.locator('.story-manuscript__dialogue').nth(1)
   await expect(beat2FirstSpeak).toContainText('Jesse Pinkman')
 })
 
@@ -630,9 +606,7 @@ test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) 
     outline: '1. RV — cook\n2. White house — Skyler waits',
   })
 
-  // Voice lives on the paper stage for the focused speak beat
-  await pinLatestStageCard(page)
-  const voicePlayer = page.locator('.story-scene-card .voice-player').first()
+  const voicePlayer = page.locator('.story-reading .voice-player').first()
   await expect(voicePlayer).toBeVisible()
   await expect(voicePlayer).toBeEnabled()
   await expect(voicePlayer).toContainText(/Voice|▶/)

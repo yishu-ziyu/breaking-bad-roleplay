@@ -117,13 +117,16 @@ async function installMockEventSource(page: Page) {
 }
 
 async function mockSessionCreate(page: Page, sid = 'cold-open-sid') {
+  const state = { hits: 0 }
   await page.route('**/api/session/create', async (route) => {
+    state.hits += 1
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ session_id: sid }),
     })
   })
+  return state
 }
 
 async function mockActionEndpoint(page: Page) {
@@ -216,11 +219,11 @@ test('cold open: Find Jesse → cast strip with 4 members', async ({ page }) => 
 /*  3. Enter story shell (soft-assert; no real LLM)                   */
 /* ------------------------------------------------------------------ */
 
-test('cold open: cast Walter leaves cold open into story shell or connection sheet', async ({
+test('cold open: cast Walter shows the 场面卡 before any SSE', async ({
   page,
 }) => {
   // Stub session APIs so a live connection path does not hang on network.
-  await mockSessionCreate(page)
+  const create = await mockSessionCreate(page)
   await mockActionEndpoint(page)
   await page.route('**/api/session/*/stream**', async (route) => {
     await route.fulfill({
@@ -239,19 +242,14 @@ test('cold open: cast Walter leaves cold open into story shell or connection she
 
   await page.getByRole('button', { name: /进入角色 沃尔特|Enter as Walter/i }).click()
 
-  // Soft-assert: without canStart stays on cold open with gate; with line enters story.
-  // Wait briefly for either transition.
-  await page.waitForTimeout(400)
-  const leftCold = (await page.locator('.cold-open').count()) === 0
-  if (leftCold) {
-    await expect(page.locator('.app-shell, .story-panel').first()).toBeVisible({
-      timeout: 8_000,
-    })
-  } else {
-    const coldError = page.locator('.cold-open__error, [role="alert"]')
-    const connectionSheet = page.locator('.connection-sheet')
-    await expect(coldError.or(connectionSheet).first()).toBeVisible({ timeout: 8_000 })
-  }
+  await expect(page.locator('.cold-open')).toHaveCount(0)
+  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 8_000 })
+  await expect(page.locator('.story-scene-bill__place')).toBeVisible()
+  await expect(page.locator('.story-scene-bill__crisis')).toBeVisible()
+  await expect(page.getByRole('button', { name: /开演|Raise curtain/i })).toBeVisible()
+  await expect(page.locator('.story-manuscript')).toHaveCount(0)
+  // SSE waits for 开演 — session create must not have fired yet.
+  await expect.poll(() => create.hits).toBe(0)
 })
 
 /* ------------------------------------------------------------------ */
