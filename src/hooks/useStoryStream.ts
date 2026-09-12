@@ -462,6 +462,10 @@ export function useStoryStream(): UseStoryStreamReturn {
         }
       }
 
+      if (import.meta.env.DEV && typeof window !== 'undefined') {
+        ;(window as Window & { __storyHandleEvent?: typeof handleEvent }).__storyHandleEvent = handleEvent
+      }
+
       const es = openFetchSse(streamUrl, {
         headers: buildStreamHeaders({
           connectionSessionId: connectionSessionRef.current,
