@@ -177,8 +177,9 @@ test('buildBeatPauseSuggestions still returns three kind-diverse options', () =>
     plain.map((s) => s.kind).sort(),
     ['do', 'observe', 'say'],
   )
-  const withHint = buildBeatPauseSuggestions('zh', '现金')
-  assert.ok(withHint.some((s) => s.payload.includes('现金')))
+  const dump = '杰西 · 下落 房车 → 黑地'
+  const withHint = buildBeatPauseSuggestions('zh', dump)
+  assert.ok(withHint.every((s) => !s.payload.includes('→') && !s.payload.includes('点破压力点')))
 })
 
 test('beat-pause labels rotate across beats so consecutive pauses differ (QA P2#9)', () => {

@@ -41,7 +41,11 @@ export function buildReadingBlocks(
       return
     }
     if (evt.type === 'player_turn') {
-      const text = String(evt.data.content ?? '').trim()
+      const text = inWorldPlayerLine(
+        String(evt.data.content ?? ''),
+        String(evt.data.kind ?? ''),
+        lang,
+      )
       if (!text) return
       blocks.push({
         id: `read-${i}-player`,
@@ -82,16 +86,8 @@ export function extractOnStageLore(
     for (const raw of deltas) {
       if (!raw || typeof raw !== 'object') continue
       const d = raw as Record<string, unknown>
-      const target = String(d.target ?? d.entity ?? '').trim()
-      const field = String(d.field ?? '').trim()
-      if (!target && !field) continue
-      const oldValue = String(d.old_value ?? '∅')
-      const newValue = String(d.new_value ?? '∅')
-      facts.push(
-        lang === 'zh'
-          ? `${target || '局面'} · ${field} ${oldValue} → ${newValue}`
-          : `${target || 'Board'} · ${field} ${oldValue} → ${newValue}`,
-      )
+      const fact = formatOnStageFact(d, lang)
+      if (fact) facts.push(fact)
     }
   }
   return {
@@ -129,6 +125,61 @@ export function trimFeedForBeatRedraw(
   }
   if (cut < 0) return []
   return events.slice(0, cut + 1)
+}
+
+export function looksLikePlotEngineCopy(text: string): boolean {
+  const t = text.trim()
+  if (!t) return false
+  if (t.includes('→') || t.includes('->')) return true
+  if (/点破压力点|立刻采取行动应对|（针对：/.test(t)) return true
+  if (/force a clear answer about:|take a concrete move on:|study the room \(re:/i.test(t)) return true
+  if (/上场的事实|world_state|beat_id|redirect_prompt/i.test(t)) return true
+  return false
+}
+
+const FALLBACK_PLAYER = {
+  zh: {
+    say: '我提高声音，朝黑暗里喊他。',
+    do: '我不再空谈，先改眼前的事。',
+    observe: '我先不说话，把每个人的反应看清楚。',
+    free: '我把这一步做了。',
+  },
+  en: {
+    say: 'I raise my voice and call into the dark.',
+    do: 'I stop talking and move on what is in front of me.',
+    observe: 'I hold still and watch every face before I commit.',
+    free: 'I take the next step myself.',
+  },
+} as const
+
+export function inWorldPlayerLine(
+  text: string,
+  kind: string = '',
+  lang: 'zh' | 'en' = 'zh',
+): string {
+  const raw = text.trim()
+  if (!raw || looksLikePlotEngineCopy(raw)) {
+    const key = kind === 'do' || kind === 'observe' || kind === 'say' ? kind : 'free'
+    return FALLBACK_PLAYER[lang][key]
+  }
+  return raw
+}
+
+function formatOnStageFact(d: Record<string, unknown>, lang: 'zh' | 'en'): string | null {
+  const target = String(d.target ?? d.entity ?? '').trim()
+  const field = String(d.field ?? '').trim()
+  const newValue = String(d.new_value ?? '').trim()
+  if (!target && !newValue) return null
+  const who = target || (lang === 'zh' ? '有人' : 'Someone')
+  const whereLike = /下落|where|location|scene|place/i.test(field)
+  if (lang === 'zh') {
+    if (whereLike) return `${who}已经到了${newValue || '别处'}`
+    if (newValue) return `${who}已经是${newValue}`
+    return who
+  }
+  if (whereLike) return `${who} is in ${newValue || 'the dark'}`
+  if (newValue) return `${who} is ${newValue}`
+  return who
 }
 
 function narrationText(evt: StoryEvent): string {

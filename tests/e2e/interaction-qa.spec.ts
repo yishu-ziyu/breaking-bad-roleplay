@@ -326,11 +326,8 @@ test('TC-IX-8: during streaming, beat-controls hidden and events render', async 
   await emitSSE(page, 'outline', { data: { content: '1. Secure methylamine\n2. Cook batch\n3. Evade Skyler' } })
   await page.waitForTimeout(100)
 
-  // BeatControls NOT visible during streaming
   await expect(page.locator('.beat-controls')).toHaveCount(0)
-  await expect(page.locator('.story-outline')).toBeVisible()
-  await page.locator('.story-outline__toggle').click()
-  await expect(page.locator('.story-outline__body')).toContainText('methylamine')
+  await expect(page.locator('.story-outline')).toHaveCount(0)
 
   await emitSSE(page, 'scene_change', { data: { description: 'Superlab, underground.' } })
   await page.waitForTimeout(50)

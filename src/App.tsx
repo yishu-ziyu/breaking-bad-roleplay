@@ -80,24 +80,6 @@ const STAGE_TENSION_LEVEL: Record<string, number> = {
   angry: 8,
 }
 
-/** Diegetic outline teaser — never print McKee craft (spine / structure / idea). */
-function formatStoryPlanPreview(outline: string, lang: Language): string {
-  const lines = outline
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-  const beats = lines.filter(line => /^\d+[.)]\s+/.test(line))
-  const count = Math.max(beats.length, 1)
-  if (lang === 'zh') {
-    if (count <= 1) return '这一夜刚起了头'
-    if (count <= 3) return '这一夜还有几处关口'
-    return `这一夜大约还有 ${count} 处关口`
-  }
-  if (count <= 1) return 'The night is just getting started'
-  if (count <= 3) return 'A few hard turns still ahead'
-  return `About ${count} hard turns still ahead`
-}
-
 /** Map director emotion_state tags for HUD display (tags stay English for GIFs). */
 const EMOTION_LABELS: Record<string, Record<Language, string>> = {
   calm: { en: 'calm', zh: '平静' },
@@ -814,8 +796,6 @@ function App() {
   /** Chat stream: only auto-scroll when the reader is already near the bottom. */
   const [chatPinnedToBottom, setChatPinnedToBottom] = useState(true)
   const [unseenBelow, setUnseenBelow] = useState(false)
-  /** Story board: outline collapsed by default to free stage space. */
-  const [outlineExpanded, setOutlineExpanded] = useState(false)
   /** Free-text line for DramaDecisionBar (beat pause). */
   const [decisionFree, setDecisionFree] = useState('')
   /** Cold-open choice id so first-beat chips match the crisis the player picked. */
@@ -1505,8 +1485,7 @@ function App() {
     ? DISPLAY_NAME_TO_ID[lastSpeak.data.character_id as string]
     : null
   const lastSpeakText = typeof lastSpeak?.data.content === 'string' ? lastSpeak.data.content : ''
-  const dramaHint = onStageLore.facts[0]
-    || readingBlocks.find(b => b.kind === 'dialogue' || b.kind === 'narration')?.text.slice(0, 80)
+  const dramaHint = readingBlocks.find(b => b.kind === 'dialogue' || b.kind === 'narration')?.text.slice(0, 80)
     || ''
 
   const storyConnectionState = story.connectionState
@@ -1931,28 +1910,6 @@ function App() {
             || story.connectionState === 'beat_paused'
             || story.connectionState === 'complete') && (
             <div className={`story-stream story-stream--reading story-stream--${story.connectionState}`}>
-              {story.outline && (
-                <div className={`story-outline${outlineExpanded ? ' is-expanded' : ' is-collapsed'}`}>
-                  <div className="story-outline__header">
-                    <strong>{t.storyOutline}</strong>
-                    <button
-                      type="button"
-                      className="story-outline__toggle"
-                      aria-expanded={outlineExpanded}
-                      onClick={() => setOutlineExpanded(v => !v)}
-                    >
-                      {outlineExpanded ? t.outlineCollapse : t.outlineExpand}
-                    </button>
-                  </div>
-                  {!outlineExpanded && story.connectionState !== 'streaming' && (
-                    <div className="story-outline__summary">{formatStoryPlanPreview(story.outline, language)}</div>
-                  )}
-                  {outlineExpanded && (
-                    <p className="story-outline__body">{story.outline}</p>
-                  )}
-                </div>
-              )}
-
               <StoryReadingSurface
                 blocks={readingBlocks}
                 lore={onStageLore}
@@ -1977,14 +1934,12 @@ function App() {
               />
 
               {story.connectionState === 'streaming' && (
-                <div className="streaming-indicator streaming-indicator--diegetic" aria-live="polite">
+                <div className="streaming-indicator streaming-indicator--diegetic" aria-live="polite" aria-busy="true">
                   {story.autoContinued ? (
                     <span className="auto-continue-notice">
                       {t.autoContinue}
                     </span>
-                  ) : (
-                    <p className="streaming-indicator__line">{t.streamingUnfold}</p>
-                  )}
+                  ) : null}
                 </div>
               )}
 
