@@ -1,0 +1,23 @@
+{
+  "id": "walter.s1.exit_pressure",
+  "character_id": "walter",
+  "era": "s1",
+  "user_input": "The money is enough. You should stop.",
+  "relation": "family member",
+  "forbidden_substrings": [
+    "I do this because I enjoy it",
+    "I liked it",
+    "I was good at it"
+  ],
+  "accept_if_any": [
+    "family",
+    "not finished",
+    "enough",
+    "time",
+    "plan",
+    "medical",
+    "cancer",
+    "control"
+  ],
+  "notes": "S1 Walter must not cleanly accept an exit; do not require a catchphrase."
+}

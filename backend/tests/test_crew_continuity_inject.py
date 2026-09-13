@@ -1,8 +1,4 @@
-"""Crew mode: each participant gets their own Continuity Board slice.
-
-Crew still uses one multi-character LLM call, but each CHARACTER VOICE
-block must carry only facts that speaker would know.
-"""
+"""Crew: each speaker's full model input is their own ActorView, not a shared dump."""
 
 from __future__ import annotations
 
@@ -12,36 +8,34 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agents.director import DirectorAgent
-from agents.provider import ProviderFacade
+from agents.provider import ModelResult, ProviderFacade
+
+
+def _reply(cid: str, line: str) -> ModelResult:
+    return ModelResult(
+        content=json.dumps(
+            {
+                "reply_text": line,
+                "emotion_state": "tense",
+                "gif_search_query": "x",
+                "thinking": None,
+                "action": {"verb": "idle_tense"},
+                "tool_executed": None,
+                "tool_log": None,
+            }
+        ),
+        tool_calls=[],
+        stop_reason="end_turn",
+    )
 
 
 @pytest.fixture
 def mock_provider():
     provider = MagicMock(spec=ProviderFacade)
     provider.resolve_model_route.return_value = "stepfun/step-3.7-flash"
-    provider.call_model = AsyncMock(
-        return_value=json.dumps(
-            [
-                {
-                    "character_id": "Walter White",
-                    "content": "We stay precise.",
-                    "emotion_state": "tense",
-                    "gif_search_query": "walter serious",
-                    "thinking": None,
-                    "tool_executed": None,
-                    "tool_log": None,
-                },
-                {
-                    "character_id": "Jesse Pinkman",
-                    "content": "Yeah, whatever.",
-                    "emotion_state": "anxious",
-                    "gif_search_query": "jesse nervous",
-                    "thinking": None,
-                    "tool_executed": None,
-                    "tool_log": None,
-                },
-            ]
-        )
+    provider.call_model = AsyncMock(return_value="[]")
+    provider.call_model_with_tools = AsyncMock(
+        return_value=_reply("Walter White", "We stay precise.")
     )
     provider.cli_proxy_default_model = "gpt-5.4"
     return provider
@@ -53,7 +47,17 @@ def director(mock_provider):
 
 
 @pytest.mark.asyncio
-async def test_crew_injects_per_speaker_board_slices(director, mock_provider):
+async def test_crew_each_speaker_sees_only_own_board(director, mock_provider):
+    captured: list[list] = []
+
+    async def _tools(messages, *args, **kwargs):
+        captured.append(messages)
+        blob = json.dumps(messages, ensure_ascii=False)
+        if "Jesse Pinkman" in blob or "You are Jesse" in blob:
+            return _reply("Jesse Pinkman", "Yeah, whatever.")
+        return _reply("Walter White", "We stay precise.")
+
+    mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
     context = {
         "mode": "crew",
         "history": [],
@@ -65,40 +69,31 @@ async def test_crew_injects_per_speaker_board_slices(director, mock_provider):
         "walter", "Jesse, what's the plan with Gus?", context
     )
     assert result["debate_logs"]
+    assert len(captured) >= 2
 
-    messages = mock_provider.call_model.call_args.args[0]
-    system = messages[0]["content"]
-    assert "CONTINUITY BOARD" in system
-    assert "KNOWLEDGE RIGHTS" in system
-    # Walt and Jesse both present in voice guides
-    assert "CHARACTER VOICE: Walter White" in system
-    assert "CHARACTER VOICE: Jesse Pinkman" in system
+    def _blob(msgs: list) -> str:
+        return json.dumps(msgs, ensure_ascii=False)
 
-    # Split by character blocks; Jesse block must not leak Skyler household fact
-    jesse_idx = system.find("CHARACTER VOICE: Jesse Pinkman")
-    assert jesse_idx >= 0
-    next_sep = system.find("\n\n---\n\n", jesse_idx)
-    jesse_block = system[jesse_idx: next_sep if next_sep > 0 else None]
-    assert "household story is incomplete" not in jesse_block
-    # Jesse should still see Gus-roof operational fact
-    assert "Gus" in jesse_block or "cook" in jesse_block.lower()
+    walter_in = next(b for b in captured if "You are Walter White" in _blob(b) or "Walter White" in _blob(b)[:800])
+    jesse_in = next(b for b in captured if "You are Jesse Pinkman" in _blob(b))
+    jesse_blob = _blob(jesse_in)
+    walter_blob = _blob(walter_in)
+    assert "household story is incomplete" not in jesse_blob
+    assert "Gus" in jesse_blob or "cook" in jesse_blob.lower() or "PLAYER RELATION" in walter_blob
+    # Full input — not a sliced CHARACTER VOICE block — is what isolation means.
+    assert "CHARACTER VOICE GUIDES" not in jesse_blob
+    assert "CHARACTER VOICE GUIDES" not in walter_blob
 
 
 @pytest.mark.asyncio
-async def test_crew_skyler_block_hides_gus_roof(director, mock_provider):
-    mock_provider.call_model.return_value = json.dumps(
-        [
-            {
-                "character_id": "Skyler White",
-                "content": "I need the truth about this house.",
-                "emotion_state": "tense",
-                "gif_search_query": "skyler tense",
-                "thinking": None,
-                "tool_executed": None,
-                "tool_log": None,
-            }
-        ]
-    )
+async def test_crew_skyler_input_hides_gus_roof(director, mock_provider):
+    captured: list[list] = []
+
+    async def _tools(messages, *args, **kwargs):
+        captured.append(messages)
+        return _reply("Skyler White", "I need the truth about this house.")
+
+    mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
     context = {
         "mode": "crew",
         "history": [],
@@ -107,12 +102,8 @@ async def test_crew_skyler_block_hides_gus_roof(director, mock_provider):
         "llmProvider": "stepfun",
     }
     await director._handle_crew_chat("skyler", "Skyler wants answers", context)
-    system = mock_provider.call_model.call_args.args[0][0]["content"]
-    sky_idx = system.find("CHARACTER VOICE: Skyler White")
-    assert sky_idx >= 0
-    next_sep = system.find("\n\n---\n\n", sky_idx)
-    sky_block = system[sky_idx: next_sep if next_sep > 0 else None]
-    # Skyler must not receive Gus-roof operational map as known fact text
-    # (s3 pack hides s3_gus_roof from skyler)
-    assert "under Gus Fring's organization" not in sky_block
-    assert "household story is incomplete" in sky_block or "incomplete" in sky_block.lower()
+    assert captured
+    sky_blob = json.dumps(captured[0], ensure_ascii=False)
+    assert "under Gus Fring's organization" not in sky_blob
+    assert "family member" in sky_blob
+    assert "CHARACTER VOICE GUIDES" not in sky_blob

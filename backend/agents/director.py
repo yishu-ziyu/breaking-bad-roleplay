@@ -2572,15 +2572,37 @@ class DirectorAgent:
             era=chat_era,
             board=board,
         )
-        dossier_context = actor_view.prompt_block()
-        # Instantiate character and call structured respond
+        from agents.turn_runtime import TurnGenerationError, generate_accepted_turn
+
         agent = character_cls(self.provider)
-        result = await agent.respond_structured(
-            context=ctx_messages,
-            user_message=user_msg_with_context,
-            model_route=model_route,
-            dossier_context=dossier_context or None,
-        )
+        try:
+            accepted = await generate_accepted_turn(
+                agent,
+                actor_view=actor_view,
+                user_message=user_msg_with_context,
+                context=ctx_messages,
+                model_route=model_route,
+                backend_id=backend_id,
+                board=board,
+                world_mode=context.get("world_mode") or context.get("worldMode") or "alternate",
+                voice_example=voice_example,
+            )
+        except TurnGenerationError:
+            logger.exception("Direct turn generation failed for %s", backend_id)
+            raise
+        if accepted is None:
+            return {
+                "reply_text": "",
+                "emotion_state": "tense",
+                "gif_search_query": None,
+                "thinking": None,
+                "tool_executed": None,
+                "tool_log": None,
+                "updated_relationship_state": None,
+                "error": "turn_rejected",
+                "retryable": True,
+            }
+        result = accepted.result
         reply_text = result["reply_text"]
         thinking = result.get("thinking")
         gif_query = sanitize_direct_gif_query(result.get("gif_search_query"))
@@ -2593,9 +2615,6 @@ class DirectorAgent:
                 thinking = await self._translate_one_field_to_zh(
                     str(thinking), model_route=model_route
                 )
-        # Compute updated relationship state (lightweight — no DB round-trip
-        # for chat mode; frontend holds the local state).
-        updated_relationship_state = None
         return {
             "reply_text": reply_text,
             "emotion_state": result["emotion_state"],
@@ -2603,7 +2622,8 @@ class DirectorAgent:
             "thinking": thinking,
             "tool_executed": result["tool_executed"],
             "tool_log": result["tool_log"],
-            "updated_relationship_state": updated_relationship_state,
+            "updated_relationship_state": None,
+            "policy_version": accepted.policy_version,
         }
     async def _handle_crew_chat(
         self,
@@ -2612,7 +2632,7 @@ class DirectorAgent:
         context: dict[str, Any],
         session_factory: Any = None,
     ) -> dict[str, Any]:
-        """Crew mode: generate a multi-character debate turn."""
+        """Crew: one accepted turn per speaker, each with their own ActorView."""
         llm_provider: str = context.get("llmProvider", "stepfun")
         provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
         participants_backend = crew_participants_from_message(character_id, user_message)
@@ -2621,90 +2641,48 @@ class DirectorAgent:
             BACKEND_TO_FRONTEND_ID.get(name, name.lower().split()[0])
             for name in participants_backend
         ]
-        # Build the multi-turn prompt
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
         target_language = "Simplified Chinese" if language == "zh" else "English"
         history: list[dict] = context.get("history", [])
-        history_summary = ""
-        if history:
-            recent = history[-6:]
-            lines = []
-            for turn in recent:
-                sender = turn.get("sender", "unknown")
-                lines.append(f"{sender}: {turn.get('text', '')}")
-            history_summary = "\n".join(lines)
-        crew_prompt = (
-            f"User message: {user_message}\n"
-            f"Relation to primary character ({backend_primary}): {relation}\n"
-            f"Reply language: {target_language} only.\n\n"
-        )
-        if history_summary:
-            crew_prompt += f"Recent conversation:\n{history_summary}\n\n"
-        crew_prompt += (
-            f"Generate a dialogue turn for each of these characters: "
-            f"{', '.join(participants_backend)}. "
-            f"Emit the JSON array as specified."
-        )
-        # Inject per-character voice guides so each character in the crew
-        # retains their distinct voice (Loop 7 fix). Also attach a Continuity
-        # Board slice per speaker so each mouth only "knows" its known_by facts.
-        from agents.continuity_board import (
-            filter_board_for_character,
-            format_board_prompt,
-            load_or_init_session_board,
-        )
+        ctx_messages: list[dict] = []
+        if isinstance(history, list):
+            for turn in history[-6:]:
+                role = turn.get("sender", "user")
+                text = turn.get("text", "")
+                if role == "user":
+                    ctx_messages.append({"role": "user", "content": text})
+                else:
+                    ctx_messages.append({"role": "assistant", "content": f"{role}: {text}"})
+        from agents.character_policy import compile_actor_view
+        from agents.continuity_board import load_or_init_session_board
+        from agents.turn_runtime import TurnGenerationError, generate_accepted_turn
+
         crew_session_id = str(context.get("sessionId") or context.get("session_id") or "")
-        try:
-            continuity_board = await load_or_init_session_board(
-                session_factory,
-                crew_session_id,
-            )
-        except Exception:
-            logger.debug("Crew continuity board load failed")
-            continuity_board = None
-        character_voice_guides: list[str] = []
-        for backend_name in participants_backend:
-            char_cls = CHARACTER_AGENTS.get(backend_name)
-            if char_cls is not None:
-                try:
-                    char_agent = char_cls(self.provider)
-                    block = (
-                        f"CHARACTER VOICE: {backend_name}\n"
-                        f"{char_agent.system_prompt()}"
-                    )
-                    if continuity_board is not None:
-                        try:
-                            view = filter_board_for_character(
-                                continuity_board, backend_name
-                            )
-                            board_block = format_board_prompt(
-                                view, character_id=backend_name
-                            )
-                            block = f"{block}\n\n{board_block}"
-                        except Exception:
-                            logger.debug(
-                                "Crew board inject failed for %s", backend_name
-                            )
-                    character_voice_guides.append(block)
-                except Exception:
-                    logger.debug("Failed to load system prompt for %s", backend_name)
-        voice_guide_block = ""
-        if character_voice_guides:
-            voice_guide_block = (
-                "\n\nCHARACTER VOICE GUIDES - follow each character's voice "
-                "exactly when writing their dialogue.\n"
-                "KNOWLEDGE RIGHTS: when writing a character's line, use ONLY the "
-                "CONTINUITY BOARD facts listed under that character. Do not let "
-                "one character speak another character's private board facts.\n\n"
-                + "\n\n---\n\n".join(character_voice_guides)
-            )
-        system_content = CREW_CHAT_SYSTEM_PROMPT + voice_guide_block
-        messages = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": crew_prompt},
-        ]
-        # Use the primary character's preferred model route
+        chat_era = str(context.get("era") or context.get("board_era") or context.get("eraId") or "")
+        continuity_board = None
+        if crew_session_id and session_factory is not None:
+            try:
+                load_kwargs: dict[str, Any] = {}
+                if chat_era:
+                    load_kwargs["era"] = chat_era
+                continuity_board = await load_or_init_session_board(
+                    session_factory, crew_session_id, **load_kwargs
+                )
+                if not chat_era and isinstance(continuity_board, dict):
+                    chat_era = str(continuity_board.get("era") or "")
+            except Exception:
+                logger.debug("Crew continuity board load failed")
+                continuity_board = None
+        elif session_factory is None:
+            # Tests / ephemeral: still seed a board so knowledge slices exist.
+            try:
+                continuity_board = await load_or_init_session_board(
+                    None, crew_session_id or "ephemeral"
+                )
+            except Exception:
+                continuity_board = None
+
         primary_context = f"{backend_primary} {user_message}".lower()
         model_route = self.provider.resolve_model_route(
             scene_context=primary_context,
@@ -2715,48 +2693,77 @@ class DirectorAgent:
             context.get("modelId"),
             fallback=model_route,
         )
-        try:
-            raw = await self.provider.call_model(messages, model_route)
-        except Exception as exc:
-            # Fallback: generate minimal debate logs
-            fallback_reply = json.dumps([{
-                "character_id": backend_primary,
-                "content": f"[Model error — fallback response: {exc}]",
-                "emotion_state": "calm",
-                "gif_search_query": f"{backend_primary.lower()} calm",
-                "thinking": None,
-                "tool_executed": None,
-                "tool_log": None,
-            }])
-            raw = fallback_reply
-        # Parse the debate logs
-        debate_logs = self._parse_crew_debate_logs(raw, participants_backend)
-        if not debate_logs:
-            # Player-lab 2026-09-09: a parse miss used to return an EMPTY
-            # debate after the chat was already billed (crew costs 2) — the
-            # player's question just hung with no reply and no error. Never
-            # return zero logs: degrade to a single visible line. The raw
-            # text may be prose or fence-wrapped JSON; a bare fence strip is
-            # enough for a degraded display, and if the sanitizer reduces it
-            # to nothing (all stage directions), say so explicitly.
-            fallback_raw = re.sub(r"```[a-z]*\n?|```", "", raw.strip())
-            fallback_text = (
-                sanitize_speak_content(fallback_raw)[:800]
-                or "(The debate stalled mid-generation — try again.)"
+        audience = [BACKEND_TO_FRONTEND_ID.get(n, n) for n in participants_backend]
+        prior_lines: list[str] = []
+        debate_logs: list[dict[str, Any]] = []
+        last_prompt_block = ""
+        for backend_name in participants_backend:
+            char_cls = CHARACTER_AGENTS.get(backend_name)
+            if char_cls is None:
+                continue
+            rel = relation if backend_name == backend_primary else "crew peer"
+            actor_view = compile_actor_view(
+                backend_name,
+                relation=rel,
+                session_id=crew_session_id,
+                play_mode="crew",
+                era=chat_era,
+                audience_ids=audience,
+                board=continuity_board,
             )
+            last_prompt_block = actor_view.prompt_block()
+            user_msg = (
+                f"{user_message}\n\n"
+                f"[Reply language: {target_language} only.]\n"
+                f"{_language_directive(language)}\n"
+                f"You are {backend_name} in a crew scene. Speak only as yourself.\n"
+            )
+            if prior_lines:
+                user_msg += "Already said in this crew beat (do not restart):\n" + "\n".join(prior_lines) + "\n"
+            try:
+                accepted = await generate_accepted_turn(
+                    char_cls(self.provider),
+                    actor_view=actor_view,
+                    user_message=user_msg,
+                    context=ctx_messages,
+                    model_route=model_route,
+                    backend_id=backend_name,
+                    board=continuity_board,
+                    world_mode=context.get("world_mode") or "alternate",
+                    voice_example=context.get("voiceExample"),
+                )
+            except TurnGenerationError:
+                logger.warning("Crew turn failed for %s", backend_name)
+                continue
+            if accepted is None:
+                continue
+            result = accepted.result
+            line = str(result.get("reply_text") or "").strip()
+            if not line:
+                continue
+            prior_lines.append(f"{backend_name}: {line}")
+            debate_logs.append({
+                "sender": BACKEND_TO_FRONTEND_ID.get(backend_name, backend_name.lower().split()[0]),
+                "text": line,
+                "emotion": result.get("emotion_state"),
+                "gifQuery": result.get("gif_search_query"),
+                "thinking": result.get("thinking"),
+                "tool_executed": result.get("tool_executed"),
+                "tool_log": result.get("tool_log"),
+                "policy_version": accepted.policy_version,
+            })
+        if not debate_logs:
             debate_logs = [{
-                "sender": backend_primary,
-                "text": fallback_text,
+                "sender": BACKEND_TO_FRONTEND_ID.get(backend_primary, "walter"),
+                "text": "(The debate stalled mid-generation — try again.)",
                 "emotion": "tense",
                 "gifQuery": None,
                 "thinking": None,
                 "tool_executed": None,
                 "tool_log": None,
             }]
-        # Map back to frontend IDs
-        for log in debate_logs:
-            char_id = log.pop("character_id", log.get("sender", "walter"))
-            log["sender"] = BACKEND_TO_FRONTEND_ID.get(char_id, char_id.lower().split()[0])
+        # Expose the last speaker's compiled view for tests (full input, not a slice).
+        self._last_crew_actor_prompts = last_prompt_block
         return {
             "participants": participants_frontend,
             "scene_goal": f"Crew debate: {user_message[:80]}",

@@ -96,26 +96,17 @@ class TestB5_CrewChat:
 
     async def test_crew_chat_returns_debate_logs(self, director, mock_provider):
         """Given crew mode with valid LLM response, debate_logs is non-empty."""
-        mock_provider.call_model.return_value = json.dumps([
-            {
-                "character_id": "Walter White",
-                "content": "We need to discuss the lab situation.",
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(json.dumps({
+                "reply_text": "We need to discuss the lab situation.",
                 "emotion_state": "tense",
                 "gif_search_query": "walter white serious",
                 "thinking": "This is not ideal.",
+                "action": {"verb": "idle_tense"},
                 "tool_executed": None,
                 "tool_log": None,
-            },
-            {
-                "character_id": "Jesse Pinkman",
-                "content": "Yeah, what he said.",
-                "emotion_state": "anxious",
-                "gif_search_query": "jesse pinkman nervous",
-                "thinking": None,
-                "tool_executed": None,
-                "tool_log": None,
-            },
-        ])
+            }))
+        )
         context = {
             "mode": "crew",
             "history": [],
@@ -130,8 +121,18 @@ class TestB5_CrewChat:
             assert len(log["text"]) > 0, "Debate log entry has empty text"
 
     async def test_crew_chat_parses_fenced_json(self, director, mock_provider):
-        """Given LLM wraps JSON in code fence, it is still parsed."""
-        mock_provider.call_model.return_value = '```json\n[\n  {\n    "character_id": "Gus Fring",\n    "content": "Let us discuss business.",\n    "emotion_state": "calm",\n    "gif_search_query": "gus fring calm",\n    "thinking": null,\n    "tool_executed": null,\n    "tool_log": null\n  }\n]\n```'
+        """Independent crew turns still publish speakable lines."""
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(json.dumps({
+                "reply_text": "Let us discuss business.",
+                "emotion_state": "calm",
+                "gif_search_query": "gus fring calm",
+                "thinking": None,
+                "action": {"verb": "idle_tense"},
+                "tool_executed": None,
+                "tool_log": None,
+            }))
+        )
         context = {
             "mode": "crew",
             "history": [],
@@ -146,7 +147,9 @@ class TestB5_CrewChat:
 
     async def test_crew_chat_handles_malformed_json(self, director, mock_provider):
         """Given LLM returns garbage, crew chat does not crash."""
-        mock_provider.call_model.return_value = "This is not JSON at all, sorry!"
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr("This is not JSON at all, sorry!")
+        )
         context = {
             "mode": "crew",
             "history": [],
@@ -167,19 +170,22 @@ class TestLoop7_CrewVoiceInjection:
     retain distinct voices in the same LLM call."""
 
     async def test_crew_chat_injects_character_voices(self, director, mock_provider):
-        """Given crew mode, the system prompt should include Walter and
-        Jesse's voice guides when both are participants."""
-        mock_provider.call_model.return_value = json.dumps([
-            {
-                "character_id": "Walter White",
-                "content": "We do things precisely.",
+        """Each crew speaker receives their own compiled policy, not a shared dump."""
+        captured: list = []
+
+        async def _tools(messages, *args, **kwargs):
+            captured.append(messages)
+            return _mr(json.dumps({
+                "reply_text": "We do things precisely.",
                 "emotion_state": "tense",
                 "gif_search_query": "walter white serious",
                 "thinking": None,
+                "action": {"verb": "idle_tense"},
                 "tool_executed": None,
                 "tool_log": None,
-            },
-        ])
+            }))
+
+        mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
         context = {
             "mode": "crew",
             "history": [],
@@ -189,30 +195,25 @@ class TestLoop7_CrewVoiceInjection:
         }
         result = await director._handle_crew_chat("walter", "What's the plan?", context)
         assert len(result["debate_logs"]) >= 1
-        # Verify the call_model received a system prompt with voice guides
-        call_args = mock_provider.call_model.call_args
-        assert call_args is not None
-        messages = call_args.args[0]
-        system_content = messages[0]["content"]
-        # Should include CREW_CHAT_SYSTEM_PROMPT base
-        assert "Director" in system_content or "multi-character" in system_content
-        # Should include character voice guides for participants
-        assert "Walter White" in system_content or "walter" in system_content.lower()
+        assert captured
+        blob = json.dumps(captured[0], ensure_ascii=False)
+        assert "You are Walter White" in blob or "IDENTITY" in blob
+        assert "CHARACTER VOICE GUIDES" not in blob
 
     async def test_crew_chat_graceful_degrade_on_prompt_error(self, director, mock_provider):
         """Given a character's system_prompt() raises, crew chat should
         still work with just the other characters' voices."""
-        mock_provider.call_model.return_value = json.dumps([
-            {
-                "character_id": "Jesse Pinkman",
-                "content": "Yo, science!",
+        mock_provider.call_model_with_tools = AsyncMock(
+            return_value=_mr(json.dumps({
+                "reply_text": "Yo, science!",
                 "emotion_state": "anxious",
                 "gif_search_query": "jesse pinkman nervous",
                 "thinking": None,
+                "action": {"verb": "idle_tense"},
                 "tool_executed": None,
                 "tool_log": None,
-            },
-        ])
+            }))
+        )
         context = {
             "mode": "crew",
             "history": [],
