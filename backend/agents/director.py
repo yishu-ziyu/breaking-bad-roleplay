@@ -26,12 +26,17 @@ from agents.dubbing_rewrite import rewrite_dubbing_in_events
 from agents.narrative_contracts import (
     ActionProposal,
     BeatContract,
-    ensure_actor_on_contract,
     synthesize_beat_contract,
     try_parse_beat_contract,
     turn_proposal_from_character_result,
     upsert_agent_act_from_turn,
     validate_turn_against_contract_basic,
+)
+from agents.turn_acceptance import (
+    drop_character_group,
+    revalidate_events_after_rewrite,
+    should_publish_turn,
+    strip_unverified_effects,
 )
 from scenes.action_ontology import map_action_verb
 from scenes.state_reducer import apply_validated_turn
@@ -95,6 +100,7 @@ STATUS_I18N = {
         "no_beats": "The generated outline contained no playable beats.",
         "beat_llm_failed": "Beat {n} — LLM call failed. Please check LLM service (current: {route}).",
         "beat_parse_failed": "Story generation failed. The model returned unparseable content. Retry or switch models (current: {route}).",
+        "turn_rejected": "A character turn could not be published. Retry this beat.",
     },
     "zh": {
         "analysing": "导演正在分析任务…",
@@ -105,6 +111,7 @@ STATUS_I18N = {
         "no_beats": "生成的大纲没有可玩的剧情节点。",
         "beat_llm_failed": "第 {n} 拍生成失败。请检查模型服务（当前: {route}）。",
         "beat_parse_failed": "剧情生成异常。AI 返回了无法解析的内容，请重试或切换模型（当前: {route}）。",
+        "turn_rejected": "有一句角色台词未能发布。请重试这一拍。",
     },
 }
 
@@ -1643,6 +1650,7 @@ class DirectorAgent:
         # Rewrite BEFORE any yield so UI never streams Director-generic mind/act.
         # ------------------------------------------------------------------
         prior_spoken_lines: list[dict[str, str]] = []
+        character_failures: list[str] = []
         i = 0
         while i < len(events):
             evt = events[i]
@@ -1856,8 +1864,6 @@ class DirectorAgent:
                         turn = turn.model_copy(
                             update={"action": ActionProposal(verb="idle_tense")}
                         )
-                    # Speakers implied by director drafts are always legal cast.
-                    beat_contract = ensure_actor_on_contract(beat_contract, character_id)
                     basic = validate_turn_against_contract_basic(beat_contract, turn)
                     world_mode = parse_world_mode(
                         context.get("world_mode") or context.get("worldMode")
@@ -1868,7 +1874,7 @@ class DirectorAgent:
                         board=continuity_board,
                         world_mode=world_mode,
                     )
-                    v_ok = basic.ok and world.ok
+                    v_ok = should_publish_turn(basic, world)
                     if not v_ok:
                         logger.warning(
                             "Beat %d world/turn validation failed for %s mode=%s: %s",
@@ -1877,26 +1883,17 @@ class DirectorAgent:
                             world_mode,
                             [iss.model_dump() for iss in (basic.issues + world.issues)],
                         )
-                    # Hard knowledge / presence failure: strip monologue that
-                    # leaks, keep sanitized line if still speakable.
-                    if not world.ok and any(
-                        iss.code == "knowledge_boundary" and iss.severity == "error"
-                        for iss in world.issues
-                    ):
-                        turn = turn.model_copy(update={"inner_monologue": ""})
+                        events, i = drop_character_group(
+                            events,
+                            backend_character_id=character_id,
+                            speak_index=i,
+                        )
                         char_thinking = None
-                    if not v_ok and any(
-                        iss.code in ("actor_removed", "empty_turn")
-                        and iss.severity == "error"
-                        for iss in (basic.issues + world.issues)
-                    ):
-                        # Do not commit speech for dead/removed actors.
-                        reply = ""
-                        turn = turn.model_copy(update={"line": "", "inner_monologue": ""})
-                        char_thinking = None
+                        continue
+                    turn = strip_unverified_effects(turn)
                     # Commit Turn Proposal → speak fields (SSE-compatible).
-                    reply = sanitize_speak_content(turn.line or reply)
-                    char_thinking = (turn.inner_monologue or char_thinking or "").strip() or None
+                    reply = sanitize_speak_content(turn.line or "")
+                    char_thinking = (turn.inner_monologue or "").strip() or None
                     evt_data = {
                         **evt_data,
                         "content": reply,
@@ -1910,21 +1907,17 @@ class DirectorAgent:
                         "subtext": turn.subtext or None,
                         "relationship_tactic": turn.relationship_tactic or None,
                         "private_goal": turn.private_goal or None,
-                        "turn_validation_ok": v_ok,
+                        "turn_validation_ok": True,
                         "world_mode": world_mode,
                         "action_source": "character_policy",
                     }
-                    # Soft critic scoring was removed: critic_score was emitted
-                    # but never read anywhere (dead field), so the call is gone.
-                    # Character Policy action overwrites/inserts agent_act.
                     events, i = upsert_agent_act_from_turn(
                         events,
                         backend_character_id=character_id,
                         turn=turn,
                         speak_index=i,
                     )
-                    # Deterministic board commit only when hard validation passed.
-                    if v_ok and continuity_board is not None:
+                    if continuity_board is not None:
                         try:
                             continuity_board = apply_validated_turn(
                                 continuity_board, turn, beat_index=beat_index
@@ -1937,15 +1930,31 @@ class DirectorAgent:
                             )
                 except Exception:
                     logger.warning(
-                        "Character sub-agent call failed for %s, using LLM dialogue fallback",
+                        "Character sub-agent call failed for %s; dropping unpublished draft",
                         character_id,
                     )
+                    character_failures.append(character_id)
+                    events, i = drop_character_group(
+                        events,
+                        backend_character_id=character_id,
+                        speak_index=i,
+                    )
+                    char_thinking = None
+                    continue
 
-            # Always purify speak content (director draft fallback path included).
+            # Always purify speak content (accepted turns only reach here).
             cleaned = sanitize_speak_content(str(evt_data.get("content") or ""))
             if _norm_lang(language) == "zh":
                 cleaned = normalize_zh_character_names(cleaned)
             evt_data = {**evt_data, "content": cleaned}
+            if not cleaned:
+                events, i = drop_character_group(
+                    events,
+                    backend_character_id=character_id,
+                    speak_index=i,
+                )
+                char_thinking = None
+                continue
             events[i] = {**evt, "type": "agent_speak", "data": evt_data}
 
             if char_thinking:
@@ -1991,10 +2000,29 @@ class DirectorAgent:
                 model_route=beat_model_route,
                 language=language,
             )
+            world_mode = parse_world_mode(
+                context.get("world_mode") or context.get("worldMode")
+            )
+            events = revalidate_events_after_rewrite(
+                events,
+                contract=beat_contract,
+                board=continuity_board,
+                world_mode=world_mode,
+            )
 
         # ------------------------------------------------------------------
         # Phase 2 — yield enriched events (think already Character-bound)
         # ------------------------------------------------------------------
+        if character_failures:
+            yield AgentEvent(
+                type="error",
+                data={
+                    "message": _status_message("turn_rejected", language),
+                    "failed_characters": character_failures,
+                    "retryable": True,
+                },
+                model_route=beat_model_route,
+            )
         for evt in events:
             evt_type = evt.get("type", "")
             evt_data = evt.get("data", {}) if isinstance(evt.get("data"), dict) else {}
@@ -2466,6 +2494,11 @@ class DirectorAgent:
         language: str = context.get("language", "en")
         target_language = "Simplified Chinese" if language == "zh" else "English"
         llm_provider: str = context.get("llmProvider", "stepfun")
+        session_id = str(
+            context.get("sessionId")
+            or context.get("session_id")
+            or ""
+        ).strip()
         # Resolve model route
         scene_context = f"{backend_id} {relation} {user_message}".lower()
         model_route = self.provider.resolve_model_route(
@@ -2503,28 +2536,43 @@ class DirectorAgent:
                 "Do not copy the reference language; translate the style into "
                 f"{target_language}: {voice_example}]"
             )
-        # Direct chat has no per-player world table. Loading session_id IS NULL
-        # dossiers shared one player's facts with every other player.
-        dossier_context = ""
-        # Optional era-bound intelligence pack (Direct chat when era is set).
-        try:
-            from agents.character_intelligence import format_intelligence_prompt_block
+        # Direct used to skip session boards (NULL session_id leaked dossiers
+        # across players). Load only when a session id is present.
+        board = None
+        chat_era = str(
+            context.get("era")
+            or context.get("board_era")
+            or context.get("eraId")
+            or ""
+        )
+        if session_id and session_factory is not None:
+            try:
+                from agents.continuity_board import load_or_init_session_board
 
-            chat_era = str(
-                context.get("era")
-                or context.get("board_era")
-                or context.get("eraId")
-                or ""
-            )
-            intel_block = format_intelligence_prompt_block(backend_id, chat_era)
-            if intel_block:
-                dossier_context = (
-                    f"{dossier_context}\n\n{intel_block}".strip()
-                    if dossier_context
-                    else intel_block
+                load_kwargs: dict[str, Any] = {}
+                if chat_era:
+                    load_kwargs["era"] = chat_era
+                board = await load_or_init_session_board(
+                    session_factory,
+                    session_id,
+                    **load_kwargs,
                 )
-        except Exception:
-            logger.debug("Character intelligence inject failed for direct %s", backend_id)
+                if not chat_era and isinstance(board, dict):
+                    chat_era = str(board.get("era") or "")
+            except Exception:
+                logger.debug("Direct session board load failed for %s", session_id)
+                board = None
+        from agents.character_policy import compile_actor_view
+
+        actor_view = compile_actor_view(
+            backend_id,
+            relation=relation,
+            session_id=session_id,
+            play_mode="direct",
+            era=chat_era,
+            board=board,
+        )
+        dossier_context = actor_view.prompt_block()
         # Instantiate character and call structured respond
         agent = character_cls(self.provider)
         result = await agent.respond_structured(

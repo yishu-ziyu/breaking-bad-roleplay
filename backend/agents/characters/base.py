@@ -235,7 +235,12 @@ class BaseCharacter(ABC):
         DB), it is injected as a RELATIONSHIP CONTEXT block so the
         character is aware of the player's history with them.
         """
-        system_prompt = self.system_prompt()
+        # When the caller already compiled an ActorView into dossier_context
+        # (it starts with the policy card), do not prepend the card twice.
+        if dossier_context and dossier_context.lstrip().startswith("You are "):
+            system_prompt = ""
+        else:
+            system_prompt = self.system_prompt()
         extras: list[str] = []
         if dossier_context:
             extras.append(dossier_context)
@@ -281,19 +286,8 @@ class BaseCharacter(ABC):
                 return parsed
             raw = await self.provider.call_model(messages, model_route)
         except Exception:
-            logger.exception(
-                "%s LLM call failed, using fallback reply",
-                self.__class__.__name__,
-            )
-            raw = json.dumps({
-                "reply_text": "...",
-                "emotion_state": "calm",
-                "gif_search_query": None,
-                "thinking": None,
-                "action": None,
-                "tool_executed": None,
-                "tool_log": None,
-            })
+            logger.exception("%s LLM call failed", self.__class__.__name__)
+            raise
 
         return _extract_structured(raw)
 

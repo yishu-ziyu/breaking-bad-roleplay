@@ -187,6 +187,16 @@ def validate_world_turn(
                         severity="error",
                     )
                 )
+        if any(str(fx).strip() for fx in (turn.action.effects or [])):
+            issues.append(
+                ValidationIssue(
+                    code="unverified_effect",
+                    message="action.effects are free-text claims and cannot enter the board",
+                    actor_id=actor,
+                    field="action.effects",
+                    severity="warn",
+                )
+            )
 
     # --- knowledge boundary ---
     utterance = " ".join(

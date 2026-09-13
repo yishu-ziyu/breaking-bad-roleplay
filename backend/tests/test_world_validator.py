@@ -109,5 +109,5 @@ def test_reducer_applies_exit_and_line_fact():
     assert "walter" not in out["present_cast"]
     assert "saul" in out["present_cast"]
     texts = [f["text"] for f in out["shared_facts"]]
-    assert any("Walter left" in t for t in texts)
+    assert not any("Walter left" in t for t in texts)
     assert any("said:" in t for t in texts)

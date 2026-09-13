@@ -599,6 +599,24 @@ class TestCycle4_PerspectiveSemantics:
             {"type": "world_state_delta", "data": {"deltas": []}, "recommended_model": "stepfun/step-3.7-flash"},
         ]
         mock_provider.call_model = AsyncMock(return_value=json.dumps(llm_events))
+
+        async def _tools(messages, *args, **kwargs):
+            blob = json.dumps(messages, ensure_ascii=False)
+            if "Jesse Pinkman" in blob or "jesse" in blob.lower():
+                line = "Yeah, science!"
+            else:
+                line = "Sit down."
+            return _mr(json.dumps({
+                "reply_text": line,
+                "emotion_state": "tense",
+                "gif_search_query": "x",
+                "thinking": "Stay in it.",
+                "action": {"verb": "idle_tense"},
+                "tool_executed": None,
+                "tool_log": None,
+            }))
+
+        mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
         mock_provider.resolve_model_route = MagicMock(return_value="stepfun/step-3.7-flash")
 
         events_yielded = []
@@ -1178,13 +1196,29 @@ class TestCycle25_MessageSurvivesDossierFailure:
         ])
         # First call_model → beat events JSON; subsequent calls → character
         # sub-agent dialogue (one per agent_speak event).
-        mock_provider.call_model = AsyncMock(
-            side_effect=[
-                beat_events_json,
-                "I am the one who knocks.",
-                "Yeah, science!",
-            ]
-        )
+        mock_provider.call_model = AsyncMock(side_effect=[beat_events_json])
+
+        async def _tools(messages, *args, **kwargs):
+            blob = json.dumps(messages, ensure_ascii=False)
+            if "Jesse Pinkman" in blob:
+                line, emotion, gif = "Yeah, science!", "calm", "jesse pinkman excited"
+            else:
+                line, emotion, gif = (
+                    "I am the one who knocks.",
+                    "angry",
+                    "walter white angry determined",
+                )
+            return _mr(json.dumps({
+                "reply_text": line,
+                "emotion_state": emotion,
+                "gif_search_query": gif,
+                "thinking": "Stay in it.",
+                "action": {"verb": "idle_tense"},
+                "tool_executed": None,
+                "tool_log": None,
+            }))
+
+        mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
         mock_provider.resolve_model_route = MagicMock(
             return_value="stepfun/step-3.7-flash"
         )

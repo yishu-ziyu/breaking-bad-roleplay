@@ -35,21 +35,9 @@ def apply_validated_turn(
             cast = list(cast) + [actor]
             out["present_cast"] = cast
 
-        for i, effect in enumerate(turn.action.effects or []):
-            text = str(effect).strip()
-            if not text:
-                continue
-            facts.append(
-                {
-                    "id": f"beat{beat_index}_{actor}_fx_{i}",
-                    "text": text,
-                    "known_by": list(cast) if cast else [actor],
-                    "hidden_from": [],
-                    "irreversible": False,
-                    "source_beat": beat_index,
-                    "source": "state_reducer",
-                }
-            )
+        # Free-text action.effects are unverified claims. Ontology verbs
+        # (enter/exit) already mutate present_cast above; do not treat
+        # model-authored effect strings as world facts.
 
     # Spoken commitment becomes a shared room fact for those present.
     line = (turn.line or "").strip()
