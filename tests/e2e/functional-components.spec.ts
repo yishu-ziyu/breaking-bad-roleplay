@@ -221,3 +221,38 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
 
   await expect(page.locator('.story-manuscript__dialogue', { hasText: 'back online' })).toBeVisible()
 })
+
+test('FC-5: model-facing tool payloads are never rendered in the player chat', async ({ page }) => {
+  // Regression guard. The chat used to render a `.tool-pill` showing the tool
+  // name plus its raw return string (`tool_executed` / `tool_log`). Those are
+  // key=value payloads written for the model's tool loop, not player copy, so
+  // the character's reply must be the only thing the player sees.
+  await page.route('**/api/chat', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        reply_text: 'But I have a good bottle of wine here.',
+        emotion_state: 'suspicious',
+        gif_search_query: null,
+        thinking: 'Keep the pressure on.',
+        tool_executed: 'case_pressure_reader',
+        tool_log: 'subject=jesse pinkman pressure=HOT - street noise, weak alibis, keep pressure on',
+        updated_relationship_state: null,
+      }),
+    })
+  })
+
+  await gotoFresh(page)
+  await sendChatMessage(page, 'Where were you last night?')
+
+  // the reply is the product (the mocked text is language-independent)
+  const reply = page.locator('.msg--char').last().locator('.msg-body p').first()
+  await expect(reply).toBeVisible()
+  await expect(reply).toContainText('good bottle of wine')
+
+  // the tool machinery must not surface anywhere in the conversation
+  await expect(page.locator('.tool-pill')).toHaveCount(0)
+  await expect(page.locator('.chat-stream')).not.toContainText('case_pressure_reader')
+  await expect(page.locator('.chat-stream')).not.toContainText('pressure=HOT')
+})

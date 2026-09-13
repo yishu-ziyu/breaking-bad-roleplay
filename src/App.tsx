@@ -2150,12 +2150,10 @@ function App() {
                       {msg.emotion && !msg.id.startsWith('opener-') && <span>{msg.emotion}</span>}
                     </div>
                     <p>{msg.text}</p>
-                    {msg.toolExecuted && (
-                      <div className="tool-pill">
-                        <span>{t.toolLabel}: <code>{msg.toolExecuted}</code></span>
-                        {msg.toolLog && <p>{msg.toolLog}</p>}
-                      </div>
-                    )}
+                    {/* tool_executed / tool_log are model-facing key=value strings
+                        fed back into the tool loop — not player copy. They stay on
+                        the message for the agent harness, but must not be rendered
+                        in the player's chat. */}
                     {!isUser && (
                       <VoicePlayer
                         text={msg.text}
