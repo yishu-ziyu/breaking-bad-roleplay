@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveGifUrl, resetGifResolverState, COOLDOWN_SIZE } from './gifResolver.ts'
+import { resolveGifUrl, resetGifResolverState, COOLDOWN_SIZE, isGunMemeQuery, sanitizeGifQuery } from './gifResolver.ts'
 import { roleAssets } from '../roleAssets.ts'
 
 // Mock localStorage before module code uses it
@@ -167,5 +167,23 @@ describe('gifResolver', () => {
     const url = resolveGifUrl('walter', 'tense', null, false)
     assert.ok(url, 'skipGif=false should return a GIF URL')
     assert.ok(url.startsWith('https://'))
+  })
+
+  it('gun-meme queries sanitize to tense and skip confrontation GIFs', () => {
+    assert.equal(isGunMemeQuery('pointing gun'), true)
+    assert.equal(isGunMemeQuery('jesse pistol closeup'), true)
+    assert.equal(isGunMemeQuery('举枪特写'), true)
+    assert.equal(sanitizeGifQuery('pointing gun'), 'tense')
+    assert.equal(isGunMemeQuery('tense stare'), false)
+
+    resetGifResolverState()
+    const banned = roleAssets.jesse.gifPools
+      .filter((g) => g.tags.includes('confrontation'))
+      .map((g) => g.url)
+    for (let i = 0; i < 12; i++) {
+      const url = resolveGifUrl('jesse', null, 'pointing gun')
+      assert.ok(url, `expected a GIF on pick ${i}`)
+      assert.ok(!banned.includes(url), `gun-meme query returned confrontation GIF ${url}`)
+    }
   })
 })

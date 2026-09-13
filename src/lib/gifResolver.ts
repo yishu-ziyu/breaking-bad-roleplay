@@ -96,6 +96,19 @@ function incrementWeight(url: string) {
   saveWeights(map)
 }
 
+const GUN_MEME_RE = /gun|pistol|rifle|weapon|firearm|举枪|手枪/i
+
+export function isGunMemeQuery(query: string | null | undefined): boolean {
+  if (!query) return false
+  return GUN_MEME_RE.test(query)
+}
+
+export function sanitizeGifQuery(query: string | null | undefined): string | null | undefined {
+  if (query == null || query === '') return query
+  if (isGunMemeQuery(query)) return 'tense'
+  return query
+}
+
 function tokenize(query: string | null | undefined): string[] {
   if (!query) return []
   return query.toLowerCase().split(/[^a-z0-9一-龥]+/).filter(Boolean)
@@ -187,10 +200,15 @@ export function resolveGifUrl(
   skipGif?: boolean,
 ): string | null {
   if (skipGif) return null
-  const pool = roleAssets[characterId]?.gifPools ?? []
+  const fullPool = roleAssets[characterId]?.gifPools ?? []
+  const pool = isGunMemeQuery(gifQuery)
+    ? (fullPool.filter((g) => !g.tags.includes('confrontation')).length > 0
+      ? fullPool.filter((g) => !g.tags.includes('confrontation'))
+      : fullPool)
+    : fullPool
   if (pool.length === 0) return null
 
-  const candidates = candidateTags(gifQuery, emotion)
+  const candidates = candidateTags(sanitizeGifQuery(gifQuery) ?? null, emotion)
   const recent = parseRecent()[characterId] ?? []
   const chooseAndRecord = (matches: RoleGifAsset[]): string | null => {
     if (matches.length === 0) return null

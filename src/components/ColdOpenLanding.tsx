@@ -45,6 +45,10 @@ export type ColdOpenLandingProps = {
   starting?: boolean
   /** Connection / start failure message (connection-gate). Shown as alert banner. */
   error?: string | null
+  /** Skip Story cold-open and enter Direct chat. */
+  onEnterDirect?: () => void
+  /** Skip Story cold-open and enter Crew debate. */
+  onEnterCrew?: () => void
 }
 
 const PRIMARY_CHOICES: ColdOpenChoiceId[] = ['find_jesse', 'clean_scene', 'call_saul']
@@ -81,6 +85,8 @@ export function ColdOpenLanding({
   onLanguageChange,
   starting = false,
   error = null,
+  onEnterDirect,
+  onEnterCrew,
 }: ColdOpenLandingProps) {
   const [phase, setPhase] = useState<Phase>('crisis')
   const [selectedChoice, setSelectedChoice] = useState<ColdOpenChoiceId | null>(null)
@@ -200,6 +206,34 @@ export function ColdOpenLanding({
               {BRIEF_COPY[language].title}
             </h2>
             <p className="cold-open__brief-sub">{BRIEF_COPY[language].sub}</p>
+            {(onEnterDirect || onEnterCrew) && (
+              <div
+                className="cold-open__play-modes"
+                role="group"
+                aria-label={zh ? '其他玩法' : 'Other play'}
+              >
+                {onEnterDirect && (
+                  <button
+                    type="button"
+                    className="cold-open__play-mode"
+                    onClick={onEnterDirect}
+                    disabled={starting}
+                  >
+                    {zh ? '单人场景' : 'Direct Chat'}
+                  </button>
+                )}
+                {onEnterCrew && (
+                  <button
+                    type="button"
+                    className="cold-open__play-mode"
+                    onClick={onEnterCrew}
+                    disabled={starting}
+                  >
+                    {zh ? '群像会谈' : 'Crew Debate'}
+                  </button>
+                )}
+              </div>
+            )}
             <div className="cold-open__divider" aria-hidden="true" />
             <p className="cold-open__brief-q">{BRIEF_COPY[language].question}</p>
             <div className="cold-open__brief-answers" role="group" aria-label={BRIEF_COPY[language].question}>

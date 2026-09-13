@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     platform_daily_credit_budget: int = 5000
     # Burst shield: max billable platform ops per IP per rolling hour.
     platform_rate_limit_per_hour: int = 40
+    # Developers: leave the guest meter off so playable paths are not
+    # killed by 额度用尽. Set QUOTA_ENFORCED=true to restore the guest 8-count.
+    quota_enforced: bool = False
     # Salt for hashing client IPs in quota identity (not a secret key material).
     quota_ip_salt: str = "abq-quota-v1"
 

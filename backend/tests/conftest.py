@@ -32,6 +32,7 @@ def _reset_platform_quota():
     quota_mod.settings.free_credits_user = 10_000  # type: ignore[attr-defined]
     quota_mod.settings.platform_daily_credit_budget = 1_000_000  # type: ignore[attr-defined]
     quota_mod.settings.platform_rate_limit_per_hour = 100_000  # type: ignore[attr-defined]
+    quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
     yield
     with mem._lock:
         mem._used.clear()

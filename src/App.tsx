@@ -34,6 +34,8 @@ import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { ElementSquare } from './lib/ElementSquare'
 import { resolveGifUrl } from './lib/gifResolver'
+import { applyPlaySurfaceToStorage } from './lib/playEntry'
+import { quotaBlocksPlay } from './lib/quotaPolicy'
 import { buildStorySceneBill, holdsSceneCurtain } from './lib/storyScene'
 import {
   buildReadingBlocks,
@@ -716,6 +718,12 @@ function App() {
   migrateProductSurfaceBeforePaint()
   // P2: merge legacy view+mode into surface before React hydrates it.
   migrateSurfaceBeforePaint()
+  const playSurface = applyPlaySurfaceToStorage(window.location.search, writeLs)
+  if (playSurface) {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('surface')
+    window.history.replaceState(null, '', url)
+  }
 
   // Language: use browser preference on first visit, then persist
   const defaultLanguage: Language = navigator.language.startsWith('zh') ? 'zh' : 'en'
@@ -1280,7 +1288,7 @@ function App() {
       })
       if (!res.ok) {
         const quotaErr = await parseQuotaError(res.clone())
-        if (quotaErr) {
+        if (quotaErr && quotaBlocksPlay({ open: quota.open, byok: quota.byok, remaining: quota.remaining })) {
           connection.setSheetOpen(true)
           void quota.refresh()
           throw new Error(
@@ -1289,6 +1297,9 @@ function App() {
                 ? '今日免费次数已用完。连接你自己的密钥继续。'
                 : 'Free demo credits used up. Connect your own key to continue.'),
           )
+        }
+        if (quotaErr) {
+          void quota.refresh()
         }
         const detail = await res.json().catch(() => ({ error: 'Server error' }))
         const msg =
@@ -1412,7 +1423,7 @@ function App() {
         el.style.height = `${Math.min(el.scrollHeight, 140)}px`
       }
     }
-  }, [message, isSending, messages, selectedCharId, relation, mode, language, connection, story, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key])
+  }, [message, isSending, messages, selectedCharId, relation, mode, language, connection, story, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key, quota])
 
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {
@@ -1588,6 +1599,12 @@ function App() {
         setHasEnteredWorld(true)
         leaveHomePreview()
       }}
+      onCrew={() => {
+        setLanguage('zh')
+        setSurface('crew')
+        setHasEnteredWorld(true)
+        leaveHomePreview()
+      }}
     />
   }
   if (!hasEnteredWorld) {
@@ -1598,6 +1615,14 @@ function App() {
           knowledgeTrack={knowledgeTrack}
           onKnowledgePick={(t) => setKnowledgeTrack(t)}
           onStart={handleColdOpenStart}
+          onEnterDirect={() => {
+            setSurface('direct')
+            setHasEnteredWorld(true)
+          }}
+          onEnterCrew={() => {
+            setSurface('crew')
+            setHasEnteredWorld(true)
+          }}
           onOpenSettings={() => {
             setColdOpenError(null)
             connection.setSheetOpen(true)
@@ -1733,10 +1758,12 @@ function App() {
           <section className="connection-sidebar-block">
             <span className="field-label">{t.model}</span>
             <ConnectionChip conn={connection} language={language} />
-            <p className={`quota-pill${quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
+            <p className={`quota-pill${!quota.open && quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
               {quota.byok
                 ? (language === 'zh' ? '自备密钥 · 不占平台次数' : 'Your key · not metered')
-                : (language === 'zh'
+                : quota.open
+                  ? (language === 'zh' ? '额度已打开' : 'Quota open')
+                  : (language === 'zh'
                   ? `${quota.tier === 'user' ? '登录赠送' : '游客'} ${quota.remaining}/${quota.limit} 次`
                   : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}/${quota.limit}`)}
             </p>
@@ -1797,12 +1824,14 @@ function App() {
             </div>
             {/* Stage v2 HUD right: credits always on, amber mono (design hud-credits). */}
             <div
-              className={`story-hud__credits${!quota.byok && quota.remaining <= 2 ? ' is-low' : ''}`}
-              title={quota.byok ? undefined : `${quota.remaining}/${quota.limit}`}
+              className={`story-hud__credits${!quota.open && !quota.byok && quota.remaining <= 2 ? ' is-low' : ''}`}
+              title={quota.byok || quota.open ? undefined : `${quota.remaining}/${quota.limit}`}
             >
               {quota.byok
                 ? (language === 'zh' ? '自备密钥 · 不占额度' : 'BYOK · unmetered')
-                : (language === 'zh'
+                : quota.open
+                  ? (language === 'zh' ? '额度已打开' : 'Quota open')
+                  : (language === 'zh'
                   ? `额度 ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`
                   : `CREDITS ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`)}
             </div>
@@ -1875,10 +1904,14 @@ function App() {
             <div className="story-error">
               <p>
                 ⚠{' '}
-                {story.streamFailure?.kind === 'quota'
+                {story.streamFailure?.kind === 'quota' && quotaBlocksPlay({
+                  open: quota.open,
+                  byok: quota.byok,
+                  remaining: quota.remaining,
+                })
                   ? (language === 'zh'
-                    ? '今天的免费体验额度用完了。登录领取早期用户额度，或连接你自己的模型 Key 继续这夜剧情——进度已保存。'
-                    : 'Free demo credits used up for today. Sign in for early-access credits or connect your own key to keep this night going — your progress is saved.')
+                    ? '今天的免费体验额度用完了。登录领取早期用户额度，或连接你自己的模型 Key 继续这场剧情——进度已保存。'
+                    : 'Free demo credits used up for today. Sign in for early-access credits or connect your own key to keep this scene going — your progress is saved.')
                   : story.streamFailure?.kind === 'timeout'
                     ? (language === 'zh'
                       ? '剧情演出中断了 90 秒没有回应。进度已保存——可以直接重试。'
@@ -1889,12 +1922,20 @@ function App() {
                         : 'The connection dropped and auto-reconnect failed. Your progress is saved — retry.')
                       : story.getCharState(selectedCharId).error}
               </p>
-              {story.sessionId && story.streamFailure?.kind !== 'quota' && (
+              {story.sessionId && (story.streamFailure?.kind !== 'quota' || !quotaBlocksPlay({
+                open: quota.open,
+                byok: quota.byok,
+                remaining: quota.remaining,
+              })) && (
                 <button type="button" onClick={story.reconnect}>
                   {language === 'zh' ? '重试演出' : t.reconnect}
                 </button>
               )}
-              {story.streamFailure?.kind === 'quota' && (
+              {story.streamFailure?.kind === 'quota' && quotaBlocksPlay({
+                open: quota.open,
+                byok: quota.byok,
+                remaining: quota.remaining,
+              }) && (
                 <button type="button" onClick={() => connection.setSheetOpen(true)}>
                   {language === 'zh' ? '连接自己的 Key' : 'Connect your own key'}
                 </button>

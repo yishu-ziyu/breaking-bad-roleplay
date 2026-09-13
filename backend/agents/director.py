@@ -491,12 +491,41 @@ _CREW_MENTION_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bschrader\b", "Hank Schrader"),
 )
 
+# CJK names have no word boundary; match as substrings on the original text.
+_CREW_CJK_ALIASES: tuple[tuple[str, str], ...] = (
+    ("沃尔特", "Walter White"),
+    ("杰西", "Jesse Pinkman"),
+    ("古斯", "Gus Fring"),
+    ("迈克", "Mike Ehrmantraut"),
+    ("索尔", "Saul Goodman"),
+    ("斯凯勒", "Skyler White"),
+    ("汉克", "Hank Schrader"),
+)
+
+_GUN_GIF_RE = re.compile(r"gun|pistol|rifle|weapon|firearm|举枪|手枪", re.IGNORECASE)
+
+
+def sanitize_direct_gif_query(query: str | None) -> str | None:
+    """Direct chat must not request gun-meme / pointing-gun shots."""
+    if query is None:
+        return None
+    raw = str(query).strip()
+    if not raw:
+        return query
+    if _GUN_GIF_RE.search(raw):
+        return "tense"
+    return query
+
 
 def crew_participants_from_message(character_id: str, user_message: str, *, cap: int = 3) -> list[str]:
     """Return backend character names for a crew turn (primary first, max cap)."""
     backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
     participants: list[str] = [backend_primary]
-    text_lower = (user_message or "").lower()
+    raw = user_message or ""
+    text_lower = raw.lower()
+    for alias, backend_name in _CREW_CJK_ALIASES:
+        if alias in raw and backend_name not in participants:
+            participants.append(backend_name)
     for pattern, backend_name in _CREW_MENTION_PATTERNS:
         if re.search(pattern, text_lower) and backend_name not in participants:
             participants.append(backend_name)
@@ -2464,7 +2493,8 @@ class DirectorAgent:
         voice_example: str | None = context.get("voiceExample")
         user_msg_with_context = (
             f"{user_message}\n\n"
-            f"[Reply language: {target_language} only.]"
+            f"[Reply language: {target_language} only.]\n"
+            f"{_language_directive(language)}"
         )
         if voice_example:
             user_msg_with_context += (
@@ -2503,14 +2533,26 @@ class DirectorAgent:
             model_route=model_route,
             dossier_context=dossier_context or None,
         )
+        reply_text = result["reply_text"]
+        thinking = result.get("thinking")
+        gif_query = sanitize_direct_gif_query(result.get("gif_search_query"))
+        if _norm_lang(language) == "zh":
+            if _needs_zh_rewrite(str(reply_text or "")):
+                reply_text = await self._translate_one_field_to_zh(
+                    str(reply_text), model_route=model_route
+                )
+            if thinking and _needs_zh_rewrite(str(thinking)):
+                thinking = await self._translate_one_field_to_zh(
+                    str(thinking), model_route=model_route
+                )
         # Compute updated relationship state (lightweight — no DB round-trip
         # for chat mode; frontend holds the local state).
         updated_relationship_state = None
         return {
-            "reply_text": result["reply_text"],
+            "reply_text": reply_text,
             "emotion_state": result["emotion_state"],
-            "gif_search_query": result["gif_search_query"],
-            "thinking": result["thinking"],
+            "gif_search_query": gif_query,
+            "thinking": thinking,
             "tool_executed": result["tool_executed"],
             "tool_log": result["tool_log"],
             "updated_relationship_state": updated_relationship_state,

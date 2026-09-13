@@ -10,8 +10,9 @@ export type QuotaView = {
   used: number
   globalRemaining: number
   byok: boolean
-  /** guest | user | byok */
+  /** guest | user | byok | open */
   tier: string
+  open: boolean
   day: string
   costs: {
     chatDirect: number
@@ -37,7 +38,8 @@ export function useQuota(connectionSessionId: string | null, authUserId?: string
     used: 0,
     globalRemaining: 5000,
     byok: false,
-    tier: 'guest',
+    tier: 'open',
+    open: true,
     day: '',
     costs: defaultCosts,
     loading: true,
@@ -62,6 +64,7 @@ export function useQuota(connectionSessionId: string | null, authUserId?: string
         globalRemaining: Number(data.globalRemaining ?? 0),
         byok: Boolean(data.byok),
         tier: String(data.tier ?? (data.byok ? 'byok' : 'guest')),
+        open: Boolean(data.open) || String(data.tier) === 'open',
         day: String(data.day ?? ''),
         costs: { ...defaultCosts, ...(data.costs || {}) },
         loading: false,
