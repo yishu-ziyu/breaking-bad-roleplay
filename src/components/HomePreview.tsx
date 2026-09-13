@@ -2,7 +2,7 @@ import React from 'react'
 import { characterPortrait as portrait } from '../lib/characterPortraits'
 
 type ChatCharacter = 'walter' | 'jesse' | 'saul' | 'skyler' | 'mike' | 'gus' | 'hank' | 'marie'
-type Props = { onStory: () => void; onChat: (character: ChatCharacter) => void }
+type Props = { onStory: () => void; onChat: (character: ChatCharacter) => void; onCrew: () => void }
 const cast: { id: ChatCharacter; name: string; english: string; description: string }[] = [
   { id: 'walter', name: '沃尔特·怀特', english: 'WALTER WHITE', description: '化学老师。骄傲、精确，习惯掌控局面。' },
   { id: 'jesse', name: '杰西·平克曼', english: 'JESSE PINKMAN', description: '沃尔特的搭档。冲动，重感情。' },
@@ -18,7 +18,7 @@ const sample = [
   { kind: '内心', text: '五分钟。再五分钟他就站起来。把手机翻过去是为了不去数那个没人回的对话框——每次点亮都是沃尔特不在场的证据。' },
   { kind: '台词', text: '两分钟。操，就两分钟。我都快把手机盯穿了……沃尔特肯定在笑我呢。他人呢？啊？他人不在，规矩倒全摆这儿了。' },
 ]
-export function HomePreview({ onStory, onChat }: Props) {
+export function HomePreview({ onStory, onChat, onCrew }: Props) {
   const [shot, setShot] = React.useState(1)
   return <div className="hp" id="top">
     <header className="hp-nav">
@@ -38,7 +38,7 @@ export function HomePreview({ onStory, onChat }: Props) {
         <img src={portrait('walter')} alt="" />
         <span>ABQ Roleplay Lab</span>
       </div>
-      <div className="hp-entry"><button className="hp-primary" onClick={onStory}>开始故事</button><a className="hp-secondary" href="#characters">与角色聊天</a><p>支持中文与英文 · 可先以游客体验</p></div>
+      <div className="hp-entry"><button className="hp-primary" onClick={onStory}>开始故事</button><a className="hp-secondary" href="#characters">与角色聊天</a><button type="button" className="hp-secondary" onClick={onCrew}>群像会谈</button><p>支持中文与英文 · 可先以游客体验</p></div>
       <section className="hp-introduction" id="how" aria-labelledby="hp-intro-title">
         <p className="hp-eyebrow">ABOUT THE GAME</p><h2 id="hp-intro-title">角色对话与互动剧情</h2>
         <p>选择《绝命毒师》中的角色进行单聊，<br className="hp-wide-break" />或扮演角色，通过对话和行动推进故事。</p>

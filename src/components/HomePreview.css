@@ -145,14 +145,16 @@
   background:var(--hp-accent);
   color:#fff7e9
 }
-.hp a.hp-secondary {
+.hp a.hp-secondary,.hp button.hp-secondary {
   color:var(--hp-accent);
-  background:transparent
+  background:transparent;
+  cursor:pointer;
+  font:inherit
 }
 .hp-primary:hover {
   background:#873522
 }
-.hp a.hp-secondary:hover {
+.hp a.hp-secondary:hover,.hp button.hp-secondary:hover {
   background:#e3dbcb
 }
 .hp-entry p {

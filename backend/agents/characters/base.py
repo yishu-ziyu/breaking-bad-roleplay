@@ -42,6 +42,7 @@ RULES:
   is not written inside the line.
 - emotion_state must be exactly one of: calm, tense, angry, fearful, manipulative, guilty, resigned, desperate.
 - gif_search_query must be in English and descriptive enough for image search.
+- Never request guns, pistols, rifles, weapons, or pointing-gun shots; use face and emotion (tense, panic, glare).
 - thinking reveals what the character is really thinking beneath their words
   (inner monologue stays in "thinking", never inside reply_text parentheses).
 - tool_executed and tool_log describe any fictional in-world tool the character used (e.g. "disposal service", "lab inventory check"), or null if none.

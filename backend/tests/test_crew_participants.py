@@ -35,3 +35,26 @@ def test_cap_three():
     )
     assert len(parts) == 3
     assert parts[0] == "Walter White"
+
+
+def test_chinese_names_pull_walter_and_jesse():
+    parts = crew_participants_from_message(
+        "jesse", "沃尔特，杰西刚才说的是真的吗？你们两个谁在撒谎？"
+    )
+    assert parts[0] == "Jesse Pinkman"
+    assert "Walter White" in parts
+
+
+def test_chinese_aliases_pull_each_speaker():
+    cases = (
+        ("jesse", "沃尔特你说话", "Walter White"),
+        ("walter", "杰西刚才说的是真的吗", "Jesse Pinkman"),
+        ("walter", "古斯还在听吗", "Gus Fring"),
+        ("walter", "迈克怎么看", "Mike Ehrmantraut"),
+        ("walter", "索尔你接得住吗", "Saul Goodman"),
+        ("walter", "斯凯勒知道多少", "Skyler White"),
+        ("walter", "汉克要是打电话过来", "Hank Schrader"),
+    )
+    for primary, message, expected in cases:
+        parts = crew_participants_from_message(primary, message)
+        assert expected in parts, f"{message!r} did not pull {expected}: {parts}"

@@ -117,6 +117,7 @@ class TestRedisStoreRefundFallback:
 
 class TestEnforceRecordsCost:
     async def test_allowed_story_beat_snapshot_carries_cost(self):
+        quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
         quota_mod.settings.free_credits_guest = 8  # type: ignore[attr-defined]
         quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
         req = _FakeRequest(ip="10.0.1.5")
@@ -137,6 +138,7 @@ class TestEnforceRecordsCost:
 
 class TestRefundPlatformQuota:
     async def test_refunds_charged_snapshot(self):
+        quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
         quota_mod.settings.free_credits_guest = 8  # type: ignore[attr-defined]
         quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
         req = _FakeRequest(ip="10.0.2.5")

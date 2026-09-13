@@ -561,6 +561,7 @@ async def get_quota(
         "globalRemaining": snap.global_remaining,
         "byok": snap.byok,
         "tier": snap.tier,
+        "open": bool(snap.open) or snap.tier == "open",
         "costs": {
             "chatDirect": 1,
             "chatCrew": 2,

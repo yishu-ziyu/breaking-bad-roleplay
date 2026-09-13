@@ -144,8 +144,10 @@ class QuotaSnapshot:
     global_limit: int
     global_remaining: int
     byok: bool = False
-    # "guest" | "user" | "byok"
+    # "guest" | "user" | "byok" | "open"
     tier: str = "guest"
+    # True when the guest meter is not gating play (developers / QUOTA_ENFORCED=false).
+    open: bool = False
     # P2 (full-stack review): credits actually charged by
     # enforce_platform_quota for this call, so an undelivered billed action
     # (e.g. a story stream that died before beat_ready) can be refunded
@@ -707,6 +709,27 @@ def is_byok(connection_session_id: str | None) -> bool:
     return connection_store.get(connection_session_id) is not None
 
 
+def quota_is_enforced() -> bool:
+    return bool(getattr(settings, "quota_enforced", False))
+
+
+def open_quota_snapshot() -> QuotaSnapshot:
+    day = utc_day()
+    return QuotaSnapshot(
+        identity="open",
+        day=day,
+        used=0,
+        limit=999999,
+        remaining=999999,
+        global_used=0,
+        global_limit=global_daily_limit(),
+        global_remaining=global_daily_limit(),
+        byok=False,
+        tier="open",
+        open=True,
+    )
+
+
 def byok_snapshot() -> QuotaSnapshot:
     day = utc_day()
     return QuotaSnapshot(
@@ -750,6 +773,11 @@ async def enforce_platform_quota(
         snap.tier = "byok"
         return QuotaDecision(
             allowed=False, reason="binding_expired", snapshot=snap, http_status=410
+        )
+
+    if not quota_is_enforced():
+        return QuotaDecision(
+            allowed=True, reason=None, snapshot=open_quota_snapshot(), http_status=200
         )
 
     resolved_user_id = user_id
@@ -826,6 +854,9 @@ async def read_quota_snapshot(
 ) -> QuotaSnapshot:
     if is_byok(connection_session_id):
         return byok_snapshot()
+
+    if not quota_is_enforced():
+        return open_quota_snapshot()
 
     resolved_user_id = user_id
     if not resolved_user_id:

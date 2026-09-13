@@ -4753,6 +4753,30 @@ button.story-event {
   font: 400 15px/1.7 var(--font-sans, system-ui, sans-serif);
 }
 
+.cold-open__play-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 22px;
+}
+
+.cold-open__play-mode {
+  flex: 1 1 8rem;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--dn-fg) 28%, transparent);
+  background: transparent;
+  color: var(--dn-fg);
+  cursor: pointer;
+  font: 600 14px/1.3 var(--font-sans, system-ui, sans-serif);
+}
+
+.cold-open__play-mode:hover,
+.cold-open__play-mode:focus-visible {
+  border-color: var(--dn-fg);
+}
+
 .cold-open__brief-q {
   margin: 0 0 14px;
   color: var(--dn-fg);

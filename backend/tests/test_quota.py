@@ -62,6 +62,7 @@ def test_identity_scopes_guest_by_ip():
 
 async def test_free_quota_exhausts_after_limit():
     # Override autouse generous limits for this unit test.
+    quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
     quota_mod.settings.free_credits_guest = 8  # type: ignore[attr-defined]
     quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
     req = _FakeRequest(ip="10.0.0.9")
@@ -81,6 +82,7 @@ async def test_free_quota_exhausts_after_limit():
 
 
 async def test_logged_in_user_gets_higher_daily_limit(monkeypatch):
+    quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
     quota_mod.settings.free_credits_guest = 8  # type: ignore[attr-defined]
     quota_mod.settings.free_credits_user = 80  # type: ignore[attr-defined]
     quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
@@ -107,6 +109,7 @@ async def test_logged_in_user_gets_higher_daily_limit(monkeypatch):
 
 
 async def test_user_identity_is_per_account_not_shared_ip(monkeypatch):
+    quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
     quota_mod.settings.free_credits_user = 80  # type: ignore[attr-defined]
     quota_mod.settings.platform_daily_credit_budget = 5000  # type: ignore[attr-defined]
 
@@ -155,6 +158,7 @@ async def test_byok_skips_quota(monkeypatch):
 
 async def test_rate_limit_blocks_burst():
     # Tiny limit for test (autouse sets a high default)
+    quota_mod.settings.quota_enforced = True  # type: ignore[attr-defined]
     quota_mod.settings.platform_rate_limit_per_hour = 3  # type: ignore[attr-defined]
     quota_mod.settings.free_credits_guest = 100  # type: ignore[attr-defined]
     req = _FakeRequest(ip="9.9.9.9")
@@ -175,3 +179,21 @@ async def test_read_snapshot_does_not_consume():
     assert before.used == 0
     after = await read_quota_snapshot(request=req, guest_id=guest)
     assert after.used == 0
+
+
+async def test_open_quota_does_not_gate_story_say_do_observe():
+    """Developers: leave the guest 8-count closed. 说 / 做 / 观察 each bill a story beat."""
+    quota_mod.settings.quota_enforced = False  # type: ignore[attr-defined]
+    quota_mod.settings.free_credits_guest = 8  # type: ignore[attr-defined]
+    req = _FakeRequest(ip="10.0.0.77")
+    guest = "550e8400-e29b-41d4-a716-446655440077"
+    snap = await read_quota_snapshot(request=req, guest_id=guest)
+    assert snap.open is True
+    assert snap.tier == "open"
+    for i in range(3):
+        d = await enforce_platform_quota(
+            request=req, action="story_beat", guest_id=guest
+        )
+        assert d.allowed, f"story beat {i} (说/做/观察) must not hit the guest wall"
+        assert d.snapshot.open is True
+        assert d.http_status == 200
