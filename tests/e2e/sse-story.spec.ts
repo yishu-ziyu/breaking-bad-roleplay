@@ -165,15 +165,14 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
 }) => {
   await driveToBeatPaused(page)
 
-  // Outline summary always visible; full body requires expand
-  await expect(page.locator('.story-outline__summary')).toBeVisible()
-  await page.locator('.story-outline__toggle').click()
-  await expect(page.locator('.story-outline__body')).toContainText('methylamine')
+  await expect(page.locator('.story-outline')).toHaveCount(0)
 
   // Dialogue + scene live in the manuscript; world facts in the lore rail
   await expectDialogue(page, 'We need to cook')
   await expect(page.locator('.story-manuscript__prose')).toContainText('Los Pollos')
-  await expect(page.locator('.story-lore')).toContainText('stress')
+  await expect(page.locator('.story-lore')).toContainText('Walter is high')
+  await expect(page.locator('.story-lore')).not.toContainText('局面')
+  await expect(page.locator('.story-lore')).not.toContainText('上场的事实')
   await expect(page.locator('.story-lore')).toHaveAttribute('aria-expanded', 'true')
   await expect(page.locator('.msg--user, .msg--char, .story-scene-card__quote')).toHaveCount(0)
 
@@ -220,10 +219,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
   await expect(page.locator('.story-hud')).toContainText('NIGHT')
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
   await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos')
-
-  await expect(page.locator('.story-outline__summary')).toContainText(/hard turns|关口/)
-  await page.locator('.story-outline__toggle').click()
-  await expect(page.locator('.story-outline__body')).toContainText('Gus tests Walter')
+  await expect(page.locator('.story-outline')).toHaveCount(0)
 
   await expect(page.locator('.story-manuscript__prose').filter({ hasText: 'Los Pollos Hermanos office' })).toBeVisible()
   await expect(page.locator('.story-manuscript__dialogue cite').filter({ hasText: 'Gus Fring' })).toBeVisible()
@@ -339,9 +335,7 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
     outline: 'Walter must secure methylamine from Gus without Skyler finding out.',
   })
 
-  // Verify old outline is visible after expand
-  await page.locator('.story-outline__toggle').click()
-  await expect(page.locator('.story-outline__body')).toContainText('methylamine')
+  await expectDialogue(page, 'We need to cook')
 
   // Open redirect form
   await page
@@ -389,17 +383,7 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1' } })
 
-  // New outline text is visible (different from old); expand if collapsed after new session pin reset
-  const outlineBody = page.locator('.story-outline__body')
-  if (!(await outlineBody.isVisible())) {
-    await page.locator('.story-outline__toggle').click()
-  }
-  await expect(outlineBody).toContainText('eliminate Gus')
-  // Old outline text is gone
-  await expect(outlineBody).not.toContainText('methylamine')
-
-  // Redirect starts a new outline; the HUD/progress should follow the
-  // backend beat_id instead of continuing the old outline's counter.
+  await expect(page.locator('.story-manuscript__prose')).toContainText("Jesse's house")
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
   await expectDialogue(page, 'take him out')

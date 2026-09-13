@@ -6,6 +6,8 @@ import {
   canonicalBeatId,
   extractOnStageLore,
   trimFeedForBeatRedraw,
+  inWorldPlayerLine,
+  looksLikePlotEngineCopy,
 } from './storyReading.ts'
 
 const scene = (description: string): StoryEvent => ({
@@ -83,7 +85,8 @@ describe('extractOnStageLore', () => {
       'en',
     )
     assert.equal(live.expanded, true)
-    assert.ok(live.facts.some((f) => /cover/.test(f)))
+    assert.ok(live.facts.some((f) => /Walter is thin/.test(f)))
+    assert.ok(!live.facts.some((f) => f.includes('→') || / · /.test(f)))
     assert.ok(live.location)
   })
 })
@@ -120,5 +123,33 @@ describe('canonicalBeatId', () => {
     assert.equal(canonicalBeatId('beat-2', 0), 'beat_2')
     assert.equal(canonicalBeatId(null, 3), 'beat_3')
     assert.equal(canonicalBeatId(null, 0), 'beat_1')
+  })
+})
+
+describe('in-world copy', () => {
+  it('turns lore deltas into prose without arrows or field codes', () => {
+    const live = extractOnStageLore(
+      [delta('杰西', '下落', '房车', '黑地')],
+      'zh',
+    )
+    assert.equal(live.facts.length, 1)
+    assert.match(live.facts[0], /杰西/)
+    assert.match(live.facts[0], /黑地/)
+    assert.doesNotMatch(live.facts[0], /→|下落|局面/)
+  })
+
+  it('rewrites engine-dump player lines into speech', () => {
+    const blocks = buildReadingBlocks(
+      [player('我直接点破压力点，逼对方表态：杰西 · 下落 房车 → 黑地')],
+      'zh',
+    )
+    const you = blocks.find((b) => b.kind === 'player')
+    assert.ok(you)
+    assert.doesNotMatch(you?.text ?? '', /→|点破压力点|下落/)
+    assert.ok(looksLikePlotEngineCopy('杰西 · 下落 房车 → 黑地'))
+    assert.doesNotMatch(
+      inWorldPlayerLine('我直接点破压力点，逼对方表态：杰西 · 下落 房车 → 黑地', 'say', 'zh'),
+      /→/,
+    )
   })
 })

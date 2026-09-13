@@ -57,5 +57,6 @@ test('lore rail expands when facts are on stage', () => {
   )
   assert.match(html, /story-lore/)
   assert.match(html, /aria-expanded="true"/)
-  assert.match(html, /pride/)
+  assert.match(html, /bitten|已经是/)
+  assert.doesNotMatch(html, /上场的事实|局面 · |点破压力点/)
 })

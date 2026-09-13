@@ -13,13 +13,11 @@ export type StoryReadingSurfaceProps = {
 
 const COPY = {
   zh: {
-    lore: '上场的事实',
     loreEmpty: '还没有新的事实上场。',
     redraw: '换一版这一拍',
     you: '你',
   },
   en: {
-    lore: 'On stage now',
     loreEmpty: 'Nothing new is on stage yet.',
     redraw: 'Redraw this beat',
     you: 'You',
@@ -77,7 +75,6 @@ export function StoryReadingSurface({
         className={`story-lore${lore.expanded ? ' is-expanded' : ''}`}
         aria-expanded={lore.expanded}
       >
-        <h3>{t.lore}</h3>
         {lore.location && <p className="story-lore__place">{lore.location}</p>}
         {lore.facts.length === 0 ? (
           <p className="story-lore__empty">{t.loreEmpty}</p>

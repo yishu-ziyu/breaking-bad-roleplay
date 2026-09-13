@@ -313,7 +313,7 @@ export function buildColdOpenSuggestions(
             id: 'cold-free-do-move',
             kind: 'do',
             label: '先动手',
-            payload: '我不空谈，先做一个能改局面的实际动作。',
+            payload: '我不空谈，先改眼前的事。',
           },
           {
             id: 'cold-free-observe-room',
@@ -470,73 +470,59 @@ const BEAT_PAUSE_LABELS: Record<
 
 /**
  * Generic pressure choices for mid-beat pauses.
- * Optional contextHint is woven into payloads when provided.
- * beatIndex rotates the visible labels (QA P2#9) without changing grammar.
+ * Hint is not interpolated — lore dumps like 压力点 / field → value
+ * must not become the player's 说/做 line.
  */
 export function buildBeatPauseSuggestions(
   language: 'zh' | 'en',
   contextHint?: string,
   beatIndex = 1,
 ): DramaSuggestion[] {
-  const hint = contextHint?.trim()
+  void contextHint
   const pick = (kind: 'say' | 'do' | 'observe'): string => {
     const pool = BEAT_PAUSE_LABELS[language][kind]
     return pool[(Math.max(beatIndex, 1) - 1) % pool.length]
   }
   if (language === 'zh') {
-    const about = hint ? `（针对：${hint}）` : ''
     return [
       {
         id: 'pause-say-pressure',
         kind: 'say',
         label: pick('say'),
-        payload: hint
-          ? `我直接点破压力点，逼对方表态：${hint}`
-          : '我提高语气，逼对方立刻给出一个明确说法。',
+        payload: '我提高声音，逼他把话说明白。',
       },
       {
         id: 'pause-do-act',
         kind: 'do',
         label: pick('do'),
-        payload: hint
-          ? `我不空谈，立刻采取行动应对：${hint}`
-          : '我不空谈，先采取一个能改变局面的实际动作。',
+        payload: '我不再空谈，先改眼前的事。',
       },
       {
         id: 'pause-observe-hold',
         kind: 'observe',
         label: pick('observe'),
-        payload: hint
-          ? `我先按兵不动，仔细观察局势${about}`
-          : '我先按兵不动，把每个人的反应和风险看清楚。',
+        payload: '我先不说话，把每个人的反应看清楚。',
       },
     ]
   }
-  const about = hint ? ` (re: ${hint})` : ''
   return [
     {
       id: 'pause-say-pressure',
       kind: 'say',
       label: pick('say'),
-      payload: hint
-        ? `I press hard and force a clear answer about: ${hint}`
-        : 'I raise the pressure and demand a clear answer right now.',
+      payload: 'I raise my voice and make them say it plain.',
     },
     {
       id: 'pause-do-act',
       kind: 'do',
       label: pick('do'),
-      payload: hint
-        ? `I stop talking and take a concrete move on: ${hint}`
-        : 'I stop talking and take one concrete move that changes the board.',
+      payload: 'I stop talking and move on what is in front of me.',
     },
     {
       id: 'pause-observe-hold',
       kind: 'observe',
       label: pick('observe'),
-      payload: hint
-        ? `I hold still and study the room${about}`
-        : 'I hold still and study every reaction before I commit.',
+      payload: 'I hold still and watch every face before I commit.',
     },
   ]
 }
