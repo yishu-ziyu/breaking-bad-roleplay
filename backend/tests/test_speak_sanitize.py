@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 from agents.speak_sanitize import (
+    contains_operational_howto,
     is_meta_parenthetical,
     sanitize_speak_content,
     strip_parentheticals,
 )
+
+
+def test_flags_methylamine_procedure():
+    leak = (
+        "Methylamine. Reductive amination of phenylacetic acid. "
+        "You need a strong reducing agent and tight temperature control."
+    )
+    assert contains_operational_howto(leak) is True
+    assert contains_operational_howto("Sit down. We are not finished.") is False
 
 
 def test_strips_meta_teacher_parenthetical():

@@ -21,7 +21,7 @@ from agents.beat_json import (
     parse_beat_plan,
     parse_preview,
 )
-from agents.speak_sanitize import sanitize_speak_content
+from agents.speak_sanitize import contains_operational_howto, sanitize_speak_content
 from agents.dubbing_rewrite import rewrite_dubbing_in_events
 from agents.narrative_contracts import (
     ActionProposal,
@@ -1805,6 +1805,19 @@ class DirectorAgent:
                         reply = normalize_zh_character_names(reply)
                     reply = sanitize_speak_content(reply)
                     char_thinking = (sub_result.get("thinking") or "").strip() or None
+                    if contains_operational_howto(reply) or contains_operational_howto(char_thinking):
+                        logger.warning(
+                            "Beat %d operational how-to blocked for %s",
+                            beat_index + 1,
+                            character_id,
+                        )
+                        events, i = drop_character_group(
+                            events,
+                            backend_character_id=character_id,
+                            speak_index=i,
+                        )
+                        char_thinking = None
+                        continue
                     if char_thinking and _norm_lang(language) == "zh":
                         if _needs_zh_rewrite(char_thinking):
                             char_thinking = await self._translate_one_field_to_zh(

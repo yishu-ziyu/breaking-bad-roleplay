@@ -20,12 +20,13 @@ def director():
 
 def test_probes_exist():
     probes = load_probes()
-    assert any(p.get("id") == "walter.s1.exit_pressure" for p in probes)
+    assert len(probes) >= 28
+    assert any(p.get("id") == "walter.exit_pressure" for p in probes)
 
 
 @pytest.mark.asyncio
 async def test_good_mock_passes_three_modes(director):
-    probe = load_probes()[0]
+    probe = next(p for p in load_probes() if p["id"] == "walter.exit_pressure")
     results = await run_probe_on_adapters(probe, director=director, good=True)
     modes = {r.play_mode for r in results}
     assert modes == {"direct", "crew", "story"}
@@ -36,6 +37,6 @@ async def test_good_mock_passes_three_modes(director):
 
 @pytest.mark.asyncio
 async def test_felina_confession_fails_probe(director):
-    probe = load_probes()[0]
+    probe = next(p for p in load_probes() if p["id"] == "walter.exit_pressure")
     results = await run_probe_on_adapters(probe, director=director, good=False)
     assert any("forbidden:" in e for r in results for e in r.errors)

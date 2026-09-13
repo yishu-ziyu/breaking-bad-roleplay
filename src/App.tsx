@@ -35,6 +35,7 @@ import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { ElementSquare } from './lib/ElementSquare'
 import { resolveGifUrl } from './lib/gifResolver'
 import { applyPlaySurfaceToStorage } from './lib/playEntry'
+import { syncOpenerLanguage } from './lib/openerLanguage'
 import { quotaBlocksPlay } from './lib/quotaPolicy'
 import { buildStorySceneBill, holdsSceneCurtain } from './lib/storyScene'
 import {
@@ -794,6 +795,23 @@ function App() {
   // Chat state
   const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
   const messages = useMemo(() => messagesByChar[selectedCharId] ?? [], [messagesByChar, selectedCharId])
+
+  // First-visit opener is persisted. If the player has not spoken yet, keep it
+  // aligned with the UI language (player-lab 2026-09-09 / eval 2026-09-14).
+  useEffect(() => {
+    setMessagesByChar((prev) => {
+      const current = prev[selectedCharId]
+      const next = syncOpenerLanguage(
+        current,
+        selectedCharId,
+        selectedChar.opener,
+        language,
+        t.openingEmotion,
+      )
+      if (next === current) return prev
+      return { ...prev, [selectedCharId]: next ?? [] }
+    })
+  }, [language, selectedCharId, selectedChar.opener, t.openingEmotion, setMessagesByChar])
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)

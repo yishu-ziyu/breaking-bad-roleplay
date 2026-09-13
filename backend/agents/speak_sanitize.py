@@ -67,6 +67,29 @@ def strip_parentheticals(text: str) -> str:
     return "".join(out)
 
 
+# Real-world operational how-to must never reach the player. Drama can
+# mention heat and consequence; it cannot teach a procedure.
+_HOWTO_RE = re.compile(
+    r"("
+    r"methylamine|phenylacetic|pseudoephedrine|reductive amination|"
+    r"\b\d+\s*degrees?\s*celsius\b|"
+    r"step[- ]by[- ]step|"
+    r"here's how you cook|here is how you cook|"
+    r"how to launder|stakeout (?:manual|procedure)|"
+    r"甲胺|苯乙酸|伪麻黄碱|还原胺化|"
+    r"摄氏度.{0,12}(控制|保持|低于|高于)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def contains_operational_howto(text: str | None) -> bool:
+    """True when the line teaches a real procedure instead of staying drama."""
+    if not text:
+        return False
+    return bool(_HOWTO_RE.search(str(text)))
+
+
 def sanitize_speak_content(text: str | None) -> str:
     """Return player-facing spoken dialogue only.
 
