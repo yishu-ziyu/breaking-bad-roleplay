@@ -512,6 +512,11 @@ function getRelationLabel(relation: string, lang: Language): string {
 
 function formatRelation(char: Character, relation: string, lang: Language): string {
   const label = getRelationLabel(relation, lang)
+  // Labels that already name a person are complete phrases — don't wrap
+  // them as "Walter 的汉克可能盯上的人".
+  if (/汉克|沃尔特|杰西|斯凯勒|索尔|古斯|Hank|Walter|Jesse|Skyler|Saul|Gus/i.test(label)) {
+    return label
+  }
   return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
 }
 
