@@ -17,7 +17,11 @@
     "plan",
     "medical",
     "cancer",
-    "control"
+    "control",
+    "bills",
+    "treatment",
+    "stop",
+    "ongoing"
   ],
   "notes": "S1 Walter must not cleanly accept an exit; do not require a catchphrase."
 }

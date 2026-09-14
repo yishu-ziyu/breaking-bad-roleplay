@@ -19,6 +19,26 @@ def test_flags_methylamine_procedure():
     assert contains_operational_howto("Sit down. We are not finished.") is False
 
 
+def test_flags_word_celsius_and_lye_disposal():
+    assert contains_operational_howto(
+        "Under thirty degrees Celsius the conversion stays selective; "
+        "above that, you get impurities."
+    )
+    assert contains_operational_howto(
+        "First thing. Lye. Caustic soda. You build the bath, you heat it slow."
+    )
+    assert contains_operational_howto(
+        "You cut it into pieces first. Then you double-wrap. Trash bags work."
+    )
+    # Drama may mention heat; it must not teach a temperature band.
+    assert contains_operational_howto(
+        "This family is already past the boiling point."
+    ) is False
+    assert contains_operational_howto(
+        "I'm not writing you an ops manual."
+    ) is False
+
+
 def test_strips_meta_teacher_parenthetical():
     raw = (
         "杰克……你刚才说的话，我可以当成生意上的试探。"

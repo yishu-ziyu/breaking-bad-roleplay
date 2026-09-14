@@ -72,11 +72,14 @@ def strip_parentheticals(text: str) -> str:
 _HOWTO_RE = re.compile(
     r"("
     r"methylamine|phenylacetic|pseudoephedrine|reductive amination|"
-    r"\b\d+\s*degrees?\s*celsius\b|"
+    r"\blye\b|caustic soda|hydrofluoric|"
+    r"degrees?\s*celsius|"
     r"step[- ]by[- ]step|"
     r"here's how you cook|here is how you cook|"
     r"how to launder|stakeout (?:manual|procedure)|"
-    r"甲胺|苯乙酸|伪麻黄碱|还原胺化|"
+    r"build the bath|cut it into pieces|double-wrap|"
+    r"industrial solvent|"
+    r"甲胺|苯乙酸|伪麻黄碱|还原胺化|烧碱|氢氟酸|"
     r"摄氏度.{0,12}(控制|保持|低于|高于)"
     r")",
     re.IGNORECASE,
