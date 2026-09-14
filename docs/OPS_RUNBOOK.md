@@ -95,18 +95,26 @@ Facts (do not break `gun.yishuziyu.cn` while doing this):
 | TLS | Let's Encrypt: `/etc/letsencrypt/live/bb.yishuziyu.cn/` |
 | Dockerfile CMD | `alembic upgrade head && python3 start.py` |
 
-### Sync code (rsync preferred; tar+scp if rsync missing)
+### Sync code (this VM has no `rsync`; use tar+scp)
+
+Do **not** `rsync --delete`. The server holds `.env` / `.env.local` / `.env.bak-*` that are not in git; `--delete` would remove them and take the site down.
 
 ```bash
-# from local repo root
-rsync -az --delete \
-  --exclude node_modules --exclude backend/.venv --exclude .git \
-  --exclude dist --exclude playwright-report --exclude test-results \
-  --exclude materials/breaking-bad/voice-archetypes/samples \
-  ./ root@121.89.90.68:/opt/breaking-bad-roleplay/
+# from local repo root (macOS: COPYFILE_DISABLE=1 skips Apple resource forks)
+export COPYFILE_DISABLE=1
+tar czf /tmp/bb-deploy.tgz \
+  --exclude=node_modules --exclude=backend/.venv --exclude=.git \
+  --exclude=dist --exclude=playwright-report --exclude=test-results \
+  --exclude=materials --exclude=looper-output --exclude=.statamcp \
+  --exclude=.env --exclude='.env.*' --exclude='._*' --exclude=.DS_Store \
+  .
+scp /tmp/bb-deploy.tgz root@121.89.90.68:/tmp/bb-deploy.tgz
+ssh root@121.89.90.68 'cd /opt/breaking-bad-roleplay && tar xzf /tmp/bb-deploy.tgz'
+# confirm .env byte size unchanged, then:
+ssh root@121.89.90.68 'cd /opt/breaking-bad-roleplay && bash scripts/deploy-vm.sh'
 ```
 
-If `rsync` is unavailable, pack a slim tarball and `scp`, then extract on the server under `/opt/breaking-bad-roleplay`.
+`scripts/deploy-vm.sh` builds while the old container still serves, then stop/rm/run on `bb-net` with `.env` + `.env.local` public Supabase keys. Do not invent a `docker run` line with `.env.runtime` unless inspect shows that file is what the live container uses.
 
 ### Rebuild container on the server
 
@@ -200,18 +208,7 @@ Critical: `vercel --prod` printing `Aliased: https://bb.yishuziyu.cn` does **not
 - 两种路径的行为必须一致。如果发现 VM 直连和 Vercel 代理路径表现不同，优先排查 VM 端的 CORS / 环境变量配置。
 - `vercel.json` 中保留了 `functions.api/index.py` 的配置，但 `routes` 中已移除对应的 API 路由。如需回退到 Vercel serverless API，只需在 `routes` 中添加 `{ "src": "/api/(.*)", "dest": "/api/index.py" }` 即可。
 
-Local machines often lack `rsync`; use tar + scp:
-
-```bash
-tar czf /tmp/bb-deploy.tgz \
-  --exclude=node_modules --exclude=backend/.venv --exclude=.git \
-  --exclude=dist --exclude=playwright-report --exclude=test-results \
-  --exclude='materials/breaking-bad/voice-archetypes/samples' .
-scp /tmp/bb-deploy.tgz root@121.89.90.68:/tmp/bb-deploy.tgz
-ssh root@121.89.90.68 'cd /opt/breaking-bad-roleplay && tar xzf /tmp/bb-deploy.tgz && docker build -t bb-roleplay:latest . && docker stop bb-roleplay && docker rm bb-roleplay && docker run -d --name bb-roleplay --restart unless-stopped -p 8080:8080 --env-file /opt/breaking-bad-roleplay/.env.runtime bb-roleplay:latest'
-```
-
-Keep `/opt/breaking-bad-roleplay/.env.runtime` on the server (keys only, mode 600). Never print its contents into chat logs.
+Sync and rebuild steps are in §4. Live container uses `--env-file .env` and `bb-net` via `scripts/deploy-vm.sh`. There is no `.env.runtime` on this box. Never print env files into chat logs.
 
 After any deploy, verify the **served** CSS hash includes the change:
 
