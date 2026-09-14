@@ -1,0 +1,276 @@
+.night {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  margin: 0 auto;
+  max-width: 42rem;
+  padding: 20px 16px 48px;
+  color: var(--color-text-ink);
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(247, 206, 70, 0.08), transparent 55%),
+    var(--color-surface-paper-2, #f4efe3);
+  font-family: var(--font-sans, "PingFang SC", "Noto Sans SC", sans-serif);
+}
+
+.night--static,
+.night--static * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.night-plate {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 42%;
+  object-fit: cover;
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+.night-chrome {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.night-home,
+.night-tool,
+.night-settings summary {
+  margin: 0;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font: 500 13px/1.2 inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.night-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.night-settings {
+  position: relative;
+}
+
+.night-settings summary {
+  list-style: none;
+}
+
+.night-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.night-settings[open] > :not(summary) {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  min-width: 9rem;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  background: var(--color-surface-paper);
+}
+
+.night-settings label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.night-kicker {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.night-board {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.night-board p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.night-board span {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.night-stage {
+  margin: 0 0 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.night-speaker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.night-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.65;
+  font-family: var(--font-serif, "Noto Serif SC", "Songti SC", serif);
+}
+
+.night-consequence {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-ink);
+}
+
+.night-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.night-action {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-medium);
+  border-radius: 10px;
+  background: var(--color-surface-paper);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.night-action:hover,
+.night-action:focus-visible {
+  outline: 2px solid var(--color-bb-yellow);
+  outline-offset: 2px;
+}
+
+.night-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.night-action__label {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.night-action__cost {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.night-recap {
+  display: grid;
+  gap: 12px;
+}
+
+.night-recap h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.night-recap p,
+.night-recap li {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.night-recap ol,
+.night-history {
+  margin: 0 0 16px;
+  padding-left: 1.2em;
+}
+
+.night-history {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.night-history li {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.night-history__cost {
+  font-size: 13px;
+}
+
+.night-recap__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.night-restart {
+  justify-self: start;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-bb-yellow);
+  color: var(--color-bb-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.night-error,
+.night-confirm {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.night-error {
+  color: #8a2b1e;
+}
+
+.night-confirm {
+  color: var(--color-text-muted);
+}
+
+.night--boot {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  min-height: 100dvh;
+}
+
+@media (max-width: 390px) {
+  .night {
+    padding: 16px 12px 32px;
+  }
+
+  .night-body {
+    font-size: 15px;
+  }
+
+  .night-action {
+    min-height: 52px;
+  }
+}

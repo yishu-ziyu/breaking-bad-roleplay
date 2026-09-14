@@ -49,6 +49,8 @@ import './App.css'
 import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
 import './components/ChatRefresh.css'
+import { NightStartCta } from './features/game/NightStartCta.tsx'
+import './features/game/NightStartCta.css'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -1634,6 +1636,7 @@ function App() {
           starting={coldOpenStarting}
           error={coldOpenError}
         />
+        <NightStartCta />
         <ConnectionSheet conn={connection} language={language} />
       </>
     )

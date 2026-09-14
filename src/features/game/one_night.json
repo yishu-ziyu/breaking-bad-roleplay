@@ -1,0 +1,276 @@
+{
+  "id": "one_night_v1",
+  "version": 1,
+  "player": "沃尔特",
+  "turns": 6,
+  "objective": "今晚结束前处理眼前冲突，同时保住关键关系",
+  "location_start": "kitchen",
+  "location_labels": {
+    "kitchen": "厨房",
+    "home": "家"
+  },
+  "opening_scene": {
+    "speaker": "杰西",
+    "body": "厨房门没关严。杰西站在台阶上，包还挎着。斯凯勒以为你会回家吃晚饭。"
+  },
+  "meters": {
+    "police_risk": { "min": 0, "max": 6, "start": 1 },
+    "family_strain": { "min": 0, "max": 6, "start": 2 },
+    "jesse_trust": { "min": 0, "max": 6, "start": 3 }
+  },
+  "resources": {
+    "cash": { "start": 2 },
+    "saul_favor": { "start": 1 }
+  },
+  "flags_start": {
+    "jesse": "at_door",
+    "skyler": "waiting",
+    "saul_called": false
+  },
+  "promises_start": [
+    {
+      "id": "home_tonight",
+      "owed_to": "skyler",
+      "due_turn": 4,
+      "source_action_id": null,
+      "label": "你答应过斯凯勒今晚回家",
+      "overdue_log": "这是开局你答应她的事：今晚回家。她开始打电话。",
+      "overdue": {
+        "meters": { "family_strain": 2 },
+        "flags": { "skyler": "calling" }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "listen_jesse",
+      "label": "留下来听杰西说完",
+      "cost_text": "消耗本回合；回家的承诺更接近到期",
+      "when": { "flag_eq": { "jesse": "at_door" } },
+      "effects": {
+        "meters": { "jesse_trust": 1 },
+        "flags": { "jesse": "talking" },
+        "known": ["hot_bag"],
+        "log": "你把门关上，听他把话说完。包是烫的：有人在找杰西。",
+        "scene": {
+          "speaker": "杰西",
+          "body": "他一股脑倒出来：有人在找这个包。他要你今晚别把他丢在门外。"
+        }
+      }
+    },
+    {
+      "id": "go_home",
+      "label": "立刻回家兑现承诺",
+      "cost_text": "放弃此刻和杰西当面把话说清",
+      "when": { "location": "kitchen" },
+      "effects": {
+        "location": "home",
+        "meters": { "family_strain": -1 },
+        "flags": { "skyler": "home_with_you" },
+        "resolve_promise": "home_tonight",
+        "log": "你兑现了回家的承诺。",
+        "scene": {
+          "speaker": "斯凯勒",
+          "body": "餐桌上的盘子还热着。她看了你一眼，没立刻追问。"
+        }
+      },
+      "effects_if": [
+        {
+          "when": { "flag_in": { "jesse": ["at_door"] } },
+          "meters": { "jesse_trust": -1 },
+          "flags": { "jesse": "gone_alone" },
+          "log": "杰西还在门口。你没听完就走了。"
+        },
+        {
+          "when": { "flag_eq": { "jesse": "talking" } },
+          "flags": { "jesse": "safe" },
+          "log": "杰西已经把话说完。你回家，他先自己找地方待着。"
+        }
+      ]
+    },
+    {
+      "id": "call_saul",
+      "label": "请索尔代为协调",
+      "cost_text": "消耗一次人情；你欠他一个随后要还的忙",
+      "when": { "resource_gte": { "saul_favor": 1 } },
+      "effects": {
+        "resources": { "saul_favor": -1 },
+        "flags": { "saul_called": true },
+        "delay_promise": { "id": "home_tonight", "by": 1 },
+        "create_promise": {
+          "id": "saul_marker",
+          "owed_to": "saul",
+          "due_turn": 6,
+          "source_action_id": "call_saul",
+          "label": "你请索尔挡了一轮，欠他一个人情",
+          "overdue_log": "这是你请索尔时欠下的人情。他来收了。",
+          "overdue": { "meters": { "family_strain": 1 } }
+        },
+        "log": "索尔接了。他说能拖住斯凯勒的问题，但你欠他一次。",
+        "scene": {
+          "speaker": "索尔",
+          "body": "电话那头已经在报价。杰西还在门口，家里的晚饭也还在等。"
+        }
+      }
+    },
+    {
+      "id": "stash_the_bag",
+      "label": "用现金把那包东西挪走",
+      "cost_text": "现金 -1；换来一点不被立刻盯上的时间",
+      "when": { "known": ["hot_bag"], "resource_gte": { "cash": 1 } },
+      "effects": {
+        "resources": { "cash": -1 },
+        "meters": { "police_risk": -1 },
+        "log": "你用现金换人把包挪走。热度暂时下去一点。",
+        "scene": {
+          "speaker": "杰西",
+          "body": "包不在桌上了。他松了口气，又立刻问你：然后呢？"
+        }
+      }
+    },
+    {
+      "id": "call_jesse",
+      "label": "打电话把杰西拉回来",
+      "cost_text": "消耗本回合；他未必还肯听",
+      "when": { "flag_in": { "jesse": ["gone_alone", "at_lot"] } },
+      "effects": {
+        "meters": { "jesse_trust": 1 },
+        "flags": { "jesse": "on_phone" },
+        "log": "你打给杰西。他接了，但话很短。",
+        "scene": {
+          "speaker": "杰西",
+          "body": "忙音之后他开口：你刚才把我扔在门口。说吧，要干什么。"
+        }
+      }
+    },
+    {
+      "id": "face_skyler",
+      "label": "接斯凯勒的电话，承认你晚了",
+      "cost_text": "家庭压力不会因此清零",
+      "when": { "flag_eq": { "skyler": "calling" } },
+      "effects": {
+        "flags": { "skyler": "acknowledged" },
+        "log": "你接了电话，承认今晚晚了。她没挂，也没信你编的理由。",
+        "scene": {
+          "speaker": "斯凯勒",
+          "body": "听筒里的沉默比骂人更重。她要你给一个她能核对的说法。"
+        }
+      }
+    },
+    {
+      "id": "stall",
+      "label": "再拖一回合",
+      "cost_text": "局面不会等人；未兑现的承诺会自己回来",
+      "when": {},
+      "effects_if": [
+        {
+          "when": { "promise_open": "home_tonight" },
+          "meters": { "family_strain": 1 },
+          "log": "你又拖了一拍。家里的晚饭在凉。"
+        },
+        {
+          "when": { "promise_missing": "home_tonight" },
+          "log": "你按兵不动。这一夜还是会往前走。"
+        }
+      ],
+      "effects": {
+        "scene": {
+          "speaker": "",
+          "body": "钟在走。没人替你做决定。"
+        }
+      }
+    }
+  ],
+  "npc_steps": [
+    {
+      "id": "jesse_goes_alone",
+      "npc": "jesse",
+      "once": true,
+      "when": { "flag_eq": { "jesse": "gone_alone" } },
+      "effects": {
+        "meters": { "police_risk": 1, "jesse_trust": -1 },
+        "flags": { "jesse": "at_lot" },
+        "log": "杰西没等你，自己去了对付那包东西。"
+      }
+    },
+    {
+      "id": "jesse_waiting",
+      "npc": "jesse",
+      "when": { "flag_in": { "jesse": ["at_door", "talking"] } },
+      "effects": {
+        "log": "杰西还在等你给一个说法。他不会自己冻住。"
+      }
+    },
+    {
+      "id": "skyler_waiting",
+      "npc": "skyler",
+      "when": { "flag_eq": { "skyler": "waiting" } },
+      "effects": {
+        "log": "斯凯勒还以为你会回家。盘子在桌上。"
+      }
+    }
+  ],
+  "endings": [
+    {
+      "id": "heat_too_high",
+      "hard": true,
+      "when": { "meter_gte": { "police_risk": 6 } },
+      "title": "风声太大",
+      "body": "这一夜结束在风声里。你没能把热度压住。"
+    },
+    {
+      "id": "family_breaks",
+      "hard": true,
+      "when": { "meter_gte": { "family_strain": 6 } },
+      "title": "家里先破了",
+      "body": "斯凯勒不再等一个说法。家庭这边先失控。"
+    },
+    {
+      "id": "jesse_gone",
+      "hard": true,
+      "when": { "meter_lte": { "jesse_trust": 0 } },
+      "title": "杰西走了",
+      "body": "他把你当成又一个会把门关上的人。合作先没了。"
+    },
+    {
+      "id": "bought_time",
+      "when": { "flag_eq": { "saul_called": true } },
+      "title": "你买到了时间",
+      "body": "索尔帮你挡过一轮。人情还在。你保住了眼下，把代价往后推。"
+    },
+    {
+      "id": "family_over_jesse",
+      "when": {
+        "promise_resolved": "home_tonight",
+        "meter_lte": { "jesse_trust": 2 }
+      },
+      "title": "你先保了家",
+      "body": "你回家了。杰西按自己的目标行动。这一夜你清楚自己先护住了谁。"
+    },
+    {
+      "id": "held_the_line",
+      "when": {
+        "promise_resolved": "home_tonight",
+        "meter_gte": { "jesse_trust": 4 },
+        "meter_lte": { "police_risk": 3, "family_strain": 3 }
+      },
+      "title": "这条线还在",
+      "body": "你听完杰西，也回了家。没有两头都完好，但你知道每一笔代价从哪来。"
+    },
+    {
+      "id": "jesse_over_family",
+      "when": {
+        "promise_open": "home_tonight",
+        "meter_gte": { "jesse_trust": 4 }
+      },
+      "title": "你先保了杰西",
+      "body": "合作还在。家里的承诺没有兑现。"
+    },
+    {
+      "id": "split_the_night",
+      "when": {},
+      "title": "这一夜被切开了",
+      "body": "你活过了早晨。保住的和丢掉的都有来处。"
+    }
+  ]
+}

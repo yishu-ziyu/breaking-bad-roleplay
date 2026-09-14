@@ -17,6 +17,7 @@ import sys
 
 from config import settings
 from db.models import Base
+import game.models  # noqa: F401 — game tables on the same Base
 from db.session import engine
 
 

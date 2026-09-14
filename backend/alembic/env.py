@@ -11,12 +11,13 @@ from sqlalchemy import create_engine, make_url, pool
 
 from alembic import context
 
-# Import the app settings and the declarative Base. Importing db.models
-# registers every ORM class with Base.metadata so autogenerate sees them.
+# Shared Base.metadata. Game tables live only in game.models — do not
+# also declare them in db.models or autogenerate / create_all double-registers.
 from config import settings
 from db.session import Base
 from db.url import render_engine_url
-import db.models  # noqa: F401 — side effect: registers models on Base.metadata
+import db.models  # noqa: F401 — sessions, messages, quota, …
+import game.models  # noqa: F401 — game_runs / actions / events / checkpoints / jobs
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -40,7 +41,7 @@ def _sync_url():
     return url
 
 
-# ``Base.metadata`` now contains every table defined in db.models.
+# One metadata object; both import lines above register onto it once.
 target_metadata = Base.metadata
 
 

@@ -1642,3 +1642,8 @@ async def agent_stats():
             "modules": {},
             "recent_run_ids": [],
         }
+
+
+from api.game_routes import router as game_router
+
+router.include_router(game_router)

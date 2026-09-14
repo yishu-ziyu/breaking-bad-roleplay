@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from api.routes import router as api_router
 from db.models import Base  # noqa: F401 — registers models with Base.metadata
+import game.models  # noqa: F401 — game tables on the same Base
 
 # Configure logging before any application module uses a logger.
 # Without this, Python's lastResort handler emits bare WARNING+ messages

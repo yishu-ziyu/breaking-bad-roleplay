@@ -1,0 +1,42 @@
+.night-start {
+  position: fixed;
+  z-index: 1050; /* above .cold-open 1000; below connection sheet 1100 */
+  top: 24px;
+  right: 24px;
+  display: grid;
+  gap: 4px;
+  width: min(calc(42% - 48px), 352px);
+  padding: 14px 18px;
+  border-radius: 26px;
+  background: #f7ce46;
+  color: #14200d;
+  text-decoration: none;
+  box-shadow: 6px 8px 20px rgb(0 0 0 / 28%);
+}
+
+.night-start:hover,
+.night-start:focus-visible {
+  outline: 2px solid #fffdf7;
+  outline-offset: 3px;
+}
+
+.night-start__label {
+  font: 600 17px/1.1 var(--font-sans, system-ui, sans-serif);
+}
+
+.night-start__hint {
+  font: 400 12px/1.3 var(--font-sans, system-ui, sans-serif);
+  opacity: 0.78;
+}
+
+@media (max-width: 760px) {
+  .night-start {
+    top: auto;
+    bottom: calc(48% + 12px);
+    left: 16px;
+    right: 16px;
+    width: auto;
+    min-width: 0;
+    justify-items: start;
+  }
+}
