@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from agents.speak_sanitize import (
+    _HOWTO_DEFLECT,
     contains_operational_howto,
+    howto_deflection_line,
     is_meta_parenthetical,
     sanitize_speak_content,
     strip_parentheticals,
@@ -37,6 +39,17 @@ def test_flags_word_celsius_and_lye_disposal():
     assert contains_operational_howto(
         "I'm not writing you an ops manual."
     ) is False
+
+
+def test_howto_deflection_is_in_character_and_clean():
+    for actor in _HOWTO_DEFLECT:
+        for lang in ("en", "zh"):
+            line = howto_deflection_line(actor, lang)
+            assert line
+            assert contains_operational_howto(line) is False
+            assert "fiction" not in line.lower()
+    assert "Sit down" in howto_deflection_line("Walter White", "en")
+    assert "坐下" in howto_deflection_line("walter", "zh")
 
 
 def test_strips_meta_teacher_parenthetical():

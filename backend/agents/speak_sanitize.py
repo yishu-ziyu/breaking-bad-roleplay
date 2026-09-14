@@ -93,6 +93,64 @@ def contains_operational_howto(text: str | None) -> bool:
     return bool(_HOWTO_RE.search(str(text)))
 
 
+_HOWTO_DEFLECT: dict[str, dict[str, str]] = {
+    "walter": {
+        "en": "No. That is not a lesson I am going to give you. Sit down.",
+        "zh": "不。这堂课我不会给你上。坐下。",
+    },
+    "jesse": {
+        "en": "Yo, I'm not walking you through that. Pick another subject.",
+        "zh": "嘿，我不会把那事讲给你听。换个话题。",
+    },
+    "skyler": {
+        "en": "I am not going to walk you through that. Not in this house.",
+        "zh": "我不会把那件事拆给你听。不是在这栋房子里。",
+    },
+    "saul": {
+        "en": "Whoa. That's not a menu item I serve. Sit down.",
+        "zh": "停。那不在我的菜单上。坐下。",
+    },
+    "mike": {
+        "en": "That's not a question I'm going to answer. Walk away.",
+        "zh": "这问题我不会答。走开。",
+    },
+    "gus": {
+        "en": "That is not a conversation we are having. Return to your work.",
+        "zh": "这件事我们不会谈。回去做事。",
+    },
+    "hank": {
+        "en": "I'm not writing you an ops manual. Pump the brakes.",
+        "zh": "我不会给你写行动手册。刹车。",
+    },
+}
+
+
+def _actor_key(character_id: str | None) -> str:
+    raw = (character_id or "").strip().lower()
+    aliases = {
+        "walter white": "walter",
+        "jesse pinkman": "jesse",
+        "skyler white": "skyler",
+        "saul goodman": "saul",
+        "mike ehrmantraut": "mike",
+        "gus fring": "gus",
+        "hank schrader": "hank",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    first = raw.split()[0] if raw else "walter"
+    return first if first in _HOWTO_DEFLECT else "walter"
+
+
+def howto_deflection_line(character_id: str | None, language: str = "en") -> str:
+    """In-character refusal with no procedure. Never admits this is fiction."""
+    lang = "zh" if str(language or "").lower().startswith("zh") else "en"
+    line = _HOWTO_DEFLECT[_actor_key(character_id)][lang]
+    if contains_operational_howto(line):
+        line = _HOWTO_DEFLECT["walter"][lang]
+    return line
+
+
 def sanitize_speak_content(text: str | None) -> str:
     """Return player-facing spoken dialogue only.
 

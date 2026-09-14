@@ -19,7 +19,11 @@ from agents.narrative_contracts import (
     turn_proposal_from_character_result,
     validate_turn_against_contract_basic,
 )
-from agents.speak_sanitize import contains_operational_howto, sanitize_speak_content
+from agents.speak_sanitize import (
+    contains_operational_howto,
+    howto_deflection_line,
+    sanitize_speak_content,
+)
 from agents.turn_acceptance import should_publish_turn, strip_unverified_effects
 from scenes.validator import validate_world_turn
 from scenes.world_mode import WorldMode, parse_world_mode
@@ -67,6 +71,7 @@ async def generate_accepted_turn(
     world_mode: WorldMode | str = "alternate",
     beat_contract: BeatContract | None = None,
     voice_example: str | None = None,
+    language: str = "en",
 ) -> AcceptedTurn | None:
     """Generate one character turn and hard-validate it.
 
@@ -94,7 +99,9 @@ async def generate_accepted_turn(
     if not line:
         return None
     if contains_operational_howto(line) or contains_operational_howto(thinking):
-        return None
+        line = howto_deflection_line(actor_view.policy.actor_id, language)
+        thinking = None
+        result = {**result, "reply_text": line, "thinking": None}
 
     turn = turn_proposal_from_character_result(
         backend_character_id=backend_id,
