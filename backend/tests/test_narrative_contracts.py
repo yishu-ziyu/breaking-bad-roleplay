@@ -165,3 +165,10 @@ def test_turn_from_character_result_validates():
     assert backend_to_actor_id("Jesse Pinkman") == "jesse"
     expanded = ensure_actor_on_contract(contract, "Jesse Pinkman")
     assert "jesse" in expanded.present_characters
+    jesse_turn = turn_proposal_from_character_result(
+        backend_character_id="Jesse Pinkman",
+        reply_text="Yo.",
+        thinking="Stay useful.",
+        observed_facts=["Walter is talking"],
+    )
+    assert validate_turn_against_contract_basic(expanded, jesse_turn).ok is True

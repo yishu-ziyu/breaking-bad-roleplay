@@ -26,6 +26,7 @@ from agents.dubbing_rewrite import rewrite_dubbing_in_events
 from agents.narrative_contracts import (
     ActionProposal,
     BeatContract,
+    ensure_actor_on_contract,
     synthesize_beat_contract,
     try_parse_beat_contract,
     turn_proposal_from_character_result,
@@ -1877,6 +1878,9 @@ class DirectorAgent:
                         turn = turn.model_copy(
                             update={"action": ActionProposal(verb="idle_tense")}
                         )
+                    # The speaker of this rewrite is on stage. Do not invent extra
+                    # cast, but do not drop a line because the planner omitted them.
+                    beat_contract = ensure_actor_on_contract(beat_contract, character_id)
                     basic = validate_turn_against_contract_basic(beat_contract, turn)
                     world_mode = parse_world_mode(
                         context.get("world_mode") or context.get("worldMode")

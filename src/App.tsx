@@ -219,7 +219,7 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'former student': { en: 'former student', zh: '前学生' },
   'family member': { en: 'family member', zh: '家人' },
   'lab partner': { en: 'lab partner', zh: '实验室搭档' },
-  'DEA liability': { en: 'DEA liability', zh: 'DEA 风险人物' },
+  'DEA liability': { en: 'someone Hank might investigate', zh: '汉克可能盯上的人' },
   'old colleague': { en: 'old colleague', zh: '旧同事' },
   partner: { en: 'partner', zh: '搭档' },
   'old friend': { en: 'old friend', zh: '老朋友' },
@@ -245,7 +245,7 @@ const relationLabels: Record<string, Record<Language, string>> = {
   rival: { en: 'rival', zh: '对手' },
   guest: { en: 'guest', zh: '客人' },
   'person being evaluated': { en: '被评估的人', zh: '被评估的人' },
-  'DEA partner': { en: 'DEA partner', zh: 'DEA 搭档' },
+  'DEA partner': { en: "Hank's partner at work", zh: '汉克局里的搭档' },
   'suspect under watch': { en: 'suspect under watch', zh: '被盯上的人' },
   'friend of the family': { en: 'friend of the family', zh: '家人的朋友' },
   'Skyler sister-in-law': { en: 'Skyler sister-in-law', zh: 'Skyler 的嫂子' },
@@ -726,8 +726,9 @@ function App() {
     window.history.replaceState(null, '', url)
   }
 
-  // Language: use browser preference on first visit, then persist
-  const defaultLanguage: Language = navigator.language.startsWith('zh') ? 'zh' : 'en'
+  // Language: Chinese product first. Browser English still wins if the
+  // visitor's UI is en*; a prior visit persists whichever they last chose.
+  const defaultLanguage: Language = navigator.language.toLowerCase().startsWith('en') ? 'en' : 'zh'
   const [storedLanguage, setLanguage] = usePersistedState<Language | null>('language', null)
   const language: Language = storedLanguage ?? defaultLanguage
   const t = uiText[language]
