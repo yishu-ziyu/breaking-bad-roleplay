@@ -66,7 +66,7 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
     // Bypass landing screen BEFORE React mounts
     window.localStorage.setItem('abq_enteredWorld', 'true')
-    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
     window.localStorage.setItem('abq_knowledgeTrack', JSON.stringify('fan'))
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw

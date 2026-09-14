@@ -124,7 +124,7 @@ export const CRISIS_COPY: Record<
   },
 }
 
-/** Brief screen (phase 0): one value line + one knowledge question. 3 seconds. */
+/** Brief screen (phase 0): value line + three play modes. */
 export const BRIEF_COPY: Record<
   ColdOpenLanguage,
   {
@@ -139,7 +139,7 @@ export const BRIEF_COPY: Record<
 > = {
   zh: {
     title: '这部剧，由你改写。',
-    sub: '一场 AI 实时演绎的《绝命毒师》平行夜。你的每个决定都会写进接下来的剧情——没有规定动作。',
+    sub: '阿尔伯克基。这一夜，有人已经在门口等你。',
     question: '你看过《绝命毒师》吗？',
     fan: '看过，直接开始',
     fanHint: '今晚从危机里进。不解释设定。',
@@ -148,12 +148,61 @@ export const BRIEF_COPY: Record<
   },
   en: {
     title: 'A show you can rewrite.',
-    sub: 'A Breaking Bad parallel night, performed live by AI. Every call you make gets written into what happens next — no prescribed moves.',
+    sub: 'Albuquerque. Someone is already waiting at the door.',
     question: 'Have you seen Breaking Bad?',
     fan: 'Yes — start playing',
     fanHint: 'Straight into the crisis. No lore dump.',
     fresh: 'No — explain as we go',
     freshHint: 'We’ll tell you who is who as it happens.',
+  },
+}
+
+/**
+ * First-run: Saul's bus-bench register, not a designer's briefing.
+ * Distilled from his TV ads and the desert closer with Walt/Jesse:
+ * put the stranger in trouble, flip it, then close ("sit down" / "put a dollar in").
+ * Do not explain the game. Do not say 说明书 / try it / walkthrough.
+ */
+export const INTRO_COPY: Record<
+  ColdOpenLanguage,
+  { speaker: string; line: string; cta: string }
+> = {
+  zh: {
+    speaker: '索尔·古德曼',
+    line: '他们说你完蛋了，一点办法都没有。\n错了。',
+    cta: '进来坐。',
+  },
+  en: {
+    speaker: 'Saul Goodman',
+    line: "They told you you're finished. Nothing you can do.\nThey're wrong.",
+    cta: 'Sit down.',
+  },
+}
+
+/** First-class play modes on the door. Knowledge is a follow-up for Story only. */
+export const MODE_COPY: Record<
+  ColdOpenLanguage,
+  {
+    question: string
+    story: { title: string; hint: string }
+    direct: { title: string; hint: string }
+    crew: { title: string; hint: string }
+    back: string
+  }
+> = {
+  zh: {
+    question: '你要怎么进这场戏？',
+    story: { title: '剧情', hint: '导演演场面，停下来时由你决定。' },
+    direct: { title: '单聊', hint: '和一个角色私下谈。' },
+    crew: { title: '群聊', hint: '几个人同时在场，互相顶。' },
+    back: '返回三种玩法',
+  },
+  en: {
+    question: 'How do you want to play?',
+    story: { title: 'Story', hint: 'The scene plays. You decide when it pauses.' },
+    direct: { title: 'Direct', hint: 'Talk with one character, one-to-one.' },
+    crew: { title: 'Crew', hint: 'Several people in the room, talking over each other.' },
+    back: 'Back to play modes',
   },
 }
 

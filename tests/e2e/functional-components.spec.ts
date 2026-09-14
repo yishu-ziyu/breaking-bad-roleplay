@@ -7,7 +7,7 @@ async function gotoFresh(page: Page) {
   // Bypass landing screen so tests land directly in the app
   await page.addInitScript(() => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
-    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
     window.localStorage.setItem('abq_view', JSON.stringify('chat'))
     window.localStorage.setItem('abq_surface', JSON.stringify('direct'))
   })
@@ -25,7 +25,7 @@ async function seedRawStorage(page: Page, values: Record<string, string>) {
     for (const [key, value] of Object.entries(data)) {
       window.localStorage.setItem(key, value)
     }
-  }, { ...values, abq_enteredWorld: 'true', abq_productSurface: JSON.stringify('v2-cold-open') })
+  }, { ...values, abq_enteredWorld: 'true', abq_productSurface: JSON.stringify('v3-mode-door') })
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
 }

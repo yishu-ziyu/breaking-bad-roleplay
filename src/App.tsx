@@ -49,8 +49,7 @@ import './App.css'
 import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
 import './components/ChatRefresh.css'
-import { NightStartCta } from './features/game/NightStartCta.tsx'
-import './features/game/NightStartCta.css'
+import { PlayModeBar, type PlayMode } from './components/PlayModeBar'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -265,8 +264,8 @@ const uiText: Record<Language, Record<string, string>> = {
     relation: 'Relation',
     view: 'View',
     story: 'Story',
-    direct: 'Direct Chat',
-    crew: 'Crew Debate',
+    direct: 'Direct',
+    crew: 'Crew',
     model: 'Model engine',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: 'Set the Stage',
@@ -276,7 +275,7 @@ const uiText: Record<Language, Record<string, string>> = {
     narrativeStream: 'Story',
     eventFeed: 'Fine-grained event-driven narrative',
     directorDecision: 'Choose the next move:',
-    switchToChat: 'Chat · no chapter advance',
+    switchToChat: 'Direct',
     you: 'You',
     send: 'Send',
     sending: 'Thinking…',
@@ -284,8 +283,8 @@ const uiText: Record<Language, Record<string, string>> = {
     directFrame: 'An AI is playing this part. Pushback is the character, not a helpdesk.',
     inspectThinking: 'How they played it',
     messagePlaceholder: 'Negotiate with {character} as their {relation}…',
-    privateScene: 'Private Scene',
-    crewScene: 'Crew Debate',
+    privateScene: 'Direct',
+    crewScene: 'Crew',
     schema: 'On scene',
     gifTrigger: 'Scene beat',
     connected: 'Stream live',
@@ -392,8 +391,8 @@ const uiText: Record<Language, Record<string, string>> = {
     relation: '身份关系',
     view: '游玩模式',
     story: '剧情',
-    direct: '单人场景',
-    crew: '群像会谈',
+    direct: '单聊',
+    crew: '群聊',
     model: '模型引擎',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: '开场设定',
@@ -403,7 +402,7 @@ const uiText: Record<Language, Record<string, string>> = {
     narrativeStream: '剧情',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
-    switchToChat: '单聊·不推进章节',
+    switchToChat: '单聊',
     you: '你',
     send: '发送',
     sending: '生成回应…',
@@ -411,8 +410,8 @@ const uiText: Record<Language, Record<string, string>> = {
     directFrame: 'AI 扮演这一角。顶撞是角色，不是客服。',
     inspectThinking: '他怎么想的',
     messagePlaceholder: '以{relation}身份对 {character} 说…',
-    privateScene: '单人场景',
-    crewScene: '群像会谈',
+    privateScene: '单聊',
+    crewScene: '群聊',
     schema: '现场',
     gifTrigger: '镜头节点',
     connected: '现场已连接',
@@ -677,7 +676,7 @@ function defaultStoryPrompt(lang: Language): string {
 /*  the first commit is already cold-open for pre-v2 localStorage.    */
 /* ------------------------------------------------------------------ */
 
-const PRODUCT_SURFACE = 'v2-cold-open' as const
+const PRODUCT_SURFACE = 'v3-mode-door' as const
 const LS_PREFIX = 'abq_'
 
 function readLs<T>(key: string, fallback: T): T {
@@ -760,6 +759,7 @@ function App() {
     null,
   )
   const [dramaHintSeen, setDramaHintSeen] = usePersistedState<boolean>('dramaHintSeen', false)
+  const [introSeen, setIntroSeen] = usePersistedState<boolean>('introSaulPitch', false)
 
   // P0-4: when switching to a character that already has a saved relation,
   // surface a brief inline notice so the user understands the relation
@@ -1458,9 +1458,8 @@ function App() {
     // surface='story' prevents a stale 'direct' surface from rendering
     // the old setup screen after reset.
     setKnowledgeTrack(null)
-    setSurface('story')
     setHasEnteredWorld(false)
-  }, [story, setHasEnteredWorld, setKnowledgeTrack, setSurface])
+  }, [story, setHasEnteredWorld, setKnowledgeTrack])
 
   const storyContextSummary = useMemo(() => {
     const spoken = story.events
@@ -1623,10 +1622,12 @@ function App() {
           onEnterDirect={() => {
             setSurface('direct')
             setHasEnteredWorld(true)
+            setSidebarCollapsed(false)
           }}
           onEnterCrew={() => {
             setSurface('crew')
             setHasEnteredWorld(true)
+            setSidebarCollapsed(false)
           }}
           onOpenSettings={() => {
             setColdOpenError(null)
@@ -1635,8 +1636,9 @@ function App() {
           onLanguageChange={(lang) => setLanguage(lang)}
           starting={coldOpenStarting}
           error={coldOpenError}
+          showIntro={!introSeen}
+          onIntroDone={() => setIntroSeen(true)}
         />
-        <NightStartCta />
         <ConnectionSheet conn={connection} language={language} />
       </>
     )
@@ -1808,6 +1810,14 @@ function App() {
             </div>
             {/* QA P2#10: language switch reachable in-game, not only on the
                 cold open toolbar. Quiet pill, same seg-control grammar. */}
+            <PlayModeBar
+              value={surface as PlayMode}
+              language={language}
+              onChange={(mode) => {
+                setSurface(mode)
+                setSidebarCollapsed(mode === 'story')
+              }}
+            />
             <div className="story-hud__lang" role="group" aria-label={language === 'zh' ? '语言' : 'Language'}>
               <button
                 type="button"
@@ -1839,13 +1849,6 @@ function App() {
                   ? `额度 ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`
                   : `CREDITS ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`)}
             </div>
-            <button
-              type="button"
-              className="story-hud__chat-link"
-              onClick={() => setSurface('direct')}
-            >
-              {t.switchToChat}
-            </button>
           </header>
 
           {showSceneBill && (
@@ -2101,23 +2104,20 @@ function App() {
                     {selectedChar.name}
                   </h2>
                   <p className="chat-header__frame">{t.directFrame}</p>
-                  {/* QA P1#7: chat was a dead end — no visible way back to a
-                      live story. Offer the return only when one exists. */}
-                  {story.sessionId && story.connectionState !== 'idle' && (
-                    <button
-                      type="button"
-                      className="chat-header__back-to-story"
-                      onClick={() => setSurface('story')}
-                    >
-                      {language === 'zh' ? '← 返回剧情' : '← Back to the story'}
-                    </button>
-                  )}
                   {showSavePrompt && (
                     <div className="save-prompt">
                       {t.savePrompt}
                 </div>
               )}
             </div>
+            <PlayModeBar
+              value={surface as PlayMode}
+              language={language}
+              onChange={(next) => {
+                setSurface(next)
+                setSidebarCollapsed(next === 'story')
+              }}
+            />
             <a className="chat-character-link" href="/?home=preview#characters">{language === 'zh' ? '选择角色' : 'Characters'}</a>
             <label className="chat-header__relation" htmlFor="chat-relation">
               <span className="sr-only">{t.relation}</span>

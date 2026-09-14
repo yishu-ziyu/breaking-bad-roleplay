@@ -1,7 +1,8 @@
 /* =====================================================================
-   TEMP SKIN — "Apple system" pass.  On main as a deletable overlay.
-   User accepted the look as-is on 2026-09-14 ("先这样吧"); this is NOT
-   a token-system promotion. Do not copy these rules into App.css.
+   TEMP SKIN — Apple system pass. Overlay only; do not copy into App.css.
+   2026-09-15: product tone is this spec (SF Pro, 12/13/14/24, ink greys,
+   8/16 radii, pill CTAs). Landing chrome is in scope. Drama photography
+   and long-form CJK reading stay exempt from tracking / 24px cap.
    ---------------------------------------------------------------------
    REVERT: delete this file + remove its import from src/main.tsx.
    No other file in the repo is modified by this skin.
@@ -638,22 +639,218 @@
   }
 }
 
-/* Cold open is a still, not chrome. Keep square corners and do not
-   restyle the brief answers into pills. */
+/* =====================================================================
+   13. Cold open — Apple type metrics, Slovis/Gilligan color.
+       Tobacco / umber / bone (desert as character). Not iOS grey-white.
+       Photography stays; the door sits IN the still, not on top of it.
+       Choices are hot spots (bone), never umber-on-umber. See docs/COLOR_SCIENCE.md.
+   ===================================================================== */
+.cold-open {
+  --bb-bone: oklch(0.93 0.025 85);
+  --bb-dust: oklch(0.74 0.035 75);
+  --bb-umber: oklch(0.20 0.038 62);
+  --bb-plate: oklch(0.26 0.042 68);
+}
+.cold-open,
+.cold-open button,
+.cold-open h1,
+.cold-open h2,
+.cold-open h3,
+.cold-open p,
+.cold-open cite {
+  font-family: var(--apple-sans);
+  font-weight: 400;
+  letter-spacing: -0.15px;
+}
+
+.cold-open__toolbar {
+  gap: 8px;
+  padding: 8px;
+}
 .cold-open__lang,
 .cold-open__lang button,
 .cold-open__settings {
-  border-radius: 2px;
+  border-radius: var(--radius-nav);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
 }
-.cold-open__choice,
-.cold-open__aside-link {
-  border-radius: 2px;
+
+.cold-open__wordmark-sub {
+  font-family: var(--apple-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  text-transform: none;
+}
+
+.cold-open__brief-title {
+  font-family: var(--apple-display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  line-height: 1.2;
+  color: var(--ink-d1);
+}
+.cold-open__brief-sub {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.15px;
+  line-height: 1.45;
+  color: var(--ink-d2);
+}
+
+.cold-open__door {
+  top: 50%;
+  left: 12px;
+  right: auto;
+  bottom: auto;
+  transform: translateY(-50%);
+  height: auto;
+  max-height: calc(100% - 24px);
+  padding: 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklch, oklch(0.62 0.08 75) 32%, transparent);
+  background: color-mix(in oklch, var(--bb-umber) 78%, transparent);
+  color: var(--bb-bone);
+  box-shadow: 0 18px 48px oklch(0.10 0.04 60 / 0.5);
+  backdrop-filter: blur(22px) saturate(0.9);
+  -webkit-backdrop-filter: blur(22px) saturate(0.9);
+  justify-content: flex-start;
+}
+.cold-open__door-q {
+  margin: 0 0 16px;
+  font-family: var(--apple-display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  line-height: 1.25;
+  color: var(--bb-bone);
+  text-shadow: none;
+}
+
+.cold-open__intro-speaker {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  color: var(--bb-dust);
+}
+.cold-open__intro-line {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  color: var(--bb-bone);
+}
+.cold-open__intro-face {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-nav);
+}
+
+.cold-open__modes {
+  gap: 8px;
+}
+.cold-open__mode {
+  padding: 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklch, var(--bb-umber) 12%, transparent);
+  background: var(--bb-bone);
+  color: var(--bb-umber);
+  box-shadow: none;
+}
+.cold-open__mode:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--bb-umber) 28%, transparent);
+  background: oklch(0.96 0.02 85);
+}
+.cold-open__mode:focus-visible {
+  outline: 2px solid var(--bb-bone);
+  outline-offset: 3px;
+}
+.cold-open__mode-title {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  color: var(--bb-umber);
+}
+.cold-open__mode-hint {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.15px;
+  color: oklch(0.42 0.04 65);
 }
 
 .cold-open__pill {
-  border-radius: 26px;
-  font-size: 16px;
-  letter-spacing: 0;
+  height: 44px;
+  border-radius: var(--radius-cta);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  box-shadow: none;
+}
+.cold-open__pill--loud {
+  background: var(--bb-bone);
+  border-color: var(--bb-bone);
+  color: var(--bb-umber);
+}
+.cold-open__pill--quiet {
+  background: transparent;
+  border: 1px solid color-mix(in oklch, var(--bb-dust) 45%, transparent);
+  color: var(--bb-bone);
+}
+.cold-open__pill:focus-visible {
+  outline: 2px solid var(--bb-bone);
+  outline-offset: 3px;
+}
+
+.cold-open__door-back {
+  margin: 0 0 16px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  color: var(--bb-dust);
+}
+.cold-open__door-back:hover,
+.cold-open__door-back:focus-visible {
+  color: var(--bb-bone);
+}
+
+@media (max-width: 760px) {
+  .cold-open__door {
+    top: auto;
+    bottom: 10px;
+    transform: none;
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+}
+
+.play-mode-bar {
+  border-radius: var(--radius-nav);
+  padding: 0;
+}
+.play-mode-bar button {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+  border-radius: var(--radius-nav);
+}
+
+.chat-header h2 {
+  font-family: var(--apple-display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.15px;
+}
+.chat-header p,
+.chat-header__frame {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: -0.15px;
+  color: var(--ink-2);
 }
 
 

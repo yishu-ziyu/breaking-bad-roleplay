@@ -42,7 +42,7 @@ const KIND_CLASS: Record<DramaSuggestion['kind'], string> = {
 export const DRAMA_DECISION_COPY = {
   en: {
     title: 'Your move',
-    continue: 'Continue →',
+    continue: 'Let the scene continue',
     freeSubmit: 'Decide',
     freePlaceholder: 'Or type what you say, do, or notice…',
     kindSay: 'Say',
@@ -52,7 +52,7 @@ export const DRAMA_DECISION_COPY = {
   },
   zh: {
     title: '你的决定',
-    continue: '继续推进 →',
+    continue: '让导演继续',
     freeSubmit: '决定',
     freePlaceholder: '或自由输入：你要说、做、或观察到什么…',
     kindSay: '说',

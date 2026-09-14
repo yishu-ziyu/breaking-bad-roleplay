@@ -129,9 +129,9 @@ test('canSubmitFreeText only true when trimmed non-empty and not disabled', () =
   assert.equal(canSubmitFreeText('', true), false)
 })
 
-test('continue label is primary long form with arrow (not bare 继续 / Continue)', () => {
-  assert.equal(DRAMA_DECISION_COPY.zh.continue, '继续推进 →')
-  assert.equal(DRAMA_DECISION_COPY.en.continue, 'Continue →')
+test('continue label is the skip path, not the primary decide verb', () => {
+  assert.equal(DRAMA_DECISION_COPY.zh.continue, '让导演继续')
+  assert.equal(DRAMA_DECISION_COPY.en.continue, 'Let the scene continue')
   assert.ok(!/^继续$/.test(DRAMA_DECISION_COPY.zh.continue))
   assert.ok(!/^Continue$/.test(DRAMA_DECISION_COPY.en.continue))
 })

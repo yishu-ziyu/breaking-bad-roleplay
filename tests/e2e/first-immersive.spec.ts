@@ -280,7 +280,7 @@ test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }
   ])
 
   await gotoFresh(page)
-  await expect(page.locator('header.chat-header p')).toContainText(/Crew Debate|群像会谈/)
+  await expect(page.locator('header.chat-header p')).toContainText(/Crew|群聊/)
   await sendChatMessage(page, 'What is the plan?')
 
   const debateReplies = [

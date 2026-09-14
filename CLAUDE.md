@@ -7,6 +7,7 @@
 - McKee Story engine v2: `backend/agents/mckee_story.py` (DEC-0003)
 - Narrative pipeline as shipped: DEC-0005 (Propose → Validate → Repair → Commit)
 - 2026-09-14 接手说明: [docs/HANDOFF_2026-09-14.md](docs/HANDOFF_2026-09-14.md)（发布门禁、Crew 独立采样、临时 Apple 皮肤、how-to 按泄漏打分）
+- 色彩科学（必读）: [docs/COLOR_SCIENCE.md](docs/COLOR_SCIENCE.md) — 世界用烟草/褐金/骨白；**让人挑的选项必须是热点，禁止褐上叠褐**。结构可借 Apple 字号，颜色不借 iOS 冷灰。
 
 Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **not product constraints**. See [docs/PLANNING.md](docs/PLANNING.md).
 

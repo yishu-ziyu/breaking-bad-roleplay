@@ -14,7 +14,7 @@ import { installMockEventSource } from './mockSse'
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173'
 
 /** Must match App.tsx PRODUCT_SURFACE — otherwise migration forces cold open again. */
-const PRODUCT_SURFACE = 'v2-cold-open'
+const PRODUCT_SURFACE = 'v3-mode-door'
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -35,9 +35,19 @@ async function gotoDoor(page: Page, path = '/') {
   await expect(page.locator('.cold-open__stage--brief')).toBeVisible()
 }
 
-/** Door → start playing. Lands on the 场面卡; SSE still waits for 开始故事. */
+/** Intro → mode picker. */
+async function passIntro(page: Page) {
+  const enter = page.getByRole('button', { name: /进来坐|Sit down/ })
+  await expect(enter).toBeVisible()
+  await enter.click()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toBeVisible()
+}
+
+/** Door → intro → 剧情 → knowledge → 场面卡; SSE still waits for 开始故事. */
 async function enterNightFromDoor(page: Page, path = '/') {
   await gotoDoor(page, path)
+  await passIntro(page)
+  await page.getByRole('button', { name: /^(剧情|Story)$/ }).click()
   await page.getByRole('button', { name: /Yes — start playing|看过，直接开始/ }).click()
   await expect(page.locator('.cold-open')).toHaveCount(0)
   await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
@@ -111,17 +121,32 @@ async function emitSSE(page: Page, type: string, data: unknown) {
 /*  1. Cold open visible after clearing storage                       */
 /* ------------------------------------------------------------------ */
 
+test('cold open: first visit is a game intro, then the three modes', async ({
+  page,
+}) => {
+  await gotoDoor(page)
+  await expect(page.getByRole('button', { name: /进来坐|Sit down/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toHaveCount(0)
+  await passIntro(page)
+  await expect(page.getByRole('button', { name: /^(单聊|Direct)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(群聊|Crew)$/ })).toBeVisible()
+})
+
 test('cold open: door starts the night — no crisis quiz, no cast strip', async ({
   page,
 }) => {
   await gotoDoor(page)
+  await passIntro(page)
 
-  await expect(page.getByRole('button', { name: /看过，直接开始|Yes — start playing/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /没看过，边玩边讲|No — explain as we go/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(单聊|Direct)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(群聊|Crew)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /看过，直接开始|Yes — start playing/ })).toHaveCount(0)
   await expect(page.locator('.cold-open__stage--crisis')).toHaveCount(0)
   await expect(page.locator('.cold-open__cast')).toHaveCount(0)
   await expect(page.locator('.char-grid')).toHaveCount(0)
 
+  await page.getByRole('button', { name: /^(剧情|Story)$/ }).click()
   await page.getByRole('button', { name: /看过，直接开始|Yes — start playing/ }).click()
 
   await expect(page.locator('.cold-open')).toHaveCount(0)
@@ -129,6 +154,27 @@ test('cold open: door starts the night — no crisis quiz, no cast strip', async
   await expect(page.getByRole('button', { name: /寻找杰西|Find Jesse/i })).toHaveCount(0)
   await expect(page.getByText(/你以谁的身份进入|You enter as who/i)).toHaveCount(0)
   await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
+})
+
+test('door: Direct enters chat, not Story', async ({ page }) => {
+  await gotoDoor(page)
+  await passIntro(page)
+  await page.getByRole('button', { name: /^(单聊|Direct)$/ }).click()
+  await expect(page.locator('.cold-open')).toHaveCount(0)
+  await expect(page.locator('.chat-panel')).toBeVisible()
+  await expect(page.locator('.story-scene-bill')).toHaveCount(0)
+  await expect(page.locator('.play-mode-bar')).toBeVisible()
+  await expect(page.getByRole('button', { name: '单聊' }).or(page.getByRole('button', { name: 'Direct' }))).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('door: Crew enters group chat, not Story', async ({ page }) => {
+  await gotoDoor(page)
+  await passIntro(page)
+  await page.getByRole('button', { name: /^(群聊|Crew)$/ }).click()
+  await expect(page.locator('.cold-open')).toHaveCount(0)
+  await expect(page.locator('.chat-panel')).toBeVisible()
+  await expect(page.locator('.story-scene-bill')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '群聊' }).or(page.getByRole('button', { name: 'Crew' }))).toHaveAttribute('aria-pressed', 'true')
 })
 
 /* ------------------------------------------------------------------ */

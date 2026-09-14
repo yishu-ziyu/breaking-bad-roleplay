@@ -21,6 +21,8 @@ describe('play-QA wiring in App', () => {
     assert.match(app, /onEnterDirect/)
     assert.match(app, /onEnterCrew/)
     assert.match(app, /onCrew=/)
+    assert.match(app, /PlayModeBar/)
+    assert.doesNotMatch(app, /NightStartCta/)
   })
 
   it('open quota does not wall 说/做/观察 or pulse 额度用尽', () => {

@@ -44,7 +44,7 @@ async function emitSSE(page: Page, type: string, data: unknown) {
 async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
-    window.localStorage.setItem('abq_productSurface', JSON.stringify('v2-cold-open'))
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {

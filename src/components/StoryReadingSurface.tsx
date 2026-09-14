@@ -13,12 +13,10 @@ export type StoryReadingSurfaceProps = {
 
 const COPY = {
   zh: {
-    loreEmpty: '还没有新的事实上场。',
     redraw: '换一版这一拍',
     you: '你',
   },
   en: {
-    loreEmpty: 'Nothing new is on stage yet.',
     redraw: 'Redraw this beat',
     you: 'You',
   },
@@ -71,21 +69,21 @@ export function StoryReadingSurface({
           </button>
         )}
       </div>
-      <aside
-        className={`story-lore${lore.expanded ? ' is-expanded' : ''}`}
-        aria-expanded={lore.expanded}
-      >
-        {lore.location && <p className="story-lore__place">{lore.location}</p>}
-        {lore.facts.length === 0 ? (
-          <p className="story-lore__empty">{t.loreEmpty}</p>
-        ) : (
-          <ul>
-            {lore.facts.map((fact) => (
-              <li key={fact}>{fact}</li>
-            ))}
-          </ul>
-        )}
-      </aside>
+      {(lore.facts.length > 0 || lore.location) && (
+        <aside
+          className={`story-lore${lore.expanded ? ' is-expanded' : ''}`}
+          aria-expanded={lore.expanded}
+        >
+          {lore.location && <p className="story-lore__place">{lore.location}</p>}
+          {lore.facts.length > 0 ? (
+            <ul>
+              {lore.facts.map((fact) => (
+                <li key={fact}>{fact}</li>
+              ))}
+            </ul>
+          ) : null}
+        </aside>
+      )}
     </div>
   )
 }

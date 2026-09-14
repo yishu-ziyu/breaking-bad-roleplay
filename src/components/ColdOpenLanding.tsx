@@ -1,18 +1,20 @@
 /**
  * ColdOpenLanding — first-run door.
  *
- * One question (have you seen the show?) starts the night. Crisis choices
- * and casting happen in the story, not as a second title screen.
- * Parent owns wiring into Story mode; this file stays free of App.tsx internals.
+ * First-run: Saul greets, then play mode (Story / Direct / Crew).
+ * Story then asks whether you've seen the show. Parent owns session wiring.
  */
 
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { ElementSquare } from '../lib/ElementSquare'
+import { Silhouette } from '../lib/silhouette'
 
 import type { ColdOpenChoiceId, ColdOpenLanguage, KnowledgeTrack } from './coldOpenCopy'
 import {
   BRIEF_COPY,
   COLD_OPEN_PROMPTS,
+  INTRO_COPY,
+  MODE_COPY,
   UI_COPY,
   briefStartPayload,
 } from './coldOpenCopy'
@@ -44,10 +46,14 @@ export type ColdOpenLandingProps = {
   onEnterDirect?: () => void
   /** Skip Story cold-open and enter Crew debate. */
   onEnterCrew?: () => void
+  /** First visit shows the game intro before mode choice. */
+  showIntro?: boolean
+  onIntroDone?: () => void
 }
 
 export function ColdOpenLanding({
   language,
+  knowledgeTrack,
   onKnowledgePick,
   onStart,
   onOpenSettings,
@@ -56,16 +62,38 @@ export function ColdOpenLanding({
   error = null,
   onEnterDirect,
   onEnterCrew,
+  showIntro = true,
+  onIntroDone,
 }: ColdOpenLandingProps) {
   const titleId = useId()
   const zh = language === 'zh'
   const ui = UI_COPY[language]
+  const intro = INTRO_COPY[language]
+  const modes = MODE_COPY[language]
   const locked = starting
+  const [doorStep, setDoorStep] = useState<'intro' | 'modes' | 'story-knowledge'>(
+    showIntro ? 'intro' : 'modes',
+  )
 
   const beginNight = (track: KnowledgeTrack) => {
     if (locked) return
     onKnowledgePick(track)
     onStart(briefStartPayload(track, language))
+  }
+
+  const finishIntro = () => {
+    if (locked) return
+    onIntroDone?.()
+    setDoorStep('modes')
+  }
+
+  const pickStory = () => {
+    if (locked) return
+    if (knowledgeTrack) {
+      beginNight(knowledgeTrack)
+      return
+    }
+    setDoorStep('story-knowledge')
   }
 
   return (
@@ -148,55 +176,104 @@ export function ColdOpenLanding({
         </div>
       </div>
 
-      <aside className="cold-open__door" aria-label={BRIEF_COPY[language].question}>
-        <h3 className="cold-open__door-q">{BRIEF_COPY[language].question}</h3>
-        <div className="cold-open__pills" role="group" aria-label={BRIEF_COPY[language].question}>
-          <button
-            type="button"
-            className="cold-open__pill cold-open__pill--loud"
-            onClick={() => beginNight('fan')}
-            disabled={locked}
-          >
-            {BRIEF_COPY[language].fan}
-          </button>
-          <button
-            type="button"
-            className="cold-open__pill cold-open__pill--quiet"
-            onClick={() => beginNight('fresh')}
-            disabled={locked}
-          >
-            {BRIEF_COPY[language].fresh}
-          </button>
-        </div>
-        {(onEnterDirect || onEnterCrew) && (
-          <p
-            className="cold-open__door-foot"
-            role="group"
-            aria-label={zh ? '其他玩法' : 'Other play'}
-          >
-            <span>{zh ? '也可以先' : 'Or just'}</span>
-            {onEnterDirect && (
+      <aside
+        className="cold-open__door"
+        aria-label={
+          doorStep === 'intro'
+            ? intro.speaker
+            : doorStep === 'modes'
+              ? modes.question
+              : BRIEF_COPY[language].question
+        }
+      >
+        {doorStep === 'intro' ? (
+          <>
+            <div className="cold-open__intro-cast">
+              <span className="cold-open__intro-face">
+                <Silhouette characterId="saul" name={intro.speaker} size={72} />
+              </span>
+              <cite className="cold-open__intro-speaker">{intro.speaker}</cite>
+            </div>
+            <p className="cold-open__intro-line">{intro.line}</p>
+            <button
+              type="button"
+              className="cold-open__pill cold-open__pill--loud"
+              onClick={finishIntro}
+              disabled={locked}
+            >
+              {intro.cta}
+            </button>
+          </>
+        ) : doorStep === 'modes' ? (
+          <>
+            <h3 className="cold-open__door-q">{modes.question}</h3>
+            <div className="cold-open__modes" role="group" aria-label={modes.question}>
               <button
                 type="button"
-                className="cold-open__door-link"
-                onClick={onEnterDirect}
-                disabled={starting}
+                className="cold-open__mode"
+                aria-label={modes.story.title}
+                onClick={pickStory}
+                disabled={locked}
               >
-                {zh ? '单人场景' : 'Direct Chat'}
+                <span className="cold-open__mode-title">{modes.story.title}</span>
+                <span className="cold-open__mode-hint">{modes.story.hint}</span>
               </button>
-            )}
-            {onEnterDirect && onEnterCrew && <span aria-hidden="true">·</span>}
-            {onEnterCrew && (
+              {onEnterDirect && (
+                <button
+                  type="button"
+                  className="cold-open__mode"
+                  aria-label={modes.direct.title}
+                  onClick={onEnterDirect}
+                  disabled={locked}
+                >
+                  <span className="cold-open__mode-title">{modes.direct.title}</span>
+                  <span className="cold-open__mode-hint">{modes.direct.hint}</span>
+                </button>
+              )}
+              {onEnterCrew && (
+                <button
+                  type="button"
+                  className="cold-open__mode"
+                  aria-label={modes.crew.title}
+                  onClick={onEnterCrew}
+                  disabled={locked}
+                >
+                  <span className="cold-open__mode-title">{modes.crew.title}</span>
+                  <span className="cold-open__mode-hint">{modes.crew.hint}</span>
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="cold-open__door-back"
+              onClick={() => setDoorStep('modes')}
+              disabled={locked}
+            >
+              {modes.back}
+            </button>
+            <h3 className="cold-open__door-q">{BRIEF_COPY[language].question}</h3>
+            <div className="cold-open__pills" role="group" aria-label={BRIEF_COPY[language].question}>
               <button
                 type="button"
-                className="cold-open__door-link"
-                onClick={onEnterCrew}
-                disabled={starting}
+                className="cold-open__pill cold-open__pill--loud"
+                onClick={() => beginNight('fan')}
+                disabled={locked}
               >
-                {zh ? '群像会谈' : 'Crew Debate'}
+                {BRIEF_COPY[language].fan}
               </button>
-            )}
-          </p>
+              <button
+                type="button"
+                className="cold-open__pill cold-open__pill--quiet"
+                onClick={() => beginNight('fresh')}
+                disabled={locked}
+              >
+                {BRIEF_COPY[language].fresh}
+              </button>
+            </div>
+          </>
         )}
       </aside>
     </div>

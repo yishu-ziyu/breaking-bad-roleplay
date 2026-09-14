@@ -42,6 +42,21 @@ test('reading surface is a manuscript, not a Direct chat thread', () => {
   assert.doesNotMatch(html, /Phrase Bias|token probability|Hypebot|McKee/)
 })
 
+test('empty lore does not keep a blank facts panel on stage', () => {
+  const html = renderToStaticMarkup(
+    createElement(StoryReadingSurface, {
+      blocks: [{ id: 'd1', kind: 'dialogue', text: 'Sit down.', source: 'model', speaker: 'Saul' }],
+      lore: { facts: [], location: null, expanded: false },
+      language: 'zh',
+      canRedraw: false,
+      onRedrawBeat: () => {},
+    }),
+  )
+  assert.doesNotMatch(html, /还没有新的事实上场/)
+  assert.doesNotMatch(html, /Nothing new is on stage yet/)
+  assert.doesNotMatch(html, /story-lore/)
+})
+
 test('lore rail expands when facts are on stage', () => {
   const events = sampleEvents()
   const lore = extractOnStageLore(events, 'zh')

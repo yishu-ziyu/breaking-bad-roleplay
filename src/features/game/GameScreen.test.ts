@@ -128,7 +128,7 @@ test('media failure still leaves priced actions pressable', () => {
   assert.doesNotMatch(html, /<button[^>]*class="night-action"[^>]*disabled/)
 })
 
-test('home CTA is 开始这一夜 and keeps Direct/Crew experimental', () => {
+test('night kernel keeps its own entry at ?night=1', () => {
   const html = renderToStaticMarkup(createElement(NightStartCta))
   assert.match(html, /开始这一夜/)
   assert.match(html, /\?night=1/)
