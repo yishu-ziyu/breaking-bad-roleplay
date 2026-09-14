@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Story 空发布 — 发生了什么</title>
+  <style>
+    :root { font-family: -apple-system, "PingFang SC", sans-serif; color: #f5f5f7; background: #111; }
+    body { margin: 0; padding: 32px 24px 64px; }
+    h1 { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .sub { color: #a1a1aa; font-size: 14px; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 1080px; }
+    .card { background: #1c1c1e; border-radius: 16px; padding: 20px; min-height: 280px; }
+    .card h2 { font-size: 13px; color: #a1a1aa; font-weight: 500; margin: 0 0 16px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .chip { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 999px; margin: 0 6px 8px 0; }
+    .ok { background: #132e1f; color: #34d399; }
+    .bad { background: #3a1515; color: #f87171; }
+    .line { font-size: 15px; line-height: 1.55; margin: 12px 0; }
+    .muted { color: #6e6e73; font-size: 13px; }
+    .arrow { text-align: center; color: #6e6e73; font-size: 12px; margin: 10px 0; }
+    .result { font-size: 16px; font-weight: 500; margin-top: 16px; }
+    code { font-size: 12px; background: #2c2c2e; padding: 1px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Story 空发布：玩家为什么突然没听到这句</h1>
+  <p class="sub">规划师合同里只有沃尔特。杰西已经改写好台词。门禁看合同，不看「谁正在说话」。</p>
+  <div class="grid">
+    <div class="card">
+      <h2>修之前</h2>
+      <div><span class="chip ok">合同在场：沃尔特</span></div>
+      <div><span class="chip bad">杰西不在合同里</span></div>
+      <p class="line">杰西已经写出：「Yo，这事没完。」</p>
+      <p class="arrow">↓ 硬门禁：actor_not_present</p>
+      <p class="result" style="color:#f87171">整组丢掉。玩家这一拍听不到杰西。<br />评测记成 empty_publish（4 次）。</p>
+      <p class="muted">不是模型没写。是写了却不准发出去。</p>
+    </div>
+    <div class="card">
+      <h2>修之后</h2>
+      <div><span class="chip ok">合同在场：沃尔特</span></div>
+      <div><span class="chip ok">正在说话的人算在场：杰西</span></div>
+      <p class="line">杰西已经写出：「Yo，这事没完。」</p>
+      <p class="arrow">↓ 说话的人补进合同，不额外加配角</p>
+      <p class="result" style="color:#34d399">这句发出去。玩家听得到。</p>
+      <p class="muted">知识越界、死人上场、操作指导，仍然整组拦截。</p>
+    </div>
+  </div>
+</body>
+</html>

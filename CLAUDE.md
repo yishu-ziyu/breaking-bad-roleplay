@@ -6,6 +6,7 @@
 - Playable: Walter, Jesse, Skyler, Saul, Mike, Gus, Hank — Direct / Crew / Story
 - McKee Story engine v2: `backend/agents/mckee_story.py` (DEC-0003)
 - Narrative pipeline as shipped: DEC-0005 (Propose → Validate → Repair → Commit)
+- 2026-09-14 接手说明: [docs/HANDOFF_2026-09-14.md](docs/HANDOFF_2026-09-14.md)（发布门禁、Crew 独立采样、临时 Apple 皮肤、评测口径）
 
 Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **not product constraints**. See [docs/PLANNING.md](docs/PLANNING.md).
 

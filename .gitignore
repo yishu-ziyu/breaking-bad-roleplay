@@ -45,3 +45,9 @@ materials/breaking-bad/voice-archetypes/samples/
 # Agent harness runtime (local trials)
 backend/agents/harness/data/lessons.json
 backend/agents/harness/data/trajectories.jsonl
+
+# Live policy-eval dumps (contain model text)
+looper-output/*.json
+
+# Local plugin pointer
+.video_agent/
