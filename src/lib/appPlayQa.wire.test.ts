@@ -10,6 +10,14 @@ const quotaHook = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..
 describe('play-QA wiring in App', () => {
   it('URL surface and landing CTAs reach Direct/Crew before Story', () => {
     assert.match(app, /applyPlaySurfaceToStorage/)
+    assert.match(app, /toDirectChatMemoryWire/)
+    assert.match(app, /app-shell--chat-paper/)
+    assert.match(app, /bubbleFromDirectPayload/)
+    assert.match(app, /bubblesFromCrewPayload/)
+    assert.match(app, /getDirectWayfinders/)
+    assert.match(app, /chat-header__frame/)
+    assert.match(app, /isInspectableThinking/)
+    assert.doesNotMatch(app, /我需要你的建议|I could use your advice/)
     assert.match(app, /onEnterDirect/)
     assert.match(app, /onEnterCrew/)
     assert.match(app, /onCrew=/)
@@ -19,6 +27,7 @@ describe('play-QA wiring in App', () => {
     assert.match(app, /quotaBlocksPlay/)
     assert.match(app, /quota\.open/)
     assert.match(quotaHook, /open:\s*(Boolean\(data\.open\)|data\.open === true|Boolean\(data\.open\)\s*\|\|)/)
-    assert.doesNotMatch(app, /继续这夜/)
+    assert.doesNotMatch(app, /继续这夜|进入这一夜|这一夜/)
+    assert.doesNotMatch(app, /NIGHT \{/)
   })
 })

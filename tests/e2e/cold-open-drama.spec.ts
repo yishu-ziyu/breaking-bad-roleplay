@@ -4,7 +4,7 @@ import { installMockEventSource } from './mockSse'
 /**
  * Cold Open crime-drama path (shell only; no real LLM required).
  *
- * Product flow: crisis → choice → cast → Story shell.
+ * Product flow: door (have you seen it?) → 场面卡 → 开始故事 → Story shell.
  * Agent Harness is lab-only (?lab=1 / /lab).
  *
  * Local note: if port 5173 is occupied by another Vite app, set
@@ -20,8 +20,8 @@ const PRODUCT_SURFACE = 'v2-cold-open'
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-/** Fresh visit: wipe storage before React mounts so Cold Open is the first screen. */
-async function gotoColdOpen(page: Page, path = '/') {
+/** Fresh visit: wipe storage before React mounts so the door is the first screen. */
+async function gotoDoor(page: Page, path = '/') {
   await page.addInitScript(() => {
     try {
       localStorage.clear()
@@ -32,11 +32,15 @@ async function gotoColdOpen(page: Page, path = '/') {
   })
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
-  const brief = page.locator('.cold-open__stage--brief')
-  if (await brief.isVisible()) {
-    await page.getByRole('button', { name: /Yes — start playing|看过，直接开始/ }).click()
-  }
-  await expect(page.locator('.cold-open__stage--crisis')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('.cold-open__stage--brief')).toBeVisible()
+}
+
+/** Door → start playing. Lands on the 场面卡; SSE still waits for 开始故事. */
+async function enterNightFromDoor(page: Page, path = '/') {
+  await gotoDoor(page, path)
+  await page.getByRole('button', { name: /Yes — start playing|看过，直接开始/ }).click()
+  await expect(page.locator('.cold-open')).toHaveCount(0)
+  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
 }
 
 /**
@@ -107,111 +111,58 @@ async function emitSSE(page: Page, type: string, data: unknown) {
 /*  1. Cold open visible after clearing storage                       */
 /* ------------------------------------------------------------------ */
 
-test('cold open: crisis copy + three choices, no 8-card char grid', async ({ page }) => {
-  await gotoColdOpen(page)
+test('cold open: door starts the night — no crisis quiz, no cast strip', async ({
+  page,
+}) => {
+  await gotoDoor(page)
 
-  // Crisis stamp / locale copy (zh or en depending on navigator)
-  await expect(page.getByText(/新墨西哥|New Mexico/i)).toBeVisible()
-  await expect(page.getByText(/2:13|凌晨/i)).toBeVisible()
-
-  // Three primary crisis choices (bilingual)
-  await expect(
-    page.getByRole('button', { name: /寻找杰西|Find Jesse/i }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /清理现场|Clean/i }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /打给索尔|Call Saul/i }),
-  ).toBeVisible()
-
-  // First screen is crisis, not the 8-card casting grid
-  await expect(page.locator('.char-grid')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /看过，直接开始|Yes — start playing/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /没看过，边玩边讲|No — explain as we go/ })).toBeVisible()
+  await expect(page.locator('.cold-open__stage--crisis')).toHaveCount(0)
   await expect(page.locator('.cold-open__cast')).toHaveCount(0)
-})
-
-/* ------------------------------------------------------------------ */
-/*  2. Casting after choice                                           */
-/* ------------------------------------------------------------------ */
-
-test('cold open: Find Jesse → cast strip with 4 members', async ({ page }) => {
-  await gotoColdOpen(page)
-
-  const findJesse = page.getByRole('button', { name: /寻找杰西|Find Jesse/i })
-  await expect(findJesse).toBeVisible()
-  await findJesse.click()
-
-  // Casting stage (wait past stage transition animation)
-  await expect(page.locator('.cold-open__stage--cast')).toBeVisible({ timeout: 10_000 })
-  await expect(
-    page.getByText(/你以谁的身份进入|You enter as who/i),
-  ).toBeVisible()
-
-  // Compact cast: Walter / Jesse / Saul / Mike (not full 8-card grid)
-  const cast = page.locator('.cold-open__cast-member')
-  await expect(cast).toHaveCount(4)
   await expect(page.locator('.char-grid')).toHaveCount(0)
 
-  // Named faces present (locale-aware labels / aria)
-  await expect(
-    page.getByRole('button', { name: /沃尔特|Walter/i }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /杰西|Jesse/i }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /索尔|Saul/i }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /迈克|Mike/i }),
-  ).toBeVisible()
+  await page.getByRole('button', { name: /看过，直接开始|Yes — start playing/ }).click()
+
+  await expect(page.locator('.cold-open')).toHaveCount(0)
+  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('button', { name: /寻找杰西|Find Jesse/i })).toHaveCount(0)
+  await expect(page.getByText(/你以谁的身份进入|You enter as who/i)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
 })
 
 /* ------------------------------------------------------------------ */
 /*  3. Enter story shell (soft-assert; no real LLM)                   */
 /* ------------------------------------------------------------------ */
 
-test('cold open: cast Walter shows the 场面卡 before any SSE', async ({
+test('cold open: starting from the door shows the 场面卡 before any SSE', async ({
   page,
 }) => {
   // Stub session APIs so a live connection path does not hang on network.
   const create = await mockSessionCreate(page)
   await mockActionEndpoint(page)
 
-  await gotoColdOpen(page)
-  await page.getByRole('button', { name: /寻找杰西|Find Jesse/i }).click()
-  await expect(page.locator('.cold-open__stage--cast')).toBeVisible({ timeout: 10_000 })
-  await expect(
-    page.getByText(/你以谁的身份进入|You enter as who/i),
-  ).toBeVisible()
+  await enterNightFromDoor(page)
 
-  await page.getByRole('button', { name: /进入角色 沃尔特|Enter as Walter/i }).click()
-
-  await expect(page.locator('.cold-open')).toHaveCount(0)
-  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 8_000 })
   await expect(page.locator('.story-scene-bill__place')).toBeVisible()
   await expect(page.locator('.story-scene-bill__crisis')).toBeVisible()
-  await expect(page.getByRole('button', { name: /开演|Raise curtain/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
   await expect(page.locator('.story-manuscript')).toHaveCount(0)
-  // SSE waits for 开演 — session create must not have fired yet.
+  // SSE waits for 开始故事 — session create must not have fired yet.
   await expect.poll(() => create.hits).toBe(0)
 })
 
-test('开演 raises the curtain, then SSE reading — still not a third chat thread', async ({
+test('开始故事 starts the stream, then SSE reading — still not a third chat thread', async ({
   page,
 }) => {
   await installMockEventSource(page)
   const create = await mockSessionCreate(page, 'curtain-sid')
   await mockActionEndpoint(page)
 
-  await gotoColdOpen(page)
-  await page.getByRole('button', { name: /寻找杰西|Find Jesse/i }).click()
-  await expect(page.locator('.cold-open__stage--cast')).toBeVisible({ timeout: 10_000 })
-  await page.getByRole('button', { name: /进入角色 沃尔特|Enter as Walter/i }).click()
-  await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 8_000 })
+  await enterNightFromDoor(page)
   await expect.poll(() => create.hits).toBe(0)
 
-  await page.getByRole('button', { name: /开演|Raise curtain/i }).click()
+  await page.getByRole('button', { name: /开始故事|Start Story/i }).click()
   await expect.poll(() => create.hits).toBe(1)
   await page.waitForFunction(
     () => Boolean((window as Window & { __mockSSE?: unknown }).__mockSSE),
@@ -253,7 +204,7 @@ test('开演 raises the curtain, then SSE reading — still not a third chat thr
 /* ------------------------------------------------------------------ */
 
 test('agent harness hidden on cold open without ?lab=1', async ({ page }) => {
-  await gotoColdOpen(page)
+  await gotoDoor(page)
 
   await expect(page.getByText(/Agent 实验台|Agent Lab|Agent Harness/i)).toHaveCount(0)
   await expect(page.locator('.agent-harness__fab')).toHaveCount(0)

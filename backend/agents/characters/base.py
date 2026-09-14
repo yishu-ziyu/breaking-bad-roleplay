@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-import json
 import logging
-import re
 from typing import Sequence
 
 from agents.provider import ProviderFacade, ModelResult
@@ -109,61 +107,11 @@ def _normalize_action_field(raw: object) -> dict | None:
     return None
 
 
-def _extract_structured(text: str) -> dict:
-    """
-    Try to parse a character response that may contain a JSON envelope.
-
-    Returns a dict with keys: reply_text, emotion_state, gif_search_query,
-    thinking, tool_executed, tool_log, plus optional turn-policy fields
-    (action, private_goal, fear, relationship_tactic, speech_act, …).
-    Falls back to plain-text reply if no JSON is found.
-    """
-    # Strip markdown fences if present
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    raw = fenced.group(1) if fenced else text.strip()
-
-    # Find the outer JSON object
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            data = json.loads(raw[start : end + 1])
-            from agents.speak_sanitize import sanitize_speak_content
-
-            action = _normalize_action_field(data.get("action"))
-            # Flat fields some models emit instead of nested action
-            if action is None and data.get("action_verb"):
-                action = _normalize_action_field(
-                    {
-                        "verb": data.get("action_verb"),
-                        "target_id": data.get("action_target_id") or data.get("target_id"),
-                        "destination_anchor": data.get("destination_anchor"),
-                        "animation": data.get("animation"),
-                    }
-                )
-            return {
-                "reply_text": sanitize_speak_content(data.get("reply_text", text)),
-                "emotion_state": data.get("emotion_state"),
-                "gif_search_query": data.get("gif_search_query"),
-                "thinking": data.get("thinking") or data.get("inner_monologue"),
-                "private_goal": data.get("private_goal") or "",
-                "fear": data.get("fear") or "",
-                "relationship_tactic": data.get("relationship_tactic") or "",
-                "speech_act": data.get("speech_act") or "",
-                "surface_intent": data.get("surface_intent") or "",
-                "subtext": data.get("subtext") or "",
-                "action": action,
-                "tool_executed": data.get("tool_executed"),
-                "tool_log": data.get("tool_log"),
-            }
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # No JSON found — return the raw text as the reply
+def _empty_structured(reply_text: str) -> dict:
     from agents.speak_sanitize import sanitize_speak_content
 
     return {
-        "reply_text": sanitize_speak_content(text),
+        "reply_text": sanitize_speak_content(reply_text),
         "emotion_state": None,
         "gif_search_query": None,
         "thinking": None,
@@ -176,6 +124,42 @@ def _extract_structured(text: str) -> dict:
         "action": None,
         "tool_executed": None,
         "tool_log": None,
+    }
+
+
+def _extract_structured(text: str) -> dict:
+    """Parse a character JSON envelope, or fall back to the raw reply."""
+    from agents.beat_json import parse_model_object
+    from agents.speak_sanitize import sanitize_speak_content
+
+    data = parse_model_object(text)
+    if not isinstance(data, dict):
+        return _empty_structured(text)
+
+    action = _normalize_action_field(data.get("action"))
+    if action is None and data.get("action_verb"):
+        action = _normalize_action_field(
+            {
+                "verb": data.get("action_verb"),
+                "target_id": data.get("action_target_id") or data.get("target_id"),
+                "destination_anchor": data.get("destination_anchor"),
+                "animation": data.get("animation"),
+            }
+        )
+    return {
+        "reply_text": sanitize_speak_content(data.get("reply_text", text)),
+        "emotion_state": data.get("emotion_state"),
+        "gif_search_query": data.get("gif_search_query"),
+        "thinking": data.get("thinking") or data.get("inner_monologue"),
+        "private_goal": data.get("private_goal") or "",
+        "fear": data.get("fear") or "",
+        "relationship_tactic": data.get("relationship_tactic") or "",
+        "speech_act": data.get("speech_act") or "",
+        "surface_intent": data.get("surface_intent") or "",
+        "subtext": data.get("subtext") or "",
+        "action": action,
+        "tool_executed": data.get("tool_executed"),
+        "tool_log": data.get("tool_log"),
     }
 
 

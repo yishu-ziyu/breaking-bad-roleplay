@@ -64,7 +64,7 @@ def _balanced_slice(text: str, open_ch: str, close_ch: str) -> str | None:
     return None
 
 
-def _loads_lenient(candidate: str) -> Any | None:
+def _loads_lenient(candidate: str) -> object | None:
     """json.loads with a few safe repairs (trailing commas)."""
     if not candidate or not candidate.strip():
         return None
@@ -74,7 +74,7 @@ def _loads_lenient(candidate: str) -> Any | None:
         try:
             return json.loads(a)
         except (json.JSONDecodeError, TypeError, ValueError):
-            continue
+            pass
     return None
 
 
@@ -147,6 +147,14 @@ def _iter_payload_candidates(text: str) -> list[Any]:
         if payload is not None:
             payloads.append(payload)
     return payloads
+
+
+def parse_model_object(text: str | None) -> dict[str, Any] | None:
+    """First JSON object a model stuffed in fences, braces, or prose."""
+    for payload in _iter_payload_candidates(text or ""):
+        if isinstance(payload, dict):
+            return payload
+    return None
 
 
 def parse_beat_plan(text: str | None) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:

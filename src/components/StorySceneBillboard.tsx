@@ -18,9 +18,11 @@ export function StorySceneBillboard({
     <article
       className={`story-scene-bill${holding ? ' is-holding' : ''}`}
       aria-busy={holding || undefined}
-      aria-label={bill.episodeTitle}
+      aria-label={bill.place}
     >
-      <p className="story-scene-bill__episode">{bill.episodeTitle}</p>
+      {bill.episodeTitle ? (
+        <p className="story-scene-bill__episode">{bill.episodeTitle}</p>
+      ) : null}
       <p className="story-scene-bill__place">{bill.place}</p>
       <p className="story-scene-bill__crisis">{bill.crisis}</p>
       <div className="story-scene-bill__cast">

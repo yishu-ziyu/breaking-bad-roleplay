@@ -13,6 +13,21 @@ export type KnowledgeTrack = 'fresh' | 'fan'
 
 export type ColdOpenChoiceId = 'find_jesse' | 'clean_scene' | 'call_saul' | 'free'
 
+/** Door “start playing” defaults: in the RV as Walter, no prescribed first move. */
+export const DEFAULT_BRIEF_CHARACTER_ID = 'walter'
+export const DEFAULT_BRIEF_CHOICE_ID: ColdOpenChoiceId = 'free'
+
+export function briefStartPayload(
+  track: KnowledgeTrack,
+  language: ColdOpenLanguage,
+): { choiceId: ColdOpenChoiceId; characterId: string; storyPrompt: string } {
+  return {
+    choiceId: DEFAULT_BRIEF_CHOICE_ID,
+    characterId: DEFAULT_BRIEF_CHARACTER_ID,
+    storyPrompt: COLD_OPEN_PROMPTS[DEFAULT_BRIEF_CHOICE_ID][language][track],
+  }
+}
+
 /**
  * Cold-open scene copy, per knowledge track. The fresh track assumes ZERO show
  * knowledge: every name and stakes is introduced inline. The fan track stays
@@ -65,13 +80,13 @@ export const COLD_OPEN_PROMPTS: Record<
   free: {
     en: {
       fresh:
-        'New Mexico desert, 2:13 a.m. You are Walter White, a chemistry teacher cooking out of an RV to leave his family money before cancer takes him. Your partner Jesse has bolted into the dark with half the cash and headlights are climbing the access road. No script covers what you do next. The night is yours — and so is everything you risk in it.',
-      fan: 'New Mexico desert, 2:13 a.m. The RV reeks of ammonia and burnt coffee. Jesse has bolted into the dark with half the cash, headlights are climbing the access road, and no script covers what you do next. The night is yours — and so is everything you risk in it.',
+        'New Mexico desert, 2:13 a.m. You are Walter White, a chemistry teacher cooking out of an RV to leave his family money before cancer takes him. Your partner Jesse has bolted into the dark with half the cash and headlights are climbing the access road. Nothing says what you do next.',
+      fan: 'New Mexico desert, 2:13 a.m. The RV reeks of ammonia and burnt coffee. Jesse has bolted into the dark with half the cash, headlights are climbing the access road, and nothing says what you do next.',
     },
     zh: {
       fresh:
-        '新墨西哥沙漠，凌晨两点十三分。你是沃尔特·怀特，一个查出肺癌、想在死前给家里留点钱的化学老师。搭档杰西揣着一半的钱冲进了黑地，车灯正在爬坡，没有任何剧本规定你接下来做什么。这一夜属于你——你押上的一切也是。',
-      fan: '新墨西哥沙漠，凌晨两点十三分。房车里全是氨水味和烧糊的咖啡。杰西冲进了黑地，车灯正在爬坡，没有任何剧本规定你接下来做什么。这一夜属于你——你押上的一切也是。',
+        '新墨西哥沙漠，凌晨两点十三分。你是沃尔特·怀特，一个查出肺癌、想在死前给家里留点钱的化学老师。搭档杰西揣着一半的钱冲进了黑地，车灯正在爬坡。接下来怎么做，没有规定。',
+      fan: '新墨西哥沙漠，凌晨两点十三分。房车里全是氨水味和烧糊的咖啡。杰西冲进了黑地，车灯正在爬坡。接下来怎么做，没有规定。',
     },
   },
 }
@@ -112,21 +127,33 @@ export const CRISIS_COPY: Record<
 /** Brief screen (phase 0): one value line + one knowledge question. 3 seconds. */
 export const BRIEF_COPY: Record<
   ColdOpenLanguage,
-  { title: string; sub: string; question: string; fan: string; fresh: string }
+  {
+    title: string
+    sub: string
+    question: string
+    fan: string
+    fanHint: string
+    fresh: string
+    freshHint: string
+  }
 > = {
   zh: {
     title: '这部剧，由你改写。',
     sub: '一场 AI 实时演绎的《绝命毒师》平行夜。你的每个决定都会写进接下来的剧情——没有规定动作。',
     question: '你看过《绝命毒师》吗？',
     fan: '看过，直接开始',
+    fanHint: '今晚从危机里进。不解释设定。',
     fresh: '没看过，边玩边讲',
+    freshHint: '边走边告诉你谁是谁。',
   },
   en: {
     title: 'A show you can rewrite.',
     sub: 'A Breaking Bad parallel night, performed live by AI. Every call you make gets written into what happens next — no prescribed moves.',
     question: 'Have you seen Breaking Bad?',
     fan: 'Yes — start playing',
+    fanHint: 'Straight into the crisis. No lore dump.',
     fresh: 'No — explain as we go',
+    freshHint: 'We’ll tell you who is who as it happens.',
   },
 }
 

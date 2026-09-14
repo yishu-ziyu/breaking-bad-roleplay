@@ -216,7 +216,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
   })
 
   await expect(page.locator('.story-hud')).toBeVisible()
-  await expect(page.locator('.story-hud')).toContainText('NIGHT')
+  await expect(page.locator('.story-hud')).not.toContainText('NIGHT')
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
   await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos')
   await expect(page.locator('.story-outline')).toHaveCount(0)

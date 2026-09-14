@@ -1223,6 +1223,8 @@ class ChatRequest(BaseModel):
     llmProvider: str = "stepfun"  # catalog provider id (minimax/stepfun/deepseek/...)
     modelId: str | None = Field(default=None, max_length=80)
     voiceExample: str | None = Field(default=None, max_length=2000)
+    memoryOpening: list[dict] = Field(default_factory=list, max_length=4)
+    memoryDigest: str = Field(default="", max_length=2000)
     connectionSessionId: str | None = None
     # Optional experiment path: Agent Harness pipeline instead of director.
     # Default False keeps production chat unchanged.
@@ -1417,6 +1419,8 @@ async def chat(
                         or payload.modelId
                     ),
                     "voiceExample": payload.voiceExample,
+                    "memoryOpening": payload.memoryOpening,
+                    "memoryDigest": payload.memoryDigest,
                 },
                 session_factory=async_session_factory,
             )

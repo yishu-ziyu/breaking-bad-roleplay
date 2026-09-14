@@ -20,8 +20,8 @@ describe('buildStorySceneBill (场面)', () => {
     assert.ok(ids.includes('walter'))
     assert.ok(ids.includes('jesse'))
     assert.ok(bill.onStage.some((c) => c.isYou && c.id === 'walter'))
-    assert.equal(bill.startLabel, '开演')
-    assert.doesNotMatch(bill.episodeTitle, /gacha|抽卡|卡牌/i)
+    assert.equal(bill.startLabel, '开始故事')
+    assert.doesNotMatch(bill.episodeTitle, /这一夜|This night|gacha|抽卡|卡牌/i)
   })
 
   it('puts Saul on stage when the crisis is the phone call', () => {
@@ -32,7 +32,7 @@ describe('buildStorySceneBill (场面)', () => {
       knowledgeTrack: 'fan',
     })
     assert.ok(bill.onStage.some((c) => c.id === 'saul'))
-    assert.match(bill.startLabel, /Raise curtain|Begin/i)
+    assert.equal(bill.startLabel, 'Start Story')
   })
 
   it('always includes the player face even if they are not the default cook', () => {
@@ -43,6 +43,20 @@ describe('buildStorySceneBill (场面)', () => {
       knowledgeTrack: 'fresh',
     })
     assert.ok(bill.onStage.some((c) => c.id === 'jesse' && c.isYou))
+  })
+
+  it('brief-start (free) does not title the scene as 这一夜', () => {
+    const bill = buildStorySceneBill({
+      choiceId: 'free',
+      characterId: 'walter',
+      language: 'zh',
+      knowledgeTrack: 'fan',
+    })
+    assert.equal(bill.episodeTitle, '')
+    assert.doesNotMatch(bill.episodeTitle, /这一夜|自己决定/)
+    assert.doesNotMatch(bill.crisis, /没有规定动作|这一夜/)
+    assert.match(bill.crisis, /杰西|车灯/)
+    assert.equal(bill.startLabel, '开始故事')
   })
 })
 

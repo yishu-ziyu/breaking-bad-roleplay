@@ -33,8 +33,10 @@ import { useQuota, parseQuotaError } from './hooks/useQuota'
 import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { ElementSquare } from './lib/ElementSquare'
-import { resolveGifUrl } from './lib/gifResolver'
 import { applyPlaySurfaceToStorage } from './lib/playEntry'
+import { toDirectChatMemoryWire } from './lib/directChatMemory'
+import { getDirectWayfinders, isInspectableThinking } from './lib/directWayfinders'
+import { bubbleFromDirectPayload, bubblesFromCrewPayload } from './lib/directChatReply'
 import { syncOpenerLanguage } from './lib/openerLanguage'
 import { quotaBlocksPlay } from './lib/quotaPolicy'
 import { buildStorySceneBill, holdsSceneCurtain } from './lib/storyScene'
@@ -269,13 +271,16 @@ const uiText: Record<Language, Record<string, string>> = {
     setStageHint: 'Describe the story you want in natural language. The scene board will play it beat by beat, pausing at pressure points for your decision.',
     placeholder: 'e.g. Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out…',
     startStory: 'Start Story',
-    narrativeStream: 'This night',
+    narrativeStream: 'Story',
     eventFeed: 'Fine-grained event-driven narrative',
     directorDecision: 'Choose the next move:',
     switchToChat: 'Chat · no chapter advance',
     you: 'You',
     send: 'Send',
     sending: 'Thinking…',
+    waitingAs: '{character} is thinking…',
+    directFrame: 'An AI is playing this part. Pushback is the character, not a helpdesk.',
+    inspectThinking: 'How they played it',
     messagePlaceholder: 'Negotiate with {character} as their {relation}…',
     privateScene: 'Private Scene',
     crewScene: 'Crew Debate',
@@ -390,16 +395,19 @@ const uiText: Record<Language, Record<string, string>> = {
     model: '模型引擎',
     storyTitle: 'ABQ Roleplay Lab',
     setStage: '开场设定',
-    setStageHint: '用自然语言写下你想压进这一夜的冲突。场面会一段段推，到紧要处停下来等你。',
+    setStageHint: '用自然语言写下你想推进的冲突。场面会一段段推，到紧要处停下来等你。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
-    startStory: '进入这一夜',
-    narrativeStream: '这一夜',
+    startStory: '开始故事',
+    narrativeStream: '剧情',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
     switchToChat: '单聊·不推进章节',
     you: '你',
     send: '发送',
     sending: '生成回应…',
+    waitingAs: '{character}还在想…',
+    directFrame: 'AI 扮演这一角。顶撞是角色，不是客服。',
+    inspectThinking: '他怎么想的',
     messagePlaceholder: '以{relation}身份对 {character} 说…',
     privateScene: '单人场景',
     crewScene: '群像会谈',
@@ -1288,6 +1296,11 @@ function App() {
       setSyncStatus('privacy-locked')
     }
 
+    const packedMemory = toDirectChatMemoryWire(
+      mode,
+      nextHistory.map(m => ({ sender: m.sender, text: m.text })),
+    )
+
     const controller = new AbortController()
     chatAbortRef.current = controller
     try {
@@ -1300,13 +1313,13 @@ function App() {
           userInput: userText,
           relation,
           mode,
-          history: nextHistory.slice(-10).map(m => ({ sender: m.sender, text: m.text })),
+          history: packedMemory.history,
+          memoryOpening: packedMemory.memoryOpening,
+          memoryDigest: packedMemory.memoryDigest,
           language,
           llmProvider: connection.view.providerId,
           modelId: connection.view.modelId,
           voiceExample: getVoiceExample(selectedCharId, relation) ?? null,
-          memorySummary: updatedAfterUser.summary || undefined,
-          keyFacts: updatedAfterUser.keyFacts.length > 0 ? updatedAfterUser.keyFacts : undefined,
           connectionSessionId: bindId,
         }),
       })
@@ -1336,37 +1349,10 @@ function App() {
       void quota.refresh()
 
       if (mode === 'crew') {
-        const debateReplies: ChatMessage[] = []
-        if (Array.isArray(data.debate_logs)) {
-          data.debate_logs.forEach((log: Record<string, unknown>) => {
-            const sender = log.sender as CharacterId
-            debateReplies.push({
-              id: crypto.randomUUID(),
-              sender,
-              text: log.text as string,
-              emotion: log.emotion as string | undefined,
-              gifQuery: log.gifQuery as string | null,
-              gifUrl: resolveGifUrl(sender, log.emotion as string | null, log.gifQuery as string | null),
-              thinking: log.thinking as string | undefined,
-              toolExecuted: log.tool_executed as string | null,
-              toolLog: log.tool_log as string | null,
-            })
-          })
-        } else if (data.reply_text) {
-          // Harness path returns the direct shape even in crew mode — show it
-          // rather than dropping a billed reply on the floor.
-          debateReplies.push({
-            id: crypto.randomUUID(),
-            sender: selectedCharId,
-            text: data.reply_text as string,
-            emotion: data.emotion_state as string | undefined,
-            gifQuery: data.gif_search_query as string | null,
-            gifUrl: resolveGifUrl(selectedCharId, data.emotion_state as string | null, data.gif_search_query as string | null),
-            thinking: data.thinking as string | undefined,
-            toolExecuted: data.tool_executed as string | null,
-            toolLog: data.tool_log as string | null,
-          })
-        }
+        const debateReplies: ChatMessage[] = bubblesFromCrewPayload(
+          selectedCharId,
+          data as Record<string, unknown>,
+        )
         if (debateReplies.length === 0) {
           // Billed crew turn produced nothing visible — say so instead of
           // leaving the player's question hanging in silence.
@@ -1390,17 +1376,10 @@ function App() {
           setSyncStatus('privacy-locked')
         }
       } else {
-        const reply: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender: selectedCharId,
-          text: data.reply_text,
-          emotion: data.emotion_state,
-          gifQuery: data.gif_search_query,
-          gifUrl: resolveGifUrl(selectedCharId, data.emotion_state, data.gif_search_query),
-          thinking: data.thinking,
-          toolExecuted: data.tool_executed,
-          toolLog: data.tool_log,
-        }
+        const reply: ChatMessage = bubbleFromDirectPayload(
+          selectedCharId,
+          data as Record<string, unknown>,
+        )
         updateMessages(current => [...current, reply])
 
         // Update memory with character reply
@@ -1471,11 +1450,11 @@ function App() {
     setStoryTask('')
     setError(null)
     setColdOpenChoiceId(null)
-    // QA P0#3: returning to the landing must re-enter through the cold open,
+    // QA P0#3: returning to the landing must re-enter through the door,
     // not fall through to the legacy idle setup form. Resetting the
-    // knowledge track keeps the brief → crisis → cast chain as the single
-    // entry; forcing surface='story' prevents a stale 'direct' surface from
-    // rendering the old setup screen after reset.
+    // knowledge track keeps the brief as the single entry; forcing
+    // surface='story' prevents a stale 'direct' surface from rendering
+    // the old setup screen after reset.
     setKnowledgeTrack(null)
     setSurface('story')
     setHasEnteredWorld(false)
@@ -1574,7 +1553,7 @@ function App() {
     : `Beat ${Math.max(story.beatIndex, 1)}`
   const lastEmotion = findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined
   const storyTensionLabel = formatEmotionLabel(lastEmotion, language) || (language === 'zh' ? '未定' : 'Unset')
-  const stageNightNo = Math.max(story.beatIndex, 1)
+  const stageBeatNo = Math.max(story.beatIndex, 1)
   const stageEmotionRaw = (lastEmotion ?? '').trim().toLowerCase()
   const stageTensionLevel = STAGE_TENSION_LEVEL[stageEmotionRaw] ?? 4
 
@@ -1706,7 +1685,7 @@ function App() {
         </div>
       )}
       <main
-        className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}${view === 'story' && sidebarCollapsed ? ' app-shell--story-focus' : ''}`}
+        className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}${view === 'story' && sidebarCollapsed ? ' app-shell--story-focus' : ''}${view === 'chat' ? ' app-shell--chat-paper' : ''}`}
         lang={language === 'zh' ? 'zh-CN' : 'en'}
       >
         <div className={`sidebar-wrapper ${sidebarCollapsed ? 'sidebar-wrapper--collapsed' : ''}`}>
@@ -1803,12 +1782,10 @@ function App() {
         /* ---------- Story View ---------- */
         <section className="story-panel story-panel--drama">
           <header className="story-header story-hud story-hud--minimal">
-            {/* Stage v2 HUD left: element square + NIGHT n title card (design hud-night). */}
             <div className="story-hud__night">
-              <ElementSquare symbol="N" num={stageNightNo} green size={30} />
+              <ElementSquare symbol={String(stageBeatNo)} num="" green size={30} />
               <div className="story-hud__night-txt">
-                <span className="story-hud__night-en">NIGHT {String(stageNightNo).padStart(2, '0')}</span>
-                <span className="story-hud__night-cn">{storyBeatLabel}</span>
+                <span className="story-hud__night-en">{storyBeatLabel}</span>
               </div>
             </div>
             <div className="story-hud__metric story-hud__metric--slug">
@@ -2099,8 +2076,8 @@ function App() {
                   </div>
                   <p className="story-complete__hint">
                     {language === 'zh'
-                      ? '这一夜先到这里。需要的话再打开局面图，或另开一场——不是无限续写。'
-                      : 'This scene is over. Open the situation map if you need it, or start another night — not an infinite chat.'}
+                      ? '先到这里。需要的话再打开局面图，或另开一场——不是无限续写。'
+                      : 'This scene is over. Open the situation map if you need it, or start another run — not an infinite chat.'}
                   </p>
                 </div>
               )}
@@ -2120,6 +2097,7 @@ function App() {
                   <h2>
                     {selectedChar.name}
                   </h2>
+                  <p className="chat-header__frame">{t.directFrame}</p>
                   {/* QA P1#7: chat was a dead end — no visible way back to a
                       live story. Offer the return only when one exists. */}
                   {story.sessionId && story.connectionState !== 'idle' && (
@@ -2186,6 +2164,12 @@ function App() {
                         connectionSessionId={connection.connectionSessionId}
                       />
                     )}
+                    {isInspectableThinking(msg.thinking) && (
+                      <details className="msg-think">
+                        <summary>{t.inspectThinking}</summary>
+                        <p>{msg.thinking}</p>
+                      </details>
+                    )}
                     <GifCard src={msg.id.startsWith('opener-') ? null : msg.gifUrl} alt={msg.gifQuery ? t.gifTrigger : ''} />
                   </div>
                 </article>
@@ -2193,7 +2177,7 @@ function App() {
             })}
             <div className="chat-end" aria-hidden="true" />
             {messages.length === 1 && messages[0]?.id.startsWith('opener-') && !isSending && <div className="chat-starters" aria-label={language === 'zh' ? '开场建议' : 'Conversation starters'}>
-              {(language === 'zh' ? ['我想和你谈件事。', '我需要你的建议。', '你最近怎么样？'] : ['I need to talk to you.', 'I could use your advice.', 'How have you been?']).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
+              {getDirectWayfinders(selectedCharId, language).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
             </div>}
           </div>
 
@@ -2211,6 +2195,7 @@ function App() {
             {isSending && (
               <div className="typing" aria-live="polite">
                 <span className="dot" /><span className="dot" /><span className="dot" />
+                <span className="typing__label">{t.waitingAs.replace('{character}', selectedChar.name)}</span>
               </div>
             )}
             {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}

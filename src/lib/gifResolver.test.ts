@@ -40,10 +40,8 @@ describe('gifResolver', () => {
     const url = resolveGifUrl('skyler', 'panic', 'family protective fear')
     assert.ok(url, 'expected a GIF URL for Skyler protective-fear')
     assert.ok(!url.includes('10RCqM2nZpdqOQ'), 'must not reuse the confrontation GIF URL')
-    assert.ok(
-      url.includes('LBL8F53My1SZa') || url.includes('c4rNN6FOS8l6o'),
-      'expected a family-tagged GIF (not confrontation)'
-    )
+    const familyUrls = roleAssets.skyler.gifPools.filter((g) => g.tags.includes('family')).map((g) => g.url)
+    assert.ok(familyUrls.includes(url), 'expected a family-tagged GIF (not confrontation)')
   })
 
   it('Chinese emotion 开场压迫 maps to bridge tags (glare/tense)', () => {
@@ -104,7 +102,7 @@ describe('gifResolver', () => {
   })
 
   it('all GIF URLs are well-formed (start with https://)', () => {
-    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank']
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank', 'marie']
     for (const char of characters) {
       const pool = roleAssets[char].gifPools
       for (const gif of pool) {
@@ -117,7 +115,7 @@ describe('gifResolver', () => {
   })
 
   it('every character has at least one default-tagged GIF', () => {
-    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank']
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank', 'marie']
     for (const char of characters) {
       const pool = roleAssets[char].gifPools
       const hasDefault = pool.some(g => g.tags.includes('default'))
@@ -126,7 +124,7 @@ describe('gifResolver', () => {
   })
 
   it('no duplicate URLs within a character pool', () => {
-    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank']
+    const characters: RoleAssetCharacterId[] = ['walter', 'jesse', 'skyler', 'saul', 'mike', 'gus', 'hank', 'marie']
     for (const char of characters) {
       const pool = roleAssets[char].gifPools
       const urls = pool.map(g => g.url)
@@ -167,6 +165,59 @@ describe('gifResolver', () => {
     const url = resolveGifUrl('walter', 'tense', null, false)
     assert.ok(url, 'skipGif=false should return a GIF URL')
     assert.ok(url.startsWith('https://'))
+  })
+
+  it('director emotion manipulative maps to glare, not a random default miss', () => {
+    resetGifResolverState()
+    const url = resolveGifUrl('walter', 'manipulative', null)
+    assert.ok(url, 'expected a GIF for manipulative')
+    const glare = roleAssets.walter.gifPools.filter((g) => g.tags.includes('glare')).map((g) => g.url)
+    assert.ok(glare.includes(url), `manipulative should pick a glare GIF, got ${url}`)
+  })
+
+  it('chemistry lecture reply beats a generic manipulative glare', () => {
+    resetGifResolverState()
+    const chemistry = roleAssets.walter.gifPools
+      .filter((g) => g.tags.includes('chemistry'))
+      .map((g) => g.url)
+    assert.ok(chemistry.length > 0, 'walter needs chemistry-tagged GIFs')
+    const url = resolveGifUrl(
+      'walter',
+      'manipulative',
+      'walter white lecture',
+      false,
+      '我上周教过你这个。发烟硫酸要提前冷到零度。搅拌的时候看颜色。',
+    )
+    assert.ok(chemistry.includes(url), `chemistry reply must pick a chemistry GIF, got ${url}`)
+  })
+
+  it('hank dinner / skyler secrecy picks family over chemistry', () => {
+    resetGifResolverState()
+    const family = roleAssets.walter.gifPools
+      .filter((g) => g.tags.includes('family'))
+      .map((g) => g.url)
+    const url = resolveGifUrl(
+      'walter',
+      'tense',
+      'walter white tense',
+      false,
+      '你觉得我会坐在那里，让汉克看见我的脸，然后解释我最近为什么瘦了？斯凯勒也不该知道。',
+    )
+    assert.ok(family.includes(url), `family scene must pick a family GIF, got ${url}`)
+  })
+
+  it('playable characters have a rotation-sized pool', () => {
+    const eightPlus: Array<keyof typeof roleAssets> = [
+      'walter', 'jesse', 'saul', 'mike', 'gus', 'hank',
+    ]
+    for (const char of eightPlus) {
+      assert.ok(
+        roleAssets[char].gifPools.length >= 8,
+        `${char} pool is ${roleAssets[char].gifPools.length}, need at least 8`,
+      )
+    }
+    assert.ok(roleAssets.skyler.gifPools.length >= 7, `skyler pool is ${roleAssets.skyler.gifPools.length}`)
+    assert.ok(roleAssets.marie.gifPools.length >= 2, 'marie needs a starter pool')
   })
 
   it('gun-meme queries sanitize to tense and skip confrontation GIFs', () => {

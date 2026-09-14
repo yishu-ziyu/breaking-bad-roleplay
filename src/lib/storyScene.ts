@@ -65,13 +65,14 @@ export function buildStorySceneBill(opts: {
     isYou: id === playerId,
   }))
 
+  const openNight = choice === 'free'
   return {
-    episodeTitle: language === 'zh' ? `这一夜 · ${choiceCopy.label}` : `This night · ${choiceCopy.label}`,
+    episodeTitle: '',
     place: crisisCopy.stamp,
-    crisis: `${choiceCopy.hint} ${crisisCopy.body}`.trim(),
+    crisis: openNight ? crisisCopy.body : `${choiceCopy.hint} ${crisisCopy.body}`.trim(),
     onStage,
-    startLabel: language === 'zh' ? '开演' : 'Raise curtain',
-    holdingLabel: language === 'zh' ? '开幕中…' : 'The scene is opening…',
+    startLabel: language === 'zh' ? '开始故事' : 'Start Story',
+    holdingLabel: language === 'zh' ? '正在开始…' : 'Starting…',
     onStageLabel: language === 'zh' ? '在场' : 'On stage',
     youTag: language === 'zh' ? '你' : 'you',
   }

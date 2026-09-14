@@ -638,4 +638,22 @@
   }
 }
 
+/* Cold open is a still, not chrome. Keep square corners and do not
+   restyle the brief answers into pills. */
+.cold-open__lang,
+.cold-open__lang button,
+.cold-open__settings {
+  border-radius: 2px;
+}
+.cold-open__choice,
+.cold-open__aside-link {
+  border-radius: 2px;
+}
+
+.cold-open__pill {
+  border-radius: 26px;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
 

@@ -20,6 +20,36 @@
 .app-shell[lang^='zh'] .chat-refresh .chat-header h2, .chat-refresh .chat-header h2 {
   color: #293b33; font: 500 24px/1.4 'Noto Serif SC', Georgia, serif; margin: 3px 0 0; letter-spacing: 0;
 }
+.chat-refresh .chat-header__frame {
+  margin: 6px 0 0;
+  max-width: 36em;
+  color: #748071;
+  font: 12px/1.55 'Noto Sans SC', 'PingFang SC', sans-serif;
+}
+.chat-refresh .msg-think {
+  margin-top: 10px;
+  color: #66765c;
+  font-size: 12px;
+}
+.chat-refresh .msg-think summary {
+  cursor: pointer;
+  color: #748071;
+  list-style: none;
+}
+.chat-refresh .msg-think summary::-webkit-details-marker { display: none; }
+.chat-refresh .msg-think p {
+  margin: 6px 0 0;
+  color: #536753;
+  font: 13px/1.6 'Noto Sans SC', 'PingFang SC', sans-serif;
+}
+.chat-refresh .typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #748071;
+  font-size: 12px;
+}
+.chat-refresh .typing__label { color: #748071; }
 .chat-refresh .chat-character-link { color: #7d513d; font-size: 12px; text-decoration: none; white-space: nowrap; }
 .chat-refresh .chat-header__relation { margin: 0; }
 .chat-refresh .chat-header__relation select {
@@ -81,6 +111,75 @@
   .chat-refresh .composer textarea { font-size: 16px; padding: 10px; }
   .chat-refresh .composer button { padding: 10px 16px; }
 }
+/* Direct/Crew paper: archive rail shares the board. Will's S —
+   de-emphasize the sidebar by dropping its dark fill so it sits on
+   the same surface as the conversation (not a second, black world). */
+.app-shell--chat-paper {
+  background: #f1eee5;
+}
+.app-shell--chat-paper .sidebar-wrapper--collapsed {
+  background: #f1eee5;
+  border-right: 1px solid #e3e1d5;
+}
+.app-shell--chat-paper .sidebar {
+  background: #f1eee5;
+  border-right: 1px solid #e3e1d5;
+  color: #293b33;
+}
+.app-shell--chat-paper .sidebar__toggle {
+  background: #ecebe1;
+  border-color: #d6d9ca;
+  color: #536753;
+  box-shadow: none;
+}
+.app-shell--chat-paper .sidebar__toggle:hover {
+  background: #e4e1d4;
+  color: #293b33;
+  border-color: #cfcbb8;
+}
+.app-shell--chat-paper .sidebar h2,
+.app-shell--chat-paper .field-label,
+.app-shell--chat-paper .sidebar label {
+  color: #748071;
+}
+.app-shell--chat-paper .brand p,
+.app-shell--chat-paper .sidebar {
+  color: #293b33;
+}
+.app-shell--chat-paper .char-card {
+  background: #fcfaf4;
+  border-color: #e3e1d5;
+  color: #293b33;
+}
+.app-shell--chat-paper .brand-return,
+.app-shell--chat-paper .auth-btn-secondary {
+  background: #fcfaf4;
+  border-color: #d6d9ca;
+  color: #536753;
+}
+.app-shell--chat-paper .auth-btn-guest {
+  color: #536753;
+  border-color: #d6d9ca;
+  background: transparent;
+}
+.app-shell--chat-paper .auth-input {
+  background: #fcfaf4;
+  border-color: #d6d9ca;
+  color: #293b33;
+}
+.app-shell--chat-paper .brand-icon {
+  background: #e8e5da;
+  border-color: #d6d9ca;
+}
+.app-shell--chat-paper .auth-btn-primary {
+  background: #355543;
+  color: #f7f4e9;
+}
+.app-shell--chat-paper .gif-card img {
+  background: #e8e5da;
+  border-color: #e3e1d5;
+}
+
 .chat-refresh .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 @media(max-width:600px) {
   .chat-panel.chat-refresh { height: calc(100dvh - 52px); }

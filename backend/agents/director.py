@@ -21,6 +21,7 @@ from agents.beat_json import (
     parse_beat_plan,
     parse_preview,
 )
+from agents.beat_pipeline import collect_llm_world_deltas, hoist_perspective_speak
 from agents.speak_sanitize import (
     contains_operational_howto,
     howto_deflection_line,
@@ -156,6 +157,35 @@ def _language_directive(lang: str, zh_guard: bool = True) -> str:
         return LANG_DIRECTIVE[norm]
     # zh + guard disabled: drop the 中文表达守则 block, keep everything else.
     return LANG_DIRECTIVE["zh"].replace(ZH_EXPRESSION_GUARD, "")
+
+
+def format_direct_conversation_memory(context: dict[str, Any]) -> str:
+    """Opening pin + middle digest for Direct, when recent history no longer holds them."""
+    opening = context.get("memoryOpening") or context.get("memory_opening") or []
+    digest = str(context.get("memoryDigest") or context.get("memory_digest") or "").strip()
+    if not isinstance(opening, list):
+        opening = []
+    opening = opening[:4]
+    lines: list[str] = []
+    for turn in opening:
+        if not isinstance(turn, dict):
+            continue
+        text = str(turn.get("text") or "").strip()
+        if not text:
+            continue
+        who = "Player" if str(turn.get("sender") or "") == "user" else "You"
+        lines.append(f"{who}: {text[:500]}")
+    parts: list[str] = []
+    if lines:
+        parts.append("This conversation opened with:\n" + "\n".join(lines))
+    if digest:
+        parts.append(
+            "What happened after that, before the most recent turns:\n" + digest[:2000]
+        )
+    if not parts:
+        return ""
+    parts.append("Use this only as memory of this conversation. Do not recap it unless asked.")
+    return "\n\n".join(parts)
 
 
 def _status_message(key: str, lang: str = "en", **kwargs) -> str:
@@ -1349,6 +1379,165 @@ class DirectorAgent:
             f"{voice_example}"
         )
 
+    async def _plan_beat_events(
+        self,
+        *,
+        task: str,
+        outline: str,
+        beat_index: int,
+        total_beats: int,
+        scene_desc: str,
+        mckee_role: str | None,
+        active_character_id: str | None,
+        voice_example: str | None,
+        language: str,
+        zh_guard: bool,
+        previous_scene_desc: str | None = None,
+    ) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None, list[AgentEvent]]:
+        """LLM plan + JSON repair. On failure return (None, None, error events)."""
+        lang_directive = _language_directive(language, zh_guard)
+        beat_prompt = (
+            f"{lang_directive}\n\n"
+            f"Task: {task}\n\n"
+            f"Outline:\n{outline}\n\n"
+            f"Current scene (beat {beat_index + 1}/{total_beats}): {scene_desc}\n\n"
+        )
+        if active_character_id:
+            beat_prompt += (
+                f"Active perspective character: {active_character_id}\n"
+                f"IMPORTANT: The FIRST agent_speak event in this beat MUST have "
+                f"character_id exactly equal to \"{active_character_id}\". "
+                f"Other characters may speak afterwards, but the opening voice must be "
+                f"{active_character_id}.\n\n"
+            )
+        beat_prompt += mckee_story.build_beat_planning_addon(
+            scene_desc,
+            beat_index=beat_index,
+            total_beats=total_beats,
+            language=language,
+            previous_scene_desc=previous_scene_desc,
+            outline_text=outline,
+        )
+        beat_prompt += (
+            "PREFERRED OUTPUT (DEC-0005 Beat Contract + events): a single JSON object:\n"
+            "{\n"
+            '  "contract": {\n'
+            f'    "beat_id": "beat_{beat_index + 1:02d}",\n'
+            f'    "dramatic_role": "{mckee_role or "progressive"}",\n'
+            '    "location_id": "<short location slug>",\n'
+            '    "present_characters": ["walter","jesse", ... short ids only],\n'
+            '    "value_before": "<private dramatic value before>",\n'
+            '    "value_after": "<private dramatic value after>",\n'
+            '    "dramatic_question": "<what must be answered this beat>",\n'
+            '    "pressure_source": "<what presses the cast>",\n'
+            '    "required_outcome": ["..."],\n'
+            '    "forbidden_outcomes": ["character learns unknown facts", "..."]\n'
+            "  },\n"
+            '  "events": [ /* legacy event array — see system prompt */ ]\n'
+            "}\n"
+            "Contract is authorial intent only — do NOT put final spoken lines in the contract. "
+            "agent_speak.content in events may be draft; Character Agents own final dialogue. "
+            "Legacy fallback: if you cannot emit a contract, emit the events JSON array alone.\n"
+            "Keep the beat concise: include at most two agent_speak events total. "
+            "Include only one scene_change if needed. Include brief agent_act and agent_think events. "
+            "End with one world_state_delta containing only concrete changed facts. "
+            "Every event object must include a 'recommended_model' field set to "
+            f"'{self.active_route}'. "
+            "Obey RESPONSE LANGUAGE for every narrative string field "
+            "(action, thought_content, content, description, deltas)."
+        )
+        system_content = self._system_prompt_with_voice_example(voice_example)
+        if _norm_lang(language) == "zh":
+            system_content = (
+                f"{lang_directive}\n\n"
+                f"{system_content}\n\n"
+                "CRITICAL OVERRIDE: Even though the schema examples above are English, "
+                "every player-visible narrative string you emit in this beat "
+                "(action, thought_content, content, description, delta values) "
+                "MUST be Simplified Chinese. English stage directions are forbidden."
+            )
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": beat_prompt},
+        ]
+        try:
+            llm_response = await self.provider.call_model(messages, self.active_route)
+        except Exception:
+            logger.exception("Beat %d LLM call failed", beat_index + 1)
+            return None, None, [
+                AgentEvent(
+                    type="error",
+                    data={
+                        "message": _status_message(
+                            "beat_llm_failed",
+                            language,
+                            n=beat_index + 1,
+                            route=self.active_route,
+                        )
+                    },
+                ),
+                self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed."),
+            ]
+        events, contract_raw = parse_beat_plan(llm_response)
+        if not events:
+            logger.warning(
+                "Beat %d parse miss; retrying JSON repair (route=%s preview=%s)",
+                beat_index + 1,
+                self.active_route,
+                parse_preview(llm_response),
+            )
+            repair_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You repair broken story-beat JSON. "
+                        "Prefer {\"contract\":{...},\"events\":[...]} (DEC-0005). "
+                        "Or a plain JSON array of event objects. No markdown, no prose."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"{lang_directive}\n\n"
+                        "The previous model output could not be parsed as a beat plan.\n"
+                        "Re-emit valid JSON for this beat with the same rules:\n"
+                        "- types: scene_change | agent_act | agent_think | agent_speak | world_state_delta\n"
+                        f"- at most two agent_speak; first speak character_id must be "
+                        f"\"{active_character_id}\" if set\n"
+                        "- recommended_model on every event\n"
+                        "- agent_speak.content pure dialogue, no parentheticals\n"
+                        f"- end with world_state_delta\n\n"
+                        f"Scene: {scene_desc}\nTask: {task}\n\n"
+                        f"Broken output to repair:\n{str(llm_response or '')[:6000]}"
+                    ),
+                },
+            ]
+            try:
+                repaired = await self.provider.call_model(
+                    repair_messages, self.active_route, max_tokens=4096
+                )
+                events, repair_contract = parse_beat_plan(repaired)
+                if repair_contract and not contract_raw:
+                    contract_raw = repair_contract
+            except Exception:
+                logger.exception("Beat %d JSON repair call failed", beat_index + 1)
+                events = []
+        if not events:
+            return None, None, [
+                AgentEvent(
+                    type="error",
+                    data={
+                        "message": _status_message(
+                            "beat_parse_failed", language, route=self.active_route
+                        ),
+                        "route": self.active_route,
+                        "preview": parse_preview(llm_response),
+                    },
+                ),
+                self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback)."),
+            ]
+        return events, contract_raw, []
+
     async def _generate_beat(
         self,
         task: str,
@@ -1406,171 +1595,26 @@ class DirectorAgent:
                     "mckee_role": mckee_role,
                 },
             )
-        # Ask Director LLM to plan this beat's events.
-        # Language directive MUST be on this prompt: agent_think / agent_act
-        # are written here, not by character sub-agents.
-        lang_directive = _language_directive(language, zh_guard)
-        beat_prompt = (
-            f"{lang_directive}\n\n"
-            f"Task: {task}\n\n"
-            f"Outline:\n{outline}\n\n"
-            f"Current scene (beat {beat_index + 1}/{total_beats}): {scene_desc}\n\n"
-        )
-        if active_character_id:
-            beat_prompt += (
-                f"Active perspective character: {active_character_id}\n"
-                f"IMPORTANT: The FIRST agent_speak event in this beat MUST have "
-                f"character_id exactly equal to \"{active_character_id}\". "
-                f"Other characters may speak afterwards, but the opening voice must be "
-                f"{active_character_id}.\n\n"
-            )
-        beat_prompt += mckee_story.build_beat_planning_addon(
-            scene_desc,
+        events, contract_raw, plan_errors = await self._plan_beat_events(
+            task=task,
+            outline=outline,
             beat_index=beat_index,
             total_beats=total_beats,
+            scene_desc=scene_desc,
+            mckee_role=mckee_role,
+            active_character_id=active_character_id,
+            voice_example=voice_example,
             language=language,
+            zh_guard=zh_guard,
             previous_scene_desc=context.get("previous_scene_desc") or None,
-            outline_text=outline,
         )
-        beat_prompt += (
-            "PREFERRED OUTPUT (DEC-0005 Beat Contract + events): a single JSON object:\n"
-            "{\n"
-            '  "contract": {\n'
-            f'    "beat_id": "beat_{beat_index + 1:02d}",\n'
-            f'    "dramatic_role": "{mckee_role or "progressive"}",\n'
-            '    "location_id": "<short location slug>",\n'
-            '    "present_characters": ["walter","jesse", ... short ids only],\n'
-            '    "value_before": "<private dramatic value before>",\n'
-            '    "value_after": "<private dramatic value after>",\n'
-            '    "dramatic_question": "<what must be answered this beat>",\n'
-            '    "pressure_source": "<what presses the cast>",\n'
-            '    "required_outcome": ["..."],\n'
-            '    "forbidden_outcomes": ["character learns unknown facts", "..."]\n'
-            "  },\n"
-            '  "events": [ /* legacy event array — see system prompt */ ]\n'
-            "}\n"
-            "Contract is authorial intent only — do NOT put final spoken lines in the contract. "
-            "agent_speak.content in events may be draft; Character Agents own final dialogue. "
-            "Legacy fallback: if you cannot emit a contract, emit the events JSON array alone.\n"
-            "Keep the beat concise: include at most two agent_speak events total. "
-            "Include only one scene_change if needed. Include brief agent_act and agent_think events. "
-            "End with one world_state_delta containing only concrete changed facts. "
-            "Every event object must include a 'recommended_model' field set to "
-            f"'{self.active_route}'. "
-            "Obey RESPONSE LANGUAGE for every narrative string field "
-            "(action, thought_content, content, description, deltas)."
-        )
-        system_content = self._system_prompt_with_voice_example(voice_example)
-        if _norm_lang(language) == "zh":
-            # System prompt examples are English; force Chinese output override.
-            system_content = (
-                f"{lang_directive}\n\n"
-                f"{system_content}\n\n"
-                "CRITICAL OVERRIDE: Even though the schema examples above are English, "
-                "every player-visible narrative string you emit in this beat "
-                "(action, thought_content, content, description, delta values) "
-                "MUST be Simplified Chinese. English stage directions are forbidden."
-            )
-        messages = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": beat_prompt},
-        ]
-        try:
-            llm_response = await self.provider.call_model(messages, self.active_route)
-        except Exception:
-            logger.exception("Beat %d LLM call failed", beat_index + 1)
-            yield AgentEvent(
-                type="error",
-                data={
-                    "message": _status_message(
-                        "beat_llm_failed",
-                        language,
-                        n=beat_index + 1,
-                        route=self.active_route,
-                    )
-                },
-            )
-            yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed.")
+        if plan_errors:
+            for ev in plan_errors:
+                yield ev
             return
-        # Parse LLM response as DEC-0005 plan (contract + events) or legacy array.
-        events, contract_raw = parse_beat_plan(llm_response)
-        if not events:
-            # One repair pass: models often emit prose + broken JSON after
-            # perspective switches (longer constraints). Ask for JSON-only.
-            logger.warning(
-                "Beat %d parse miss; retrying JSON repair (route=%s preview=%s)",
-                beat_index + 1,
-                self.active_route,
-                parse_preview(llm_response),
-            )
-            repair_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You repair broken story-beat JSON. "
-                        "Prefer {\"contract\":{...},\"events\":[...]} (DEC-0005). "
-                        "Or a plain JSON array of event objects. No markdown, no prose."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"{lang_directive}\n\n"
-                        "The previous model output could not be parsed as a beat plan.\n"
-                        "Re-emit valid JSON for this beat with the same rules:\n"
-                        "- types: scene_change | agent_act | agent_think | agent_speak | world_state_delta\n"
-                        f"- at most two agent_speak; first speak character_id must be "
-                        f"\"{active_character_id}\" if set\n"
-                        "- recommended_model on every event\n"
-                        "- agent_speak.content pure dialogue, no parentheticals\n"
-                        f"- end with world_state_delta\n\n"
-                        f"Scene: {scene_desc}\nTask: {task}\n\n"
-                        f"Broken output to repair:\n{str(llm_response or '')[:6000]}"
-                    ),
-                },
-            ]
-            try:
-                repaired = await self.provider.call_model(
-                    repair_messages, self.active_route, max_tokens=4096
-                )
-                events, repair_contract = parse_beat_plan(repaired)
-                if repair_contract and not contract_raw:
-                    contract_raw = repair_contract
-            except Exception:
-                logger.exception("Beat %d JSON repair call failed", beat_index + 1)
-                events = []
-        if not events:
-            yield AgentEvent(
-                type="error",
-                data={
-                    "message": _status_message(
-                        "beat_parse_failed", language, route=self.active_route
-                    ),
-                    "route": self.active_route,
-                    "preview": parse_preview(llm_response),
-                },
-            )
-            yield self._beat_ready_event(beat_index, f"Beat {beat_index + 1} (parse fallback).")
-            return
+        assert events is not None
 
-        # Filter fallback: if active_character_id set, hoist its first agent_speak
-        # to be the first agent_speak in yield order. Other events keep relative order.
-        if active_character_id:
-            target_name = active_character_id
-            idx_first_speak = None
-            idx_target_speak = None
-            for i, evt in enumerate(events):
-                if evt.get("type") == "agent_speak" and idx_first_speak is None:
-                    idx_first_speak = i
-                if (
-                    evt.get("type") == "agent_speak"
-                    and evt.get("data", {}).get("character_id") == target_name
-                    and idx_target_speak is None
-                ):
-                    idx_target_speak = i
-            if idx_target_speak is not None and idx_target_speak != idx_first_speak:
-                target_evt = events.pop(idx_target_speak)
-                events.insert(idx_first_speak, target_evt)
+        events = hoist_perspective_speak(events, active_character_id)
         events = self._prepare_beat_events(events)
         # If language is zh but the planner still emitted English narrative,
         # rewrite those fields before character polish / yield.
@@ -2126,15 +2170,7 @@ class DirectorAgent:
         # Append beat deltas onto Continuity Board and persist (memory, not judgment).
         if continuity_board is not None:
             try:
-                delta_payload: list[dict[str, Any]] = []
-                for raw_evt in events:
-                    if raw_evt.get("type") != "world_state_delta":
-                        continue
-                    raw_deltas = (raw_evt.get("data") or {}).get("deltas") or []
-                    if isinstance(raw_deltas, list):
-                        delta_payload.extend(
-                            d for d in raw_deltas if isinstance(d, dict)
-                        )
+                delta_payload: list[dict[str, Any]] = collect_llm_world_deltas(events)
                 if deltas:
                     delta_payload.extend(d for d in deltas if isinstance(d, dict))
                 speakers = [
@@ -2540,11 +2576,14 @@ class DirectorAgent:
             else:
                 ctx_messages.append({"role": "assistant", "content": turn.get("text", "")})
         voice_example: str | None = context.get("voiceExample")
+        memory_block = format_direct_conversation_memory(context)
         user_msg_with_context = (
             f"{user_message}\n\n"
             f"[Reply language: {target_language} only.]\n"
             f"{_language_directive(language)}"
         )
+        if memory_block:
+            user_msg_with_context = f"{memory_block}\n\n{user_msg_with_context}"
         if voice_example:
             user_msg_with_context += (
                 "\n\n[Reference speaking style: "
