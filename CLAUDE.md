@@ -1,15 +1,36 @@
+先读：[docs/AS_BUILT.md](docs/AS_BUILT.md)
+
 # Breaking Bad Roleplay — 项目开发规范
 
 ## 当前状态（as-built）
 
+- 「现在是什么」以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为索引。
+- 当前默认入口：索尔门，先打招呼，再选 剧情 / 单聊 / 群聊。没有明确要求改入口 → 保持。
 - 线上服务: https://bb.yishuziyu.cn
-- Playable: Walter, Jesse, Skyler, Saul, Mike, Gus, Hank — Direct / Crew / Story
+- 进聊后的 as-built：选角色、建关系再聊（Direct / Crew）；剧情走 SSE。角色见 CONTEXT.md / DEC-0002。这不是与首页竞争的另一套产品定义。
+- 六回合夜晚：已实现，只走 `?night=1`，不在默认剧情路径上。不要叫未加限定的「正式局」。
 - McKee Story engine v2: `backend/agents/mckee_story.py` (DEC-0003)
 - Narrative pipeline as shipped: DEC-0005 (Propose → Validate → Repair → Commit)
 - 2026-09-14 接手说明: [docs/HANDOFF_2026-09-14.md](docs/HANDOFF_2026-09-14.md)（发布门禁、Crew 独立采样、临时 Apple 皮肤、how-to 按泄漏打分）
-- 色彩科学（必读）: [docs/COLOR_SCIENCE.md](docs/COLOR_SCIENCE.md) — 世界用烟草/褐金/骨白；**让人挑的选项必须是热点，禁止褐上叠褐**。结构可借 Apple 字号，颜色不借 iOS 冷灰。
+- 色彩科学（必读）: [docs/COLOR_SCIENCE.md](docs/COLOR_SCIENCE.md) — 世界用烟草/褐金/骨白；**让人挑的选项必须是热点，禁止褐上叠褐**。结构可借 Apple 字号，颜色不借 iOS 冷灰。眼下保持现役索尔门颜色；以后若上夜色/黄绿，同一改动更新 COLOR_SCIENCE。
 
 Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **not product constraints**. See [docs/PLANNING.md](docs/PLANNING.md).
+
+## 动手前 / 收工
+
+动手前：读本轮要求和 [docs/AS_BUILT.md](docs/AS_BUILT.md)；核对分支、已有提交、未提交 diff。做首页相关工作：先用无预览查询的第一次访问核实现役入口。其他任务：不要重开首页。
+
+当前默认入口：索尔门，然后 剧情 / 单聊 / 群聊。没有明确要求改入口 → 保持。
+
+旧版本：夜路页、黄色「开始这一夜」页、杰西插画封面，不因为仓库里还有文件或截图就当成候选项。
+
+对不上时：写清「实际在跑什么」和「哪份文档在打架」。不要回退到旧页；不要把未做完的目标写成已上线。
+
+只有用户要求、或新证据会改目标时，才重开讨论。「仓库里还有另一版」不是新证据。
+
+收工时写：改了什么 / 没改什么 / 核了什么。如果改了入口，同一改动更新 AS_BUILT 和测试。没上线就写没上线。
+
+工作区可能有未提交、未上 origin 的单聊（Direct-chat）改动。不要覆盖、stash 走、或塞进无关提交。
 
 ## 项目特有运维（必读）
 
@@ -71,11 +92,11 @@ YishuShip 11 阶段与 `.ship/loop-N-*` 产出是历史流程，已归档。不�
 
 ## 产品定位
 
-这是一个《绝命毒师》主题的 AI 角色扮演对话原型，不是普通聊天机器人。
+这是一个《绝命毒师》主题的 AI 角色扮演。默认打开先见索尔门，再进剧情 / 单聊 / 群聊。入口以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为准。
 
-核心体验：选角色 -> 建立关系锚点 -> 对话 / 剧情演绎
-角色：Walter, Jesse, Skyler, Saul, Mike, Gus, Hank（见 CONTEXT.md / DEC-0002）
-模式：Direct Chat（一对一）、Crew（多人辩论）、Story（SSE 剧情流；大纲规划见 DEC-0003 McKee）
+进聊后的 as-built：选角色 -> 建立关系锚点 -> 对话 / 剧情演绎。这是聊天侧已落地的流程，不是另一套首页定义。
+角色：Walter, Jesse, Skyler, Saul, Mike, Gus, Hank（见 CONTEXT.md / DEC-0002；界面另有 Marie，导演未收录，见 AS_BUILT）
+模式：Direct Chat（一对一）、Crew（多人辩论）、Story（SSE 剧情流；大纲规划见 DEC-0003 McKee）。六回合夜晚已实现，只 `?night=1`，不是默认剧情。
 
 安全边界：禁止生成现实世界犯罪操作指导（制毒、暴力、洗钱等），戏剧张力保留，虚构语境内允许。
 
@@ -142,6 +163,7 @@ vercel --prod --yes            # Vercel 生产（见 docs/OPS_RUNBOOK.md）
 
 ## 相关文档
 
+- `docs/AS_BUILT.md` — 「现在是什么」的索引；入口、玩法可达性以它为准
 - `docs/PLANNING.md` — 历史计划仅供参考，不约束产品
 - `docs/OPS_RUNBOOK.md` — 改完怎么 commit / push / 双轨部署 / live smoke
 - `docs/FREE_TIER_SECURITY.md` — 平台免费额度与安全边界
