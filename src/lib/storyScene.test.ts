@@ -20,7 +20,9 @@ describe('buildStorySceneBill (场面)', () => {
     assert.ok(ids.includes('walter'))
     assert.ok(ids.includes('jesse'))
     assert.ok(bill.onStage.some((c) => c.isYou && c.id === 'walter'))
-    assert.equal(bill.startLabel, '开始故事')
+    assert.equal(bill.startLabel, '开始')
+    assert.notEqual(bill.startLabel, '开始故事')
+    assert.doesNotMatch(bill.startLabel, /开演/)
     assert.doesNotMatch(bill.episodeTitle, /这一夜|This night|gacha|抽卡|卡牌/i)
   })
 
@@ -56,7 +58,7 @@ describe('buildStorySceneBill (场面)', () => {
     assert.doesNotMatch(bill.episodeTitle, /这一夜|自己决定/)
     assert.doesNotMatch(bill.crisis, /没有规定动作|这一夜/)
     assert.match(bill.crisis, /杰西|车灯/)
-    assert.equal(bill.startLabel, '开始故事')
+    assert.equal(bill.startLabel, '开始')
   })
 })
 

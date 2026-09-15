@@ -1,5 +1,28 @@
 export type CharacterId = 'walter' | 'jesse' | 'skyler' | 'saul' | 'mike' | 'gus' | 'hank' | 'marie'
 
+/** Characters the player can pick for Direct / Crew. Marie is not in this set. */
+export const PLAYABLE_CHARACTER_IDS = [
+  'walter',
+  'jesse',
+  'skyler',
+  'saul',
+  'mike',
+  'gus',
+  'hank',
+] as const
+
+export type PlayableCharacterId = (typeof PLAYABLE_CHARACTER_IDS)[number]
+
+export function isPlayableCharacterId(id: string): id is PlayableCharacterId {
+  return (PLAYABLE_CHARACTER_IDS as readonly string[]).includes(id)
+}
+
+/** Orphaned picks (marie, unknown) become a real playable id — never a Marie-labeled Walter. */
+export function coercePlayableCharacterId(id: string | null | undefined): PlayableCharacterId {
+  if (id && isPlayableCharacterId(id)) return id
+  return 'walter'
+}
+
 export type RelationshipState = {
   trust: number
   suspicion: number

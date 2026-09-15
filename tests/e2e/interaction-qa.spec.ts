@@ -52,6 +52,14 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
       }
       window.localStorage.setItem(key, JSON.stringify(value))
     }
+    if (window.localStorage.getItem('abq_surface') === null) {
+      let view = null
+      let mode = null
+      try { view = JSON.parse(window.localStorage.getItem('abq_view') || 'null') } catch { /* ignore */ }
+      try { mode = JSON.parse(window.localStorage.getItem('abq_mode') || 'null') } catch { /* ignore */ }
+      const next = view === 'chat' ? (mode === 'crew' ? 'crew' : 'direct') : 'story'
+      window.localStorage.setItem('abq_surface', JSON.stringify(next))
+    }
   }, values)
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
@@ -60,6 +68,14 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
 async function gotoFresh(page: Page) {
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
+}
+
+/** First-run door: Saul pitch, then 剧情 / 单聊 / 群聊. */
+async function passIntro(page: Page) {
+  const enter = page.getByRole('button', { name: /进来坐|Sit down/ })
+  await expect(enter).toBeVisible()
+  await enter.click()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toBeVisible()
 }
 
 async function driveToBeatPaused(page: Page, opts: { outline?: string; agentSpeak?: string; beatId?: string } = {}) {
@@ -109,26 +125,23 @@ async function driveToBeatPaused(page: Page, opts: { outline?: string; agentSpea
 }
 
 /* =================================================================
-   TC-IX-1: Landing screen — Enter button visible and styled
+   TC-IX-1: Saul door — Sit down, then three play modes
    ================================================================= */
-test('TC-IX-1: landing screen enter button visible and interactive', async ({ page }) => {
+test('TC-IX-1: cold-open door sit-down is visible and interactive', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (err) => errors.push(err.message))
 
   await gotoFresh(page)
 
-  const enterBtn = page.locator('.landing-screen__enter')
+  await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.landing-screen')).toHaveCount(0)
+  const enterBtn = page.getByRole('button', { name: /进来坐|Sit down/ })
   await expect(enterBtn).toBeVisible()
   await expect(enterBtn).toBeEnabled()
-  await expect(enterBtn).toContainText(/Chat with Walter|和 Walter 聊聊/)
-
-  // Check the title is present
-  const title = page.locator('.landing-screen__title')
-  await expect(title).toBeVisible()
-
-  // Loop 10 Gap 2: character voice line replaces step pills
-  await expect(page.locator('.landing-screen__voice')).toBeVisible()
-  await expect(page.locator('.landing-step__num')).toHaveCount(0)
+  await expect(page.locator('.cold-open__intro-speaker')).toBeVisible()
+  await expect(page.locator('.cold-open__lang button', { hasText: '中文' })).toBeVisible()
+  await expect(page.locator('.cold-open__lang button', { hasText: 'EN' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toHaveCount(0)
 
   await page.waitForTimeout(500)
   expect(errors).toEqual([])
@@ -137,24 +150,17 @@ test('TC-IX-1: landing screen enter button visible and interactive', async ({ pa
 /* =================================================================
    TC-IX-2: Enter world → app shell visible with sidebar
    ================================================================= */
-test('TC-IX-2: enter world navigates to app shell', async ({ page }) => {
+test('TC-IX-2: sit down then Direct navigates to app shell', async ({ page }) => {
   await gotoFresh(page)
+  await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+  await passIntro(page)
+  await page.getByRole('button', { name: /^(单聊|Direct)$/ }).click()
 
-  const enterBtn = page.locator('.landing-screen__enter')
-  if (await enterBtn.count() > 0) {
-    await enterBtn.click()
-    await page.waitForTimeout(300)
-  }
-
-  // App shell visible
+  await expect(page.locator('.cold-open')).toHaveCount(0)
   await expect(page.locator('.app-shell')).toBeVisible()
   await expect(page.locator('.sidebar')).toBeVisible()
-
-  // Character grid visible (7-character roster incl. Hank)
   await expect(page.locator('.char-grid')).toBeVisible()
   await expect(page.locator('.char-card')).toHaveCount(7)
-
-  // Default character selected
   await expect(page.locator('.char-card.selected')).toBeVisible()
 })
 
@@ -193,20 +199,16 @@ test('TC-IX-4: language toggle switches UI text', async ({ page }) => {
     abq_view: 'story',
   })
 
-  // Default English
-  await expect(page.locator('button', { hasText: /Start Story/ })).toBeVisible()
+  await expect(page.locator('.story-setup button')).toContainText(/Start Story/)
 
-  // Click Chinese
-  await page.locator('.seg-control button', { hasText: /中文/ }).click()
+  await page.locator('.story-hud__lang button', { hasText: /中文/ }).click()
   await page.waitForTimeout(100)
 
-  // Should now show Chinese
-  await expect(page.locator('button', { hasText: /开始任务/ })).toBeVisible()
+  await expect(page.locator('.story-setup button')).toContainText(/开始/)
 
-  // Switch back
-  await page.locator('.seg-control button', { hasText: /EN/ }).click()
+  await page.locator('.story-hud__lang button', { hasText: /EN/ }).click()
   await page.waitForTimeout(100)
-  await expect(page.locator('button', { hasText: /Start Story/ })).toBeVisible()
+  await expect(page.locator('.story-setup button')).toContainText(/Start Story/)
 
   await page.waitForTimeout(500)
   expect(errors).toEqual([])
@@ -252,16 +254,13 @@ test('TC-IX-6: view toggle switches between chat and story panels', async ({ pag
   // In story view
   await expect(page.locator('.story-setup')).toBeVisible()
 
-  // Switch to chat
-  await page.locator('.seg-control button', { hasText: /Chat/ }).click()
+  await page.locator('.play-mode-bar button', { hasText: /Direct|单聊/ }).click()
   await page.waitForTimeout(200)
 
-  // Chat panel should be visible
   await expect(page.locator('.chat-panel')).toBeVisible()
   await expect(page.locator('.story-setup')).toHaveCount(0)
 
-  // Switch back to story
-  await page.locator('.seg-control button', { hasText: /Story/ }).click()
+  await page.locator('.play-mode-bar button', { hasText: /Story|剧情/ }).click()
   await page.waitForTimeout(200)
 
   await expect(page.locator('.story-setup')).toBeVisible()
@@ -587,6 +586,7 @@ test('TC-IX-17: chat send button disabled during API call', async ({ page }) => 
     abq_character: 'walter',
     abq_language: 'en',
     abq_view: 'chat',
+    abq_surface: 'direct',
     abq_messages: {
       walter: [
         { id: 'opener', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
@@ -645,12 +645,13 @@ test('TC-IX-18: return to landing resets to landing screen', async ({ page }) =>
   // Verify we're in the app
   await expect(page.locator('.app-shell')).toBeVisible()
 
-  // Click return to landing
+  await page.locator('.sidebar__toggle').click()
   await page.locator('.brand-return').click()
   await page.waitForTimeout(300)
 
-  // Should be back at landing screen
-  await expect(page.locator('.landing-screen')).toBeVisible()
+  await expect(page.locator('.cold-open')).toBeVisible()
+  await expect(page.locator('.landing-screen')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /进来坐|Sit down/ })).toBeVisible()
   await expect(page.locator('.app-shell')).toHaveCount(0)
 })
 
@@ -713,6 +714,7 @@ test('TC-IX-21: chat input placeholder updates when character changes', async ({
     abq_character: 'walter',
     abq_language: 'en',
     abq_view: 'chat',
+    abq_surface: 'direct',
     abq_messages: {
       walter: [
         { id: 'opener', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
@@ -724,6 +726,7 @@ test('TC-IX-21: chat input placeholder updates when character changes', async ({
   // Walter placeholder
   await expect(input).toHaveAttribute('placeholder', /Walter/)
 
+  await page.getByRole('button', { name: /档案|Archive/ }).click()
   // Switch to Jesse
   await page.locator('.char-card', { hasText: 'Jesse' }).click()
   await page.waitForTimeout(100)
@@ -740,8 +743,10 @@ test('TC-IX-22: character card selection has visual selected state', async ({ pa
     abq_character: 'walter',
     abq_language: 'en',
     abq_view: 'chat',
+    abq_surface: 'direct',
   })
 
+  await page.getByRole('button', { name: /档案|Archive/ }).click()
   const walterCard = page.locator('.char-card', { hasText: 'Walter' })
   await expect(walterCard).toHaveClass(/selected/)
 
@@ -757,22 +762,8 @@ test('TC-IX-22: character card selection has visual selected state', async ({ pa
 /* =================================================================
    TC-IX-23: Mode toggle (Direct/Crew) visible in chat view only
    ================================================================= */
-test('TC-IX-23: mode toggle visible only in chat view, not story view', async ({ page }) => {
-  await seedStorage(page, {
-    abq_character: 'walter',
-    abq_language: 'en',
-    abq_view: 'chat',
-  })
-
-  // Mode toggle visible in chat
-  await expect(page.locator('.field-label', { hasText: /^Mode$/ })).toBeVisible()
-
-  // Switch to story
-  await page.locator('.seg-control button', { hasText: /Story/ }).click()
-  await page.waitForTimeout(100)
-
-  // Mode toggle NOT visible in story
-  await expect(page.locator('.field-label', { hasText: /^Mode$/ })).toHaveCount(0)
+test.skip('TC-IX-23: mode toggle visible only in chat view, not story view', async () => {
+  // Deleted surface: sidebar Mode / .seg-control Chat|Story is gone. PlayModeBar is TC-IX-6.
 })
 
 /* =================================================================
@@ -827,6 +818,7 @@ test('TC-IX-26: IME-composing Enter does not send the chat message', async ({ pa
     abq_character: 'walter',
     abq_language: 'zh',
     abq_view: 'chat',
+    abq_surface: 'direct',
     abq_messages: {
       walter: [
         { id: 'opener', sender: 'walter', text: '说话小心点。', emotion: 'opening pressure', gifQuery: null, gifUrl: null },
@@ -870,6 +862,7 @@ test('TC-IX-27: failed send rolls back the bubble and restores the draft', async
     abq_character: 'walter',
     abq_language: 'en',
     abq_view: 'chat',
+    abq_surface: 'direct',
     abq_messages: {
       walter: [
         { id: 'opener', sender: 'walter', text: 'Choose your words carefully.', emotion: 'opening pressure', gifQuery: null, gifUrl: null },

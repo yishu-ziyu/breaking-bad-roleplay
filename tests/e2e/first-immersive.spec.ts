@@ -19,7 +19,9 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
   // addInitScript serializes data as JSON. Objects/arrays become stringified
   // inside the init script. We re-parse strings that look like JSON objects/arrays.
   await page.addInitScript((data) => {
-    window.localStorage.setItem('abq_enteredWorld', 'true')
+    window.localStorage.setItem('abq_enteredWorld', JSON.stringify(true))
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
+    window.localStorage.setItem('abq_surface', JSON.stringify('direct'))
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -51,7 +53,12 @@ async function seedCharacter(page: Page, charId: string) {
 }
 
 async function selectCharacter(page: Page, name: string) {
+  const wrap = page.locator('.sidebar-wrapper')
+  if (await wrap.evaluate((el) => el.classList.contains('sidebar-wrapper--collapsed'))) {
+    await page.locator('.sidebar__toggle').click()
+  }
   const button = page.locator('.char-card', { hasText: name })
+  await expect(button).toBeVisible()
   await button.click()
   await expect(button).toHaveClass(/selected/)
 }
@@ -107,35 +114,22 @@ async function mockChatCrew(
   })
 }
 
-async function mockAutoStoryStart(page: Page) {
-  await page.route('**/api/session/create', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ session_id: 'first-immersive-session' }),
-    })
-  })
-  await page.route('**/api/session/*/stream**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/event-stream',
-      body: '',
-    })
-  })
-}
-
 /* ------------------------------------------------------------------ */
-/*  AC-1: Fresh incognito → guest entry CTA visible                    */
+/*  AC-1: Fresh visit → Saul door (进来坐 / Sit down → 剧情/单聊/群聊)  */
 /* ------------------------------------------------------------------ */
 
-test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
-  await mockAutoStoryStart(page)
+test('AC-1: fresh session shows Saul cold-open door', async ({ page }) => {
   await gotoFresh(page)
-  // Click through landing screen to reveal auth section
-  const enterBtn = page.getByRole('button', { name: /Chat with Walter|和 Walter 聊聊|ENTER THE WORLD|进入世界/ })
-  if (await enterBtn.count() > 0) await enterBtn.click()
-  const cta = page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })
-  await expect(cta).toBeVisible()
+  await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.landing-screen')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /进来坐|Sit down/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toHaveCount(0)
+
+  await page.getByRole('button', { name: /进来坐|Sit down/ }).click()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(单聊|Direct)$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(群聊|Crew)$/ })).toBeVisible()
 })
 
 /* ------------------------------------------------------------------ */
@@ -273,14 +267,14 @@ test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavai
 /* ------------------------------------------------------------------ */
 
 test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }) => {
-  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew', abq_view: 'chat' }))
+  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew', abq_view: 'chat', abq_surface: 'crew' }))
   await mockChatCrew(page, [
     { sender: 'walter', text: 'We need to be careful.', emotion: 'tense', gifQuery: 'tense' },
     { sender: 'gus', text: 'Everything is under control.', emotion: 'business', gifQuery: 'business' },
   ])
 
   await gotoFresh(page)
-  await expect(page.locator('header.chat-header p')).toContainText(/Crew|群聊/)
+  await expect(page.locator('header.chat-header p').first()).toContainText(/Crew|群聊/)
   await sendChatMessage(page, 'What is the plan?')
 
   const debateReplies = [

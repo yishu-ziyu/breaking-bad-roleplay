@@ -4,15 +4,25 @@ import { installMockEventSource, expectDirectorControls } from './mockSse'
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173'
 
 async function gotoFresh(page: Page) {
-  // Bypass landing screen so tests land directly in the app
+  // Bypass the Saul door so tests land in Direct chat
   await page.addInitScript(() => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
     window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
     window.localStorage.setItem('abq_view', JSON.stringify('chat'))
     window.localStorage.setItem('abq_surface', JSON.stringify('direct'))
+    window.localStorage.setItem('abq_language', JSON.stringify('en'))
   })
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
+}
+
+
+async function openArchive(page: Page) {
+  const wrap = page.locator('.sidebar-wrapper')
+  if (await wrap.evaluate((el) => el.classList.contains('sidebar-wrapper--collapsed'))) {
+    await page.locator('.sidebar__toggle').click()
+  }
+  await expect(page.locator('.char-grid')).toBeVisible()
 }
 
 async function sendChatMessage(page: Page, text: string) {
@@ -25,7 +35,7 @@ async function seedRawStorage(page: Page, values: Record<string, string>) {
     for (const [key, value] of Object.entries(data)) {
       window.localStorage.setItem(key, value)
     }
-  }, { ...values, abq_enteredWorld: 'true', abq_productSurface: JSON.stringify('v3-mode-door') })
+  }, { ...values, abq_enteredWorld: 'true', abq_productSurface: JSON.stringify('v3-mode-door'), abq_surface: JSON.stringify('story') })
   await page.goto(BASE_URL)
   await page.waitForLoadState('domcontentloaded')
 }
@@ -63,9 +73,10 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
   })
 
   await gotoFresh(page)
-  await page.locator('.seg-control button:has-text("EN")').click()
+  await openArchive(page)
   await page.locator('.char-card', { hasText: 'Saul' }).click()
-  await page.locator('#relation').selectOption('witness')
+  await page.locator('#chat-relation').selectOption('witness')
+  await page.locator('.archive-settings > summary').click()
   // Model line is chosen via the connection chip → sheet → provider brand.
   await page.locator('.connection-chip').first().click()
   await page.locator('.connection-sheet__brands button', { hasText: 'StepFun' }).click()

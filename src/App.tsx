@@ -36,6 +36,13 @@ import { ElementSquare } from './lib/ElementSquare'
 import { applyPlaySurfaceToStorage } from './lib/playEntry'
 import { toDirectChatMemoryWire } from './lib/directChatMemory'
 import { getDirectWayfinders, isInspectableThinking } from './lib/directWayfinders'
+import {
+  defaultCrewIds,
+  getCrewFrame,
+  getCrewOpener,
+  getCrewPlaceholder,
+  getCrewWayfinders,
+} from './lib/crewStage'
 import { bubbleFromDirectPayload, bubblesFromCrewPayload } from './lib/directChatReply'
 import { syncOpenerLanguage } from './lib/openerLanguage'
 import { quotaBlocksPlay } from './lib/quotaPolicy'
@@ -45,6 +52,7 @@ import {
   canonicalBeatId,
   extractOnStageLore,
 } from './lib/storyReading'
+import { coercePlayableCharacterId } from './roleProfiles'
 import './App.css'
 import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
@@ -200,21 +208,6 @@ const characters: Character[] = [
       en: 'Hey, relax. I am not here to ruin your day. I am just here to notice if your story keeps changing.',
       zh: '嘿，放松。我不是来毁你一天的，我只是来看看你的故事会不会改口。',
     },
-  }, {
-    id: 'marie', name: 'Marie', color: '#c8b6e2',
-    oneLiner: {
-      en: 'Hank\u2019s wife and Skyler\u2019s sister-in-law. Polished hospitality with a sharp eye for what does not add up at home.',
-      zh: 'Hank 的妻子，Skyler 的嫂子。礼貌周到，对家里说不通的地方尤其敏锐。',
-    },
-    relationOptions: [
-      'Skyler sister-in-law',
-      'Hank spouse',
-      'supportive but uncomprehending',
-    ],
-    opener: {
-      en: 'Come sit down. I made the kitchen look nice and I want to hear how your day is going.',
-      zh: '坐下吧。我把厨房收拾了一下，想听听你今天过得怎么样。',
-    },
   },
 ]
 
@@ -251,9 +244,6 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'DEA partner': { en: "Hank's partner at work", zh: '汉克局里的搭档' },
   'suspect under watch': { en: 'suspect under watch', zh: '被盯上的人' },
   'friend of the family': { en: 'friend of the family', zh: '家人的朋友' },
-  'Skyler sister-in-law': { en: 'Skyler sister-in-law', zh: 'Skyler 的嫂子' },
-  'Hank spouse': { en: 'Hank spouse', zh: 'Hank 的妻子' },
-  'supportive but uncomprehending': { en: 'supportive but uncomprehending', zh: '支持却不理解的人' },
 }
 
 const uiText: Record<Language, Record<string, string>> = {
@@ -398,7 +388,7 @@ const uiText: Record<Language, Record<string, string>> = {
     setStage: '开场设定',
     setStageHint: '用自然语言写下你想推进的冲突。场面会一段段推，到紧要处停下来等你。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
-    startStory: '开始故事',
+    startStory: '开始',
     narrativeStream: '剧情',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
@@ -747,7 +737,11 @@ function App() {
   const language: Language = storedLanguage ?? defaultLanguage
   const t = uiText[language]
 
-  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
+  const [storedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
+  const selectedCharId = coercePlayableCharacterId(storedCharId)
+  useEffect(() => {
+    if (storedCharId !== selectedCharId) setSelectedCharId(selectedCharId)
+  }, [storedCharId, selectedCharId, setSelectedCharId])
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
 
   // After migrateProductSurfaceBeforePaint, pre-v2 LS already has enteredWorld=false.
@@ -842,7 +836,7 @@ function App() {
   const [decisionFree, setDecisionFree] = useState('')
   /** Cold-open choice id so first-beat chips match the crisis the player picked. */
   const [coldOpenChoiceId, setColdOpenChoiceId] = useState<string | null>(null)
-  /** Seed kept until 开演 actually starts SSE. */
+  /** Seed kept until the player starts the scene (SSE). */
   const [pendingStoryPrompt, setPendingStoryPrompt] = useState('')
   /** Talkie curtain: false until the player starts this scene. */
   const [curtainRaised, setCurtainRaised] = useState(false)
@@ -1220,7 +1214,7 @@ function App() {
     setColdOpenError(null)
     setError(null)
     try {
-      // 场面 first: enter Story on the scene billboard. SSE waits for 开演.
+      // Scene first: enter Story on the scene billboard. SSE waits for start.
       setHasEnteredWorld(true)
       setSurface('story')
       setSidebarCollapsed(true)
@@ -2101,9 +2095,13 @@ function App() {
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
                   <h2>
-                    {selectedChar.name}
+                    {mode === 'crew'
+                      ? defaultCrewIds(selectedCharId)
+                          .map((id) => characters.find((c) => c.id === id)?.name ?? id)
+                          .join(' · ')
+                      : selectedChar.name}
                   </h2>
-                  <p className="chat-header__frame">{t.directFrame}</p>
+                  <p className="chat-header__frame">{mode === 'crew' ? getCrewFrame(language) : t.directFrame}</p>
                   {showSavePrompt && (
                     <div className="save-prompt">
                       {t.savePrompt}
@@ -2135,7 +2133,26 @@ function App() {
           </header>
 
           <div className="chat-stream" ref={chatStreamRef} onScroll={handleChatScroll}>
+            {mode === 'crew' && messages.length === 1 && messages[0]?.id.startsWith('opener-') && (
+              <div className="crew-room" aria-label={language === 'zh' ? '在场的人' : 'People in the room'}>
+                <div className="crew-room__faces">
+                  {defaultCrewIds(selectedCharId).map((id) => {
+                    const face = characters.find((c) => c.id === id)
+                    return (
+                      <span key={id} className="crew-room__face">
+                        <Silhouette characterId={id} name={face?.name ?? id} size={56} />
+                        <cite>{face?.name ?? id}</cite>
+                      </span>
+                    )
+                  })}
+                </div>
+                <p className="crew-room__opener">{getCrewOpener(language)}</p>
+              </div>
+            )}
             {messages.map(msg => {
+              if (mode === 'crew' && messages.length === 1 && msg.id.startsWith('opener-')) {
+                return null
+              }
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
               const senderName = senderChar?.name ?? (isUser ? t.you : (msg.sender as string))
@@ -2180,7 +2197,7 @@ function App() {
             })}
             <div className="chat-end" aria-hidden="true" />
             {messages.length === 1 && messages[0]?.id.startsWith('opener-') && !isSending && <div className="chat-starters" aria-label={language === 'zh' ? '开场建议' : 'Conversation starters'}>
-              {getDirectWayfinders(selectedCharId, language).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
+              {(mode === 'crew' ? getCrewWayfinders(language) : getDirectWayfinders(selectedCharId, language)).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
             </div>}
           </div>
 
@@ -2211,7 +2228,9 @@ function App() {
                 value={message}
                 onChange={handleComposerChange}
                 onKeyDown={handleComposerKeyDown}
-                placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+                placeholder={mode === 'crew'
+                  ? getCrewPlaceholder(language)
+                  : t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
               />
               {isSending ? (
                 <button type="button" className="composer__stop" onClick={handleStopSending}>

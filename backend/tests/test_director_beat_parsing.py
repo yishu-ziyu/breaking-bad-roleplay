@@ -42,3 +42,5 @@ class TestBeatParsing:
         assert resolve_backend_character_id("Hank Schrader") == "Hank Schrader"
         assert resolve_backend_character_id("HANK") == "Hank Schrader"
         assert resolve_backend_character_id("walter white") == "Walter White"
+        assert resolve_backend_character_id("marie") is None
+        assert resolve_backend_character_id("heisenberg") is None
