@@ -71,7 +71,7 @@ export function buildStorySceneBill(opts: {
     place: crisisCopy.stamp,
     crisis: openNight ? crisisCopy.body : `${choiceCopy.hint} ${crisisCopy.body}`.trim(),
     onStage,
-    startLabel: language === 'zh' ? '开始故事' : 'Start Story',
+    startLabel: language === 'zh' ? '开始' : 'Start Story',
     holdingLabel: language === 'zh' ? '正在开始…' : 'Starting…',
     onStageLabel: language === 'zh' ? '在场' : 'On stage',
     youTag: language === 'zh' ? '你' : 'you',

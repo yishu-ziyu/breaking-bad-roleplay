@@ -20,7 +20,8 @@ test('场面卡 shows place, crisis, and on-stage faces — not gacha or chat bu
     }),
   )
   assert.match(html, /story-scene-bill/)
-  assert.match(html, /开始故事/)
+  assert.match(html, />开始</)
+  assert.doesNotMatch(html, /开始故事/)
   assert.match(html, /在场/)
   assert.doesNotMatch(html, /这一夜|开演|进入这一夜/)
   assert.doesNotMatch(html, /msg--user|msg--char/)

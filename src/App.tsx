@@ -405,7 +405,7 @@ const uiText: Record<Language, Record<string, string>> = {
     setStage: '开场设定',
     setStageHint: '用自然语言写下你想推进的冲突。场面会一段段推，到紧要处停下来等你。',
     placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
-    startStory: '开始故事',
+    startStory: '开始',
     narrativeStream: '剧情',
     eventFeed: '实时剧情事件',
     directorDecision: '关键节点：选择下一步',
@@ -849,7 +849,7 @@ function App() {
   const [decisionFree, setDecisionFree] = useState('')
   /** Cold-open choice id so first-beat chips match the crisis the player picked. */
   const [coldOpenChoiceId, setColdOpenChoiceId] = useState<string | null>(null)
-  /** Seed kept until 开演 actually starts SSE. */
+  /** Seed kept until the player starts the scene (SSE). */
   const [pendingStoryPrompt, setPendingStoryPrompt] = useState('')
   /** Talkie curtain: false until the player starts this scene. */
   const [curtainRaised, setCurtainRaised] = useState(false)
@@ -1227,7 +1227,7 @@ function App() {
     setColdOpenError(null)
     setError(null)
     try {
-      // 场面 first: enter Story on the scene billboard. SSE waits for 开演.
+      // Scene first: enter Story on the scene billboard. SSE waits for start.
       setHasEnteredWorld(true)
       setSurface('story')
       setSidebarCollapsed(true)
