@@ -110,7 +110,13 @@ test.describe('auth profile product flow', () => {
       throw new Error(`Unhandled fake Supabase request: ${request.method()} ${request.url()}`)
     })
 
+    await page.addInitScript(() => {
+      window.localStorage.setItem('abq_language', JSON.stringify('zh'))
+    })
     await page.goto('/')
+    await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: /进来坐|Sit down/ }).click()
+    await page.getByRole('button', { name: /^(单聊|Direct)$/ }).click()
 
     await expect(page.getByText('玩家档案')).toBeVisible()
     await page.getByPlaceholder('邮箱').fill(TEST_EMAIL)

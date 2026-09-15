@@ -21,6 +21,13 @@ async function gotoFresh(page: Page) {
   await page.waitForLoadState('domcontentloaded')
 }
 
+async function passIntro(page: Page) {
+  const enter = page.getByRole('button', { name: /进来坐|Sit down/ })
+  await expect(enter).toBeVisible()
+  await enter.click()
+  await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toBeVisible()
+}
+
 async function seedStorage(page: Page, values: Record<string, unknown>) {
   await page.addInitScript((data) => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
@@ -31,6 +38,14 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
         try { value = JSON.parse(raw) } catch { /* keep as string */ }
       }
       window.localStorage.setItem(key, JSON.stringify(value))
+    }
+    if (window.localStorage.getItem('abq_surface') === null) {
+      let view = null
+      let mode = null
+      try { view = JSON.parse(window.localStorage.getItem('abq_view') || 'null') } catch { /* ignore */ }
+      try { mode = JSON.parse(window.localStorage.getItem('abq_mode') || 'null') } catch { /* ignore */ }
+      const next = view === 'chat' ? (mode === 'crew' ? 'crew' : 'direct') : 'story'
+      window.localStorage.setItem('abq_surface', JSON.stringify(next))
     }
   }, values)
   await page.goto(BASE_URL)
@@ -109,22 +124,19 @@ async function driveToBeatPaused(page: Page, opts: { outline?: string; agentSpea
 test.describe('IX-1: Landing and entry', () => {
   test.beforeEach(() => { consoleErrors.length = 0 })
 
-  test('IX-1: landing enter button visible', async ({ page }) => {
+  test('IX-1: Saul door sit-down is visible', async ({ page }) => {
     collectErrors(page)
     await gotoFresh(page)
     await page.waitForTimeout(500)
     await page.screenshot({ path: '/tmp/bbr-r1-ix-1.png' })
 
-    const enterBtn = page.locator('.landing-screen__enter')
+    await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.landing-screen')).toHaveCount(0)
+    const enterBtn = page.getByRole('button', { name: /进来坐|Sit down/ })
     await expect(enterBtn).toBeVisible()
     await expect(enterBtn).toBeEnabled()
-    await expect(enterBtn).toContainText(/Chat with Walter|和 Walter 聊聊/)
-
-    const title = page.locator('.landing-screen__title')
-    await expect(title).toBeVisible()
-    // Loop 10 Gap 2: step pills removed; character voice line is the hook
-    await expect(page.locator('.landing-screen__voice')).toBeVisible()
-    await expect(page.locator('.landing-step__num')).toHaveCount(0)
+    await expect(page.locator('.cold-open__intro-speaker')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^(剧情|Story)$/ })).toHaveCount(0)
 
     await page.waitForTimeout(500)
     expect(consoleErrors).toEqual([])
@@ -134,13 +146,16 @@ test.describe('IX-1: Landing and entry', () => {
 test.describe('IX-2: App shell and navigation', () => {
   test.beforeEach(() => { consoleErrors.length = 0 })
 
-  test('IX-2: enter world shows app shell', async ({ page }) => {
+  test('IX-2: sit down then Direct shows app shell', async ({ page }) => {
     collectErrors(page)
-    // seedStorage sets abq_enteredWorld=true, so app renders .app-shell directly
-    await seedStorage(page, {})
+    await gotoFresh(page)
+    await expect(page.locator('.cold-open')).toBeVisible({ timeout: 15_000 })
+    await passIntro(page)
+    await page.getByRole('button', { name: /^(单聊|Direct)$/ }).click()
     await page.waitForTimeout(300)
     await page.screenshot({ path: '/tmp/bbr-r1-ix-2.png' })
 
+    await expect(page.locator('.cold-open')).toHaveCount(0)
     await expect(page.locator('.app-shell')).toBeVisible()
     await expect(page.locator('.sidebar')).toBeVisible()
     await expect(page.locator('.char-grid')).toBeVisible()
@@ -172,17 +187,17 @@ test.describe('IX-2: App shell and navigation', () => {
     collectErrors(page)
     await seedStorage(page, { abq_character: 'walter', abq_language: 'en', abq_view: 'story' })
 
-    await expect(page.locator('button', { hasText: /Start Story/ })).toBeVisible()
+    await expect(page.locator('.story-setup button')).toContainText(/Start Story/)
 
-    await page.locator('.seg-control button', { hasText: /中文/ }).click()
+    await page.locator('.story-hud__lang button', { hasText: /中文/ }).click()
     await page.waitForTimeout(100)
     await page.screenshot({ path: '/tmp/bbr-r1-ix-4.png' })
 
-    await expect(page.locator('button', { hasText: /开始任务/ })).toBeVisible()
+    await expect(page.locator('.story-setup button')).toContainText(/开始/)
 
-    await page.locator('.seg-control button', { hasText: /EN/ }).click()
+    await page.locator('.story-hud__lang button', { hasText: /EN/ }).click()
     await page.waitForTimeout(100)
-    await expect(page.locator('button', { hasText: /Start Story/ })).toBeVisible()
+    await expect(page.locator('.story-setup button')).toContainText(/Start Story/)
 
     expect(consoleErrors).toEqual([])
   })
@@ -382,11 +397,14 @@ test.describe('IX-5: Additional interaction checks', () => {
     await seedStorage(page, { abq_character: 'walter', abq_language: 'en', abq_view: 'story' })
 
     await expect(page.locator('.app-shell')).toBeVisible()
+    await page.locator('.sidebar__toggle').click()
     await page.locator('.brand-return').click()
     await page.waitForTimeout(300)
     await page.screenshot({ path: '/tmp/bbr-r1-ix-16.png' })
 
-    await expect(page.locator('.landing-screen')).toBeVisible()
+    await expect(page.locator('.cold-open')).toBeVisible()
+    await expect(page.locator('.landing-screen')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /进来坐|Sit down/ })).toBeVisible()
     await expect(page.locator('.app-shell')).toHaveCount(0)
 
     expect(consoleErrors).toEqual([])
