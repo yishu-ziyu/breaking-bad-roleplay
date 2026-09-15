@@ -559,8 +559,21 @@ def sanitize_direct_gif_query(query: str | None) -> str | None:
     return query
 
 
+_CREW_ROOM_PAD = (
+    "Walter White",
+    "Jesse Pinkman",
+    "Saul Goodman",
+    "Skyler White",
+    "Mike Ehrmantraut",
+)
+
+
 def crew_participants_from_message(character_id: str, user_message: str, *, cap: int = 3) -> list[str]:
-    """Return backend character names for a crew turn (primary first, max cap)."""
+    """Return backend character names for a crew turn (primary first, max cap).
+
+    A bare message still fills a default room. 群聊 is several people
+    already present, not a solo that waits for the player to name others.
+    """
     backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
     participants: list[str] = [backend_primary]
     raw = user_message or ""
@@ -571,6 +584,11 @@ def crew_participants_from_message(character_id: str, user_message: str, *, cap:
     for pattern, backend_name in _CREW_MENTION_PATTERNS:
         if re.search(pattern, text_lower) and backend_name not in participants:
             participants.append(backend_name)
+    for name in _CREW_ROOM_PAD:
+        if len(participants) >= cap:
+            break
+        if name not in participants:
+            participants.append(name)
     return participants[:cap]
 
 

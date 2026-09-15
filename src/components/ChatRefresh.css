@@ -82,6 +82,45 @@
 .chat-refresh .msg--opening .msg-body { text-align: center; padding: 5px 16px; border: 0; background: transparent; }
 .chat-refresh .msg--opening .msg-body > p { font: 400 22px/1.8 'Noto Serif SC', 'Songti SC', serif; }
 .chat-refresh .msg--opening .msg-meta { display: none; }
+.chat-refresh .crew-room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: 670px;
+  margin: clamp(15px, 7vh, 85px) auto 0;
+  text-align: center;
+}
+.chat-refresh .crew-room__faces {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+}
+.chat-refresh .crew-room__face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.chat-refresh .crew-room__face .silhouette-avatar,
+.chat-refresh .crew-room__face img {
+  width: 72px;
+  height: 80px;
+  border-radius: 28px;
+  background: #dddacf;
+}
+.chat-refresh .crew-room__face cite {
+  font: 500 12px/1.3 'Noto Sans SC', sans-serif;
+  color: #536753;
+  font-style: normal;
+}
+.chat-refresh .crew-room__opener {
+  margin: 0;
+  max-width: 22em;
+  font: 400 22px/1.8 'Noto Serif SC', 'Songti SC', serif;
+  color: #33453a;
+}
 .chat-refresh .msg-body button { background: transparent; color: #66765c; border-color: #cdd4c3; font-size: 11px; border-radius: 18px; padding: 6px 12px; }
 .chat-refresh .chat-starters { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 8px auto 24px; }
 .chat-refresh .chat-starters button { border: 1px solid #d7d8cc; color: #63705e; background: #ecebe1; border-radius: 24px; font: 12px/1.5 'Noto Sans SC',sans-serif; padding: 11px 16px; cursor: pointer; }
@@ -102,6 +141,11 @@
   .chat-refresh .msg--opening { margin-top: 30px; gap: 16px; }
   .chat-refresh .msg--opening .msg-body > p { font-size: 19px; }
   .chat-refresh .msg--opening .msg-avatar { width: 96px; height: 110px; border-radius: 32px; }
+  .chat-refresh .crew-room { margin-top: 30px; gap: 16px; }
+  .chat-refresh .crew-room__faces { gap: 12px; }
+  .chat-refresh .crew-room__face .silhouette-avatar,
+  .chat-refresh .crew-room__face img { width: 56px; height: 64px; border-radius: 22px; }
+  .chat-refresh .crew-room__opener { font-size: 19px; }
   .chat-refresh .msg { max-width: 100%; gap: 8px; grid-template-columns: 32px minmax(0,1fr); }
   .chat-refresh .msg-avatar { width: 32px; height: 34px; border-radius: 11px; }
   .chat-refresh .msg-body { padding: 13px 15px; }

@@ -11,7 +11,20 @@ from agents.director import crew_participants_from_message
 def test_primary_always_first():
     parts = crew_participants_from_message("walter", "hello")
     assert parts[0] == "Walter White"
-    assert len(parts) == 1
+
+
+def test_bare_message_fills_a_default_room():
+    """群聊 must already have several people before the player names anyone."""
+    walter_room = crew_participants_from_message("walter", "hello")
+    assert len(walter_room) == 3
+    assert walter_room[0] == "Walter White"
+    assert "Jesse Pinkman" in walter_room
+    assert "Saul Goodman" in walter_room
+
+    jesse_room = crew_participants_from_message("jesse", "yo")
+    assert jesse_room[0] == "Jesse Pinkman"
+    assert len(jesse_room) == 3
+    assert "Walter White" in jesse_room
 
 
 def test_hank_and_schrader_positive():

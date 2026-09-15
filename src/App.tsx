@@ -36,6 +36,13 @@ import { ElementSquare } from './lib/ElementSquare'
 import { applyPlaySurfaceToStorage } from './lib/playEntry'
 import { toDirectChatMemoryWire } from './lib/directChatMemory'
 import { getDirectWayfinders, isInspectableThinking } from './lib/directWayfinders'
+import {
+  defaultCrewIds,
+  getCrewFrame,
+  getCrewOpener,
+  getCrewPlaceholder,
+  getCrewWayfinders,
+} from './lib/crewStage'
 import { bubbleFromDirectPayload, bubblesFromCrewPayload } from './lib/directChatReply'
 import { syncOpenerLanguage } from './lib/openerLanguage'
 import { quotaBlocksPlay } from './lib/quotaPolicy'
@@ -2101,9 +2108,13 @@ function App() {
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
                   <h2>
-                    {selectedChar.name}
+                    {mode === 'crew'
+                      ? defaultCrewIds(selectedCharId)
+                          .map((id) => characters.find((c) => c.id === id)?.name ?? id)
+                          .join(' · ')
+                      : selectedChar.name}
                   </h2>
-                  <p className="chat-header__frame">{t.directFrame}</p>
+                  <p className="chat-header__frame">{mode === 'crew' ? getCrewFrame(language) : t.directFrame}</p>
                   {showSavePrompt && (
                     <div className="save-prompt">
                       {t.savePrompt}
@@ -2135,7 +2146,26 @@ function App() {
           </header>
 
           <div className="chat-stream" ref={chatStreamRef} onScroll={handleChatScroll}>
+            {mode === 'crew' && messages.length === 1 && messages[0]?.id.startsWith('opener-') && (
+              <div className="crew-room" aria-label={language === 'zh' ? '在场的人' : 'People in the room'}>
+                <div className="crew-room__faces">
+                  {defaultCrewIds(selectedCharId).map((id) => {
+                    const face = characters.find((c) => c.id === id)
+                    return (
+                      <span key={id} className="crew-room__face">
+                        <Silhouette characterId={id} name={face?.name ?? id} size={56} />
+                        <cite>{face?.name ?? id}</cite>
+                      </span>
+                    )
+                  })}
+                </div>
+                <p className="crew-room__opener">{getCrewOpener(language)}</p>
+              </div>
+            )}
             {messages.map(msg => {
+              if (mode === 'crew' && messages.length === 1 && msg.id.startsWith('opener-')) {
+                return null
+              }
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
               const senderName = senderChar?.name ?? (isUser ? t.you : (msg.sender as string))
@@ -2180,7 +2210,7 @@ function App() {
             })}
             <div className="chat-end" aria-hidden="true" />
             {messages.length === 1 && messages[0]?.id.startsWith('opener-') && !isSending && <div className="chat-starters" aria-label={language === 'zh' ? '开场建议' : 'Conversation starters'}>
-              {getDirectWayfinders(selectedCharId, language).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
+              {(mode === 'crew' ? getCrewWayfinders(language) : getDirectWayfinders(selectedCharId, language)).map(text => <button key={text} type="button" onClick={() => { setMessage(text); composerRef.current?.focus() }}>{text}</button>)}
             </div>}
           </div>
 
@@ -2211,7 +2241,9 @@ function App() {
                 value={message}
                 onChange={handleComposerChange}
                 onKeyDown={handleComposerKeyDown}
-                placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+                placeholder={mode === 'crew'
+                  ? getCrewPlaceholder(language)
+                  : t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
               />
               {isSending ? (
                 <button type="button" className="composer__stop" onClick={handleStopSending}>
