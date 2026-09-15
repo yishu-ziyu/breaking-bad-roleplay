@@ -20,7 +20,7 @@ from db.models import (
 )
 from agents.provider import ProviderFacade, MINIMAX_HOST_CN, MINIMAX_HOST_GLOBAL
 from agents.byok_presets import PROVIDER_PRESETS, preset_by_id, known_provider_ids
-from agents.director import DirectorAgent
+from agents.director import DirectorAgent, UnknownCharacterId
 from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
 from agents.credential_context import (
@@ -752,18 +752,17 @@ async def session_action(
         # Persist canonical frontend short id when possible (walter/jesse/…).
         from agents.director import (
             BACKEND_TO_FRONTEND_ID,
-            FRONTEND_TO_BACKEND_ID,
             resolve_backend_character_id,
         )
 
         raw_target = payload.target_character.strip()
         backend_name = resolve_backend_character_id(raw_target)
-        if backend_name and backend_name in BACKEND_TO_FRONTEND_ID:
-            session.active_character_id = BACKEND_TO_FRONTEND_ID[backend_name]
-        elif raw_target.lower() in FRONTEND_TO_BACKEND_ID:
-            session.active_character_id = raw_target.lower()
-        else:
-            session.active_character_id = raw_target
+        if not backend_name or backend_name not in BACKEND_TO_FRONTEND_ID:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown character_id: {raw_target}",
+            )
+        session.active_character_id = BACKEND_TO_FRONTEND_ID[backend_name]
         session.status = "active"
 
     elif action == "continue_chapter":
@@ -1429,6 +1428,8 @@ async def chat(
         return result
     except HTTPException:
         raise
+    except UnknownCharacterId as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
         # Sanitize: never leak raw exception detail to the client.
         # Full traceback is preserved in server logs.

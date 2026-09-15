@@ -1,4 +1,5 @@
 import type { CharacterId } from '../roleProfiles'
+import { coercePlayableCharacterId } from '../roleProfiles'
 
 export type CrewStageLanguage = 'zh' | 'en'
 
@@ -12,7 +13,7 @@ export const CREW_ROOM_PAD: CharacterId[] = [
 ]
 
 export function defaultCrewIds(primary: CharacterId, cap = 3): CharacterId[] {
-  const ids: CharacterId[] = [primary]
+  const ids: CharacterId[] = [coercePlayableCharacterId(primary)]
   for (const id of CREW_ROOM_PAD) {
     if (ids.length >= cap) break
     if (!ids.includes(id)) ids.push(id)

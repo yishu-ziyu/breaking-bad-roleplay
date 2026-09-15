@@ -13,6 +13,7 @@ describe('crew stage', () => {
     assert.deepEqual(defaultCrewIds('walter'), ['walter', 'jesse', 'saul'])
     assert.deepEqual(defaultCrewIds('jesse'), ['jesse', 'walter', 'saul'])
     assert.deepEqual(defaultCrewIds('saul'), ['saul', 'walter', 'jesse'])
+    assert.deepEqual(defaultCrewIds('marie'), ['walter', 'jesse', 'saul'])
   })
 
   it('opening copy talks about a room, not one-to-one Walter', () => {

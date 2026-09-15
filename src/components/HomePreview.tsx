@@ -1,7 +1,7 @@
 import React from 'react'
 import { characterPortrait as portrait } from '../lib/characterPortraits'
 
-type ChatCharacter = 'walter' | 'jesse' | 'saul' | 'skyler' | 'mike' | 'gus' | 'hank' | 'marie'
+type ChatCharacter = 'walter' | 'jesse' | 'saul' | 'skyler' | 'mike' | 'gus' | 'hank'
 type Props = { onStory: () => void; onChat: (character: ChatCharacter) => void; onCrew: () => void }
 const cast: { id: ChatCharacter; name: string; english: string; description: string }[] = [
   { id: 'walter', name: '沃尔特·怀特', english: 'WALTER WHITE', description: '化学老师。骄傲、精确，习惯掌控局面。' },
@@ -11,7 +11,6 @@ const cast: { id: ChatCharacter; name: string; english: string; description: str
   { id: 'mike', name: '迈克·厄曼特劳特', english: 'MIKE EHRMANTRAUT', description: '前警察。务实、寡言，负责处理麻烦。' },
   { id: 'skyler', name: '斯凯勒·怀特', english: 'SKYLER WHITE', description: '沃尔特的妻子。关注家庭，也留意他的隐瞒。' },
   { id: 'hank', name: '汉克·施拉德', english: 'HANK SCHRADER', description: '缉毒局探员。直率、敏锐，也是沃尔特的家人。' },
-  { id: 'marie', name: '玛丽·施拉德', english: 'MARIE SCHRADER', description: '汉克的妻子、斯凯勒的妹妹。关心家人，喜欢追问。' },
 ]
 // Recorded during the 2026-09-09 live smoke, not live model outputs.
 const sample = [

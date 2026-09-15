@@ -334,8 +334,15 @@ for _full, _short in list(BACKEND_TO_FRONTEND_ID.items()):
     FRONTEND_TO_BACKEND_ID.setdefault(_full, _full)
 
 
+class UnknownCharacterId(ValueError):
+    """Raised when a character_id is not in the director playable map."""
+
+
 def resolve_backend_character_id(raw: str | None) -> str | None:
-    """Map frontend id, display name, or free text → canonical backend name."""
+    """Map frontend id, display name, or free text → canonical backend name.
+
+    Unknown ids return None. They must not silently become Walter White.
+    """
     if raw is None:
         return None
     s = str(raw).strip()
@@ -357,7 +364,17 @@ def resolve_backend_character_id(raw: str | None) -> str | None:
     if token in FRONTEND_TO_BACKEND_ID:
         return FRONTEND_TO_BACKEND_ID[token]
     logger.warning("resolve_backend_character_id: unknown id %r", raw)
-    return s
+    return None
+
+
+def require_backend_character_id(raw: str | None) -> str:
+    """Return a canonical backend name or raise ``UnknownCharacterId``."""
+    resolved = resolve_backend_character_id(raw)
+    if resolved is None or resolved not in CHARACTER_AGENTS:
+        raise UnknownCharacterId(
+            f"unknown character_id: {raw!r}"
+        )
+    return resolved
 
 
 def apply_character_thinking(
@@ -574,7 +591,7 @@ def crew_participants_from_message(character_id: str, user_message: str, *, cap:
     A bare message still fills a default room. 群聊 is several people
     already present, not a solo that waits for the player to name others.
     """
-    backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
+    backend_primary = require_backend_character_id(character_id)
     participants: list[str] = [backend_primary]
     raw = user_message or ""
     text_lower = raw.lower()
@@ -2556,10 +2573,10 @@ class DirectorAgent:
         session_factory: Any = None,
     ) -> dict[str, Any]:
         """Direct-mode: call the character agent with structured output."""
-        backend_id = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
+        backend_id = require_backend_character_id(character_id)
         character_cls = CHARACTER_AGENTS.get(backend_id)
         if character_cls is None:
-            character_cls = CHARACTER_AGENTS["Walter White"]
+            raise UnknownCharacterId(f"unknown character_id: {character_id!r}")
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
         target_language = "Simplified Chinese" if language == "zh" else "English"

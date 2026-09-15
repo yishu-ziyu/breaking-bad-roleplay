@@ -52,6 +52,7 @@ import {
   canonicalBeatId,
   extractOnStageLore,
 } from './lib/storyReading'
+import { coercePlayableCharacterId } from './roleProfiles'
 import './App.css'
 import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
@@ -207,21 +208,6 @@ const characters: Character[] = [
       en: 'Hey, relax. I am not here to ruin your day. I am just here to notice if your story keeps changing.',
       zh: '嘿，放松。我不是来毁你一天的，我只是来看看你的故事会不会改口。',
     },
-  }, {
-    id: 'marie', name: 'Marie', color: '#c8b6e2',
-    oneLiner: {
-      en: 'Hank\u2019s wife and Skyler\u2019s sister-in-law. Polished hospitality with a sharp eye for what does not add up at home.',
-      zh: 'Hank 的妻子，Skyler 的嫂子。礼貌周到，对家里说不通的地方尤其敏锐。',
-    },
-    relationOptions: [
-      'Skyler sister-in-law',
-      'Hank spouse',
-      'supportive but uncomprehending',
-    ],
-    opener: {
-      en: 'Come sit down. I made the kitchen look nice and I want to hear how your day is going.',
-      zh: '坐下吧。我把厨房收拾了一下，想听听你今天过得怎么样。',
-    },
   },
 ]
 
@@ -258,9 +244,6 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'DEA partner': { en: "Hank's partner at work", zh: '汉克局里的搭档' },
   'suspect under watch': { en: 'suspect under watch', zh: '被盯上的人' },
   'friend of the family': { en: 'friend of the family', zh: '家人的朋友' },
-  'Skyler sister-in-law': { en: 'Skyler sister-in-law', zh: 'Skyler 的嫂子' },
-  'Hank spouse': { en: 'Hank spouse', zh: 'Hank 的妻子' },
-  'supportive but uncomprehending': { en: 'supportive but uncomprehending', zh: '支持却不理解的人' },
 }
 
 const uiText: Record<Language, Record<string, string>> = {
@@ -754,7 +737,11 @@ function App() {
   const language: Language = storedLanguage ?? defaultLanguage
   const t = uiText[language]
 
-  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
+  const [storedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
+  const selectedCharId = coercePlayableCharacterId(storedCharId)
+  useEffect(() => {
+    if (storedCharId !== selectedCharId) setSelectedCharId(selectedCharId)
+  }, [storedCharId, selectedCharId, setSelectedCharId])
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
 
   // After migrateProductSurfaceBeforePaint, pre-v2 LS already has enteredWorld=false.

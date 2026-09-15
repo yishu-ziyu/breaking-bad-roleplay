@@ -276,6 +276,21 @@ class TestSessionAction:
         assert session.next_beat_index == 2
         assert session.status == "active"
 
+    def test_action_switch_perspective_unknown_character_returns_400(
+        self, client, mock_db
+    ):
+        session = _make_session_row(status="waiting", next_beat_index=2)
+        mock_db.execute = AsyncMock(return_value=_scalar_result(session))
+
+        resp = client.post(
+            "/api/session/sess-123/action",
+            json={"action": "switch_perspective", "target_character": "marie"},
+        )
+
+        assert resp.status_code == 400
+        assert session.active_character_id != "marie"
+        assert "Walter" not in str(resp.json().get("detail", ""))
+
 
 # ---------------------------------------------------------------------------
 # GET /api/session/{id}/messages  (Cycle 44 — H2/H3 fixes)
