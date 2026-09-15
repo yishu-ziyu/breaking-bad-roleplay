@@ -1,9 +1,10 @@
 # ABQ Roleplay Lab
 
-Breaking Bad-inspired AI roleplay chat prototype for the hackathon workspace.
+《绝命毒师》主题的 AI 角色扮演。当前默认入口和玩法见 [docs/AS_BUILT.md](docs/AS_BUILT.md)：无参数打开是索尔门，再选剧情 / 单聊 / 群聊。进门之后可以选角色、建关系再聊。六回合夜晚已实现，只走 `?night=1`，不是默认首页。
 
 ## What It Does
 
+- Default visit: Saul door, then Story / Direct / Crew (see `docs/AS_BUILT.md`).
 - Lets the user choose Walter, Jesse, Skyler, Saul, Mike, Gus, or Hank.
 - Forces a relationship anchor such as `Walter's former student`, `Saul's client`, or `Gus's employee` before chatting.
 - Supports English / Simplified Chinese switching for UI copy, relationship labels, prompt language control, and demo replies.
@@ -57,7 +58,7 @@ npm install
 npm run dev
 ```
 
-The frontend runs on `http://localhost:5173`.
+The frontend runs on `http://localhost:5176`.
 
 ### Backend
 
