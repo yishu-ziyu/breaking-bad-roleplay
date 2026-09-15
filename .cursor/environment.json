@@ -1,0 +1,22 @@
+{
+  "name": "Breaking Bad Roleplay",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "export PATH=\"$HOME/.local/bin:$PATH\" && cd backend && uv run uvicorn main:app --reload --port 8001",
+      "description": "FastAPI backend on http://127.0.0.1:8001 (API under /api)."
+    },
+    {
+      "name": "frontend",
+      "command": "VITE_API_PROXY_TARGET=http://127.0.0.1:8001 npm run dev",
+      "description": "Vite dev server on http://127.0.0.1:5176 (proxies /api to the backend)."
+    }
+  ],
+  "ports": [
+    { "name": "frontend", "port": 5176 },
+    { "name": "backend", "port": 8001 }
+  ]
+}
