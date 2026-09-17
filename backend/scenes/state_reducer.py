@@ -58,3 +58,58 @@ def apply_validated_turn(
     out["shared_facts"] = facts
     out["updated_at_beat"] = max(int(out.get("updated_at_beat") or 0), beat_index + 1)
     return out
+
+
+def board_from_world(world) -> dict[str, Any]:
+    """Character-specific projection of the authoritative Story snapshot."""
+    from agents.continuity_board import new_session_board
+
+    if world.scenario_id == "desert_crisis":
+        board = new_session_board(
+            session_id="story-projection",
+            era="s1_early",
+            location=world.location,
+            present_cast=list(world.present),
+            world_clock=(0, "night", "clear"),
+        )
+    else:
+        # An open custom Story has no justified canon-era pack. Injecting the
+        # old s3_mid default here silently gave characters facts the player
+        # never established. Keep only the facts produced by this run.
+        board = {
+            "session_id": "story-projection",
+            "era": "custom",
+            "label": None,
+            "label_zh": None,
+            "location": world.location,
+            "world_clock": (0, "night", "clear"),
+            "present_cast": list(world.present),
+            "shared_facts": [],
+            "open_tensions": [],
+            "irreversible_costs": [],
+            "player_relation": {},
+            "updated_at_beat": 0,
+        }
+    facts = list(board.get("shared_facts") or [])
+    for key, item in world.items.items():
+        facts.append({
+            "id": f"item:{key}", "text": f"{item.label} ({key}): holder={item.holder}; condition={item.condition}",
+            "known_by": list(item.known_by), "hidden_from": [], "source": "world_rules",
+        })
+    for index, claim in enumerate(world.claims[-24:]):
+        facts.append({
+            "id": f"claim:{index}", "text": f"{claim['speaker']} said (a claim, not proof): {claim['text']}",
+            "known_by": list(claim["heard_by"]), "hidden_from": [], "source": "accepted_turn",
+        })
+    for promise in world.promises:
+        facts.append({
+            "id": f"promise:{promise['id']}",
+            "text": f"{promise['from']} promised {promise['to']}: {promise['text']}; status={promise['status']}",
+            "known_by": [promise["from"], promise["to"]], "hidden_from": [], "source": "world_rules",
+        })
+    board["shared_facts"] = facts
+    # Every runtime-v1 world is authoritative for physical effects. The
+    # difference above is only whether a authored canon-era pack is justified.
+    board["authoritative"] = True
+    board["player_actor_id"] = world.player_id
+    return board

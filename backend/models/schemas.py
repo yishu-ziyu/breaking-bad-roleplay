@@ -1,13 +1,14 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Literal
 
 
 class SessionCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     task_prompt: str = Field(..., min_length=1, max_length=4000)
-    active_character_id: Optional[str] = None
-    language: str = "en"
+    active_character_id: Optional[str] = Field(default=None, max_length=50)
+    language: Literal["en", "zh"] = "en"
+    scenario_id: Literal["conversation", "desert_crisis"] = "conversation"
 
 
 class SessionAction(BaseModel):
@@ -17,11 +18,23 @@ class SessionAction(BaseModel):
     from_beat_id: Optional[str] = Field(default=None, max_length=40)
     branch_goal: Optional[str] = Field(default=None, max_length=2000)
     beat_id: Optional[str] = Field(default=None, max_length=40)
+    player_input: Optional[str] = Field(default=None, min_length=1, max_length=4000)
+    player_kind: Optional[Literal["say", "do", "observe", "free"]] = None
+    command_id: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+    )
+    expected_revision: Optional[int] = Field(default=None, ge=0)
 
 
 class SessionActionResponse(BaseModel):
     status: str
     session_id: str
+    command_id: Optional[str] = None
+    world_revision: Optional[int] = None
+    runtime_version: Optional[int] = None
 
 
 class SessionResponse(BaseModel):
@@ -30,6 +43,9 @@ class SessionResponse(BaseModel):
     status: str
     created_at: datetime
     session_key: Optional[str] = None
+    world_revision: int = 0
+    command_id: Optional[str] = None
+    runtime_version: int = 1
 
 
 class MessageResponse(BaseModel):

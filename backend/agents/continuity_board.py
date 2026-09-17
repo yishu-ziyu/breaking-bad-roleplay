@@ -143,6 +143,8 @@ def filter_board_for_character(
         "irreversible_costs": costs[-2:],
         "player_relation": deepcopy(board.get("player_relation") or {}),
         "updated_at_beat": board.get("updated_at_beat", 0),
+        "authoritative": bool(board.get("authoritative")),
+        "player_actor_id": board.get("player_actor_id"),
     }
 
 
@@ -185,6 +187,14 @@ def format_board_prompt(
         )
 
     who = character_id or "you"
+    authority_note = (
+        "\nWorld rules own physical changes. For performance use only look_at, "
+        "turn_to, gesture, sit, stand, idle or idle_tense. Do not invent a transfer, "
+        "repair, arrival, departure or agreement. The human alone controls "
+        f"{board_view.get('player_actor_id')}. Their attempted action is not proof of success.\n"
+        if board_view.get("authoritative") else
+        "\nIf the player frames an alternate premise, keep later lines consistent with it.\n"
+    )
     # World clock: gives the character a continuing sense of time/place/weather.
     clocks = board_view.get("world_clock")
     clock_line = ""
@@ -207,8 +217,7 @@ def format_board_prompt(
         f"{rel_line}"
         f"{clock_line}\n"
         "Play freely inside this setup. Do not invent public facts that contradict it.\n"
-        "If the player frames an alternate premise, treat new premises as this session's "
-        "direction — then keep later lines consistent with what you already played."
+        f"{authority_note}"
     )
 
 

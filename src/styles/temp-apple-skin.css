@@ -343,8 +343,16 @@
 .story-timeline,
 .connection-sheet,
 .char-card,
-.gif-card {
+.gif-card,
+.brand-return,
+.auth-btn-primary,
+.auth-btn-secondary,
+.auth-btn-guest,
+.auth-guest-hint {
   border-radius: var(--radius-card);
+}
+.brand-icon {
+  border-radius: var(--radius-nav);
 }
 .story-scene-card__quote,
 .story-scene-card__chip {

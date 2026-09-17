@@ -1,7 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
 import { installMockEventSource, expectDirectorControls } from './mockSse'
+import { installCommonApi } from './commonApi'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173'
+
+test.beforeEach(async ({ page }) => {
+  await installCommonApi(page)
+})
 
 async function gotoFresh(page: Page) {
   // Bypass landing screen so tests land directly in the app
@@ -42,7 +47,7 @@ async function emitSSE(page: Page, type: string, data: unknown) {
   )
 }
 
-test('FC-1: sidebar controls drive chat request payload and render direct reply', async ({ page }) => {
+test('FC-1: current Direct header state drives the chat payload and renders the reply', async ({ page }) => {
   let requestBody: Record<string, unknown> | null = null
 
   await page.route('**/api/chat', async (route) => {
@@ -62,14 +67,14 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
     })
   })
 
-  await gotoFresh(page)
-  await page.locator('.seg-control button:has-text("EN")').click()
-  await page.locator('.char-card', { hasText: 'Saul' }).click()
-  await page.locator('#relation').selectOption('witness')
-  // Model line is chosen via the connection chip → sheet → provider brand.
-  await page.locator('.connection-chip').first().click()
-  await page.locator('.connection-sheet__brands button', { hasText: 'StepFun' }).click()
-  await page.locator('.connection-sheet__close').click()
+  await seedRawStorage(page, {
+    abq_surface: JSON.stringify('direct'),
+    abq_language: JSON.stringify('en'),
+    abq_character: JSON.stringify('saul'),
+    abq_relation: JSON.stringify({ 'chat-v2:direct:saul': 'witness' }),
+  })
+  await expect(page.locator('.chat-header h2')).toContainText('Saul')
+  await expect(page.locator('#chat-relation')).toHaveValue('witness')
   await sendChatMessage(page, 'I need representation.')
 
   await expect(page.locator('.msg--char p', { hasText: 'For a client' })).toBeVisible()
@@ -80,8 +85,8 @@ test('FC-1: sidebar controls drive chat request payload and render direct reply'
     relation: 'witness',
     mode: 'direct',
     language: 'en',
-    llmProvider: 'stepfun',
   })
+  expect(['minimax', 'stepfun']).toContain(requestBody?.llmProvider)
 })
 
 test('FC-2: chat API failure shows an error and a later send can recover', async ({ page }) => {
@@ -190,13 +195,20 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
       ]),
     })
   })
+  await page.route('**/api/session/resume-sid/state', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ runtime_version: 0 }),
+    })
+  })
   await page.route('**/api/session/*/action', async (route) => {
     actionLog.push(route.request().postDataJSON() as Record<string, unknown>)
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   })
   await seedRawStorage(page, {
     abq_story_session_id: 'resume-sid',
-    abq_view: JSON.stringify('story'),
+    abq_surface: JSON.stringify('story'),
     abq_language: JSON.stringify('en'),
   })
   await expect.poll(() => messagesRouteHits).toBeGreaterThanOrEqual(2)

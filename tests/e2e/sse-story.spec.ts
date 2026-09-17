@@ -1,7 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
 import { installMockEventSource, expectDirectorControls } from './mockSse'
+import { installCommonApi } from './commonApi'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
+
+test.beforeEach(async ({ page }) => {
+  await installCommonApi(page)
+})
 
 /* =================================================================
    SSE Story Stream E2E — MockEventSource replaces global EventSource
@@ -209,7 +214,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
   await emitSSE(page, 'agent_speak', {
     data: {
       character_id: 'Gus Fring',
-      content: 'A calm conversation prevents unfortunate misunderstandings.',
+      content: 'Please, sit. The fryer just went quiet. What do you need?',
       emotion_state: 'controlled pressure',
       gif_search_query: 'gus polite pressure',
     },
@@ -223,7 +228,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
 
   await expect(page.locator('.story-manuscript__prose').filter({ hasText: 'Los Pollos Hermanos office' })).toBeVisible()
   await expect(page.locator('.story-manuscript__dialogue cite').filter({ hasText: 'Gus Fring' })).toBeVisible()
-  await expectDialogue(page, 'A calm conversation prevents')
+  await expectDialogue(page, 'The fryer just went quiet')
 
   await expect(page.locator('.beat-paused')).toContainText(/YOUR NEXT MOVE|你的下一步/)
   await expect(page.locator('.beat-controls button', { hasText: /Continue/ })).toBeVisible()
@@ -231,7 +236,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
   await expect(page.locator('.beat-controls button', { hasText: /Switch Perspective/ })).toBeVisible()
 })
 
-test('TC-SSE-REDRAW: 换一版 this beat sends replay, not a full restart', async ({ page }) => {
+test('TC-SSE-REPLAY: 回看这一拍 sends replay, not a full restart', async ({ page }) => {
   const actionLog = await driveToBeatPaused(page, { beatId: 'beat-2' })
   await expect(page.locator('.story-manuscript__redraw')).toBeVisible()
   await page.locator('.story-manuscript__redraw').click()
@@ -239,6 +244,32 @@ test('TC-SSE-REDRAW: 换一版 this beat sends replay, not a full restart', asyn
   const replay = actionLog.find((e) => e.action === 'replay')
   expect(replay?.beat_id).toMatch(/beat[_-]2/)
   expect(actionLog.some((e) => e.action === 'startStory')).toBeFalsy()
+})
+
+test('TC-SSE-REDRAW-2: replaying beat 2 keeps the committed first beat', async ({ page }) => {
+  const actionLog = await driveToBeatPaused(page, {
+    beatId: 'beat-1',
+    agentSpeak: 'First beat stays on the page.',
+  })
+  await page.locator('.beat-controls button', { hasText: /Continue/ }).click()
+  await emitSSE(page, 'scene_change', {
+    data: { description: 'A second room.' },
+  })
+  await emitSSE(page, 'agent_speak', {
+    data: {
+      character_id: 'Walter White',
+      content: 'Second beat will be replayed.',
+      emotion_state: 'tense',
+    },
+  })
+  await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
+  await expect(page.locator('.story-manuscript')).toContainText('First beat stays on the page.')
+  await expect(page.locator('.story-manuscript')).toContainText('Second beat will be replayed.')
+
+  await page.locator('.story-manuscript__redraw').click()
+  await expect.poll(() => actionLog.some((event) => event.action === 'replay')).toBe(true)
+  await expect(page.locator('.story-manuscript')).toContainText('First beat stays on the page.')
+  await expect(page.locator('.story-manuscript')).not.toContainText('Second beat will be replayed.')
 })
 
 /* ------------------------------------------------------------------ */
@@ -325,10 +356,10 @@ test('TC-SSE-2b: continue reopens stream with language=zh when UI language is zh
 })
 
 /* ------------------------------------------------------------------ */
-/*  TC-SSE-3: redirect — new outline replaces old, no deadlock         */
+/*  TC-SSE-3: redirect — future direction changes without erasing history */
 /* ------------------------------------------------------------------ */
 
-test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and new outline replaces old', async ({
+test('TC-SSE-3: redirect action changes the future while preserving prior manuscript', async ({
   page,
 }) => {
   const actionLog = await driveToBeatPaused(page, {
@@ -383,7 +414,13 @@ test('TC-SSE-3: redirect action sends {action:"redirect",redirect_prompt} and ne
   })
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-1' } })
 
-  await expect(page.locator('.story-manuscript__prose')).toContainText("Jesse's house")
+  await expect(
+    page.locator('.story-manuscript__prose').filter({ hasText: "Jesse's house" }),
+  ).toBeVisible()
+  // Redirect changes what comes next; it must not rewrite already played history.
+  await expect(
+    page.locator('.story-manuscript__prose').filter({ hasText: 'Los Pollos Hermanos' }),
+  ).toBeVisible()
   await expect(page.locator('.story-hud')).toContainText('Beat 1')
 
   await expectDialogue(page, 'take him out')
@@ -436,6 +473,40 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
   await expect(
     page.locator('.story-complete button', { hasText: /Start Again/ }),
   ).toBeVisible()
+})
+
+test('TC-SSE-4b: Start Chapter continues the committed session instead of creating a new one', async ({ page }) => {
+  let createRequests = 0
+  page.on('request', request => {
+    if (request.url().includes('/api/session/create')) createRequests += 1
+  })
+  const actionLog = await driveToBeatPaused(page)
+  await emitSSE(page, 'beat_ready', {
+    data: { beat_id: 'beat-1', is_final: true },
+  })
+  await expect(page.locator('.story-complete')).toBeVisible()
+
+  await page.locator('.story-complete button', { hasText: /Start Chapter|开始第二章/ }).click()
+
+  await expect.poll(() => actionLog.some(event => event.action === 'continue_chapter')).toBe(true)
+  expect(createRequests).toBe(1)
+  await expect(page.locator('.streaming-indicator')).toBeVisible()
+})
+
+test('TC-SSE-4c: Different Branch submits a branch command from the committed beat', async ({ page }) => {
+  const actionLog = await driveToBeatPaused(page)
+  await emitSSE(page, 'beat_ready', {
+    data: { beat_id: 'beat-1', is_final: true },
+  })
+  await expect(page.locator('.story-complete')).toBeVisible()
+
+  await page.locator('.story-complete button', { hasText: /Different Branch|不同分支/ }).click()
+
+  await expect.poll(() => actionLog.some(event => event.action === 'branch')).toBe(true)
+  const branch = actionLog.find(event => event.action === 'branch')
+  expect(branch?.from_beat_id).toMatch(/beat[_-]1/)
+  expect(branch?.branch_goal).toEqual(expect.any(String))
+  await expect(page.locator('.streaming-indicator')).toBeVisible()
 })
 
 /* ------------------------------------------------------------------ */
@@ -541,7 +612,7 @@ test('TC-SSE-7: story agent_speak renders VoicePlayer button', async ({ page }) 
   const voicePlayer = page.locator('.story-reading .voice-player').first()
   await expect(voicePlayer).toBeVisible()
   await expect(voicePlayer).toBeEnabled()
-  await expect(voicePlayer).toContainText(/Voice|▶/)
+  await expect(voicePlayer).toHaveAccessibleName(/Play|播放|Voice/i)
 })
 
 /* ------------------------------------------------------------------ */
@@ -586,6 +657,7 @@ test('TC-SSE-8: switch_perspective via UI hides BeatControls and shows Streaming
   await expect(page.locator('.beat-controls')).toHaveCount(0)
   await expect(page.locator('.streaming-indicator')).toBeVisible()
   await expect(page.locator('.story-outline__summary')).toHaveCount(0)
+  await expect.poll(() => mockSSEStates(page)).toEqual([2, 0])
 
   // Emit next beat's events to simulate backend processing switch_perspective
   await emitSSE(page, 'agent_speak', {

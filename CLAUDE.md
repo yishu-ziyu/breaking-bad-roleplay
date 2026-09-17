@@ -5,14 +5,14 @@
 ## 当前状态（as-built）
 
 - 「现在是什么」以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为索引。
-- 当前默认入口：索尔门，先打招呼，再选 剧情 / 单聊 / 群聊。没有明确要求改入口 → 保持。
+- 当前默认入口：三卡展台，Story / Direct / Crew 直接并列。没有明确要求改入口 → 保持。
 - 线上服务: https://bb.yishuziyu.cn
 - 进聊后的 as-built：选角色、建关系再聊（Direct / Crew）；剧情走 SSE。角色见 CONTEXT.md / DEC-0002。这不是与首页竞争的另一套产品定义。
 - 六回合夜晚：已实现，只走 `?night=1`，不在默认剧情路径上。不要叫未加限定的「正式局」。
 - McKee Story engine v2: `backend/agents/mckee_story.py` (DEC-0003)
 - Narrative pipeline as shipped: DEC-0005 (Propose → Validate → Repair → Commit)
 - 2026-09-14 接手说明: [docs/HANDOFF_2026-09-14.md](docs/HANDOFF_2026-09-14.md)（发布门禁、Crew 独立采样、临时 Apple 皮肤、how-to 按泄漏打分）
-- 色彩科学（必读）: [docs/COLOR_SCIENCE.md](docs/COLOR_SCIENCE.md) — 世界用烟草/褐金/骨白；**让人挑的选项必须是热点，禁止褐上叠褐**。结构可借 Apple 字号，颜色不借 iOS 冷灰。眼下保持现役索尔门颜色；以后若上夜色/黄绿，同一改动更新 COLOR_SCIENCE。
+- 色彩科学（必读）: [docs/COLOR_SCIENCE.md](docs/COLOR_SCIENCE.md) — 世界用烟草/褐金/骨白；**让人挑的选项必须是热点，禁止褐上叠褐**。结构可借 Apple 字号，颜色不借 iOS 冷灰。眼下保持现役三卡展台颜色；以后若上夜色/黄绿，同一改动更新 COLOR_SCIENCE。
 
 Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **not product constraints**. See [docs/PLANNING.md](docs/PLANNING.md).
 
@@ -20,7 +20,7 @@ Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **n
 
 动手前：读本轮要求和 [docs/AS_BUILT.md](docs/AS_BUILT.md)；核对分支、已有提交、未提交 diff。做首页相关工作：先用无预览查询的第一次访问核实现役入口。其他任务：不要重开首页。
 
-当前默认入口：索尔门，然后 剧情 / 单聊 / 群聊。没有明确要求改入口 → 保持。
+当前默认入口：三卡展台，Story / Direct / Crew 直接并列。没有明确要求改入口 → 保持。
 
 旧版本：夜路页、黄色「开始这一夜」页、杰西插画封面，不因为仓库里还有文件或截图就当成候选项。
 
@@ -64,7 +64,7 @@ Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **n
 - 前端测试：`npm test`（tsx test runner）
 - 前端 Lint：`npm run lint`
 - 后端启动：`cd backend && uvicorn main:app --reload --port 8001`
-- 后端测试：`cd backend && uv run pytest`
+- 后端测试：`cd backend && uv run python -m pytest`
 - E2E：`npx playwright test`
 - 数据库迁移：Alembic（`cd backend && alembic upgrade head`）
 
@@ -86,13 +86,15 @@ YishuShip 11 阶段与 `.ship/loop-N-*` 产出是历史流程，已归档。不�
 
 改动完成后必须跑对应检查：
 - 前端改动：`npm run build` + `npm test` + `npm run lint`
-- 后端改动：`cd backend && uv run pytest`
+- 后端改动：`cd backend && uv run python -m pytest`
 - 部署改动：health check + 浏览器 smoke test
 - UI 改动：截图验证，不能只看代码
 
 ## 产品定位
 
-这是一个《绝命毒师》主题的 AI 角色扮演。默认打开先见索尔门，再进剧情 / 单聊 / 群聊。入口以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为准。
+本轮用户确认的最高产品边界：Direct 是独立一对一 AI 角色聊天，Crew 是独立多角色 AI 聊天；只有 Story 采用「局势→行动→结算→后果」游戏循环。不得强制联动、共享私聊记忆或用 Story 玩家身份替换聊天对象。实现与验收见 `docs/specs/chat-story-mode-boundaries.md`。
+
+这是一个《绝命毒师》主题的 AI 角色扮演。默认打开是 Story / Direct / Crew 三卡展台。入口以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为准。
 
 进聊后的 as-built：选角色 -> 建立关系锚点 -> 对话 / 剧情演绎。这是聊天侧已落地的流程，不是另一套首页定义。
 角色：Walter, Jesse, Skyler, Saul, Mike, Gus, Hank（见 CONTEXT.md / DEC-0002；界面另有 Marie，导演未收录，见 AS_BUILT）
@@ -148,7 +150,7 @@ cd backend && uvicorn main:app --reload --port 8001   # 后端
 
 # 测试
 npm test                       # 前端单测
-cd backend && uv run pytest    # 后端单测
+cd backend && uv run python -m pytest    # 后端单测
 npx playwright test            # E2E
 
 # 构建

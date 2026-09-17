@@ -19,14 +19,15 @@ export function bubbleFromDirectPayload(
 ): DirectChatBubble {
   const text = String(data.reply_text ?? '')
   const emotion = data.emotion_state as string | undefined
-  const gifQuery = (data.gif_search_query as string | null) ?? null
+  // Direct: never let the model pick GIF search text — emotion maps to a face still.
+  const gifQuery = null
   return {
     id: crypto.randomUUID(),
     sender: characterId,
     text,
     emotion,
     gifQuery,
-    gifUrl: resolveGifUrl(characterId, emotion ?? null, gifQuery, false, text),
+    gifUrl: resolveGifUrl(characterId, emotion ?? null, null, false, null),
     thinking: data.thinking as string | undefined,
     toolExecuted: data.tool_executed as string | null,
     toolLog: data.tool_log as string | null,

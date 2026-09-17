@@ -27,6 +27,41 @@ function getSpeechSynthesis(): SpeechSynthLike | undefined {
   return g.speechSynthesis
 }
 
+function PlayGlyph() {
+  return createElement(
+    'svg',
+    {
+      className: 'voice-player__glyph',
+      viewBox: '0 0 16 16',
+      width: 12,
+      height: 12,
+      'aria-hidden': true,
+      focusable: false,
+    },
+    createElement('path', {
+      // Optical center: slightly right of geometric center so the triangle does not look left-heavy.
+      d: 'M5.2 2.6v10.8L13.4 8z',
+      fill: 'currentColor',
+    }),
+  )
+}
+
+function PauseGlyph() {
+  return createElement(
+    'svg',
+    {
+      className: 'voice-player__glyph',
+      viewBox: '0 0 16 16',
+      width: 12,
+      height: 12,
+      'aria-hidden': true,
+      focusable: false,
+    },
+    createElement('rect', { x: 3.5, y: 2.5, width: 3.2, height: 11, rx: 0.6, fill: 'currentColor' }),
+    createElement('rect', { x: 9.3, y: 2.5, width: 3.2, height: 11, rx: 0.6, fill: 'currentColor' }),
+  )
+}
+
 export function VoicePlayer({
   text,
   characterId,
@@ -56,7 +91,7 @@ export function VoicePlayer({
     }
   }, [synth])
 
-  const fallbackLabel = label || (language === 'zh' ? '播放语音' : 'Voice')
+  const fallbackLabel = label || (language === 'zh' ? '播放' : 'Play')
 
   if (!canPlay) {
     return createElement(
@@ -143,6 +178,7 @@ export function VoicePlayer({
       onClick: handleClick,
       'aria-label': fallbackLabel,
     },
-    `${state === 'speaking' ? '⏸' : '▶'} ${fallbackLabel}`
+    state === 'speaking' ? createElement(PauseGlyph) : createElement(PlayGlyph),
+    createElement('span', { className: 'voice-player__label' }, fallbackLabel),
   )
 }

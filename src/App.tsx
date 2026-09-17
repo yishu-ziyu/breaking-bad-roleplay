@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Silhouette } from './lib/silhouette'
 import { usePersistedState } from './lib/persistedState'
+import { chatThreadKey, mergeLegacyChat } from './lib/chatScope'
 import { getVoiceExample } from './lib/voiceExamples'
 import { useStoryStream, type StoryEvent } from './hooks/useStoryStream'
 import { useCharacterMemory, type CharacterMemory } from './hooks/useCharacterMemory'
@@ -10,7 +11,6 @@ import {
   loadChatMessages,
   loadCharacterMemory,
   persistPrivateCharacterMemory,
-  persistPrivateChatMessage,
   persistPrivateChatMessages,
 } from './lib/supabasePersistence'
 import { loadStoredPrivacyKey, PRIVACY_KEY_UPDATED_EVENT } from './lib/privacyVault'
@@ -37,7 +37,17 @@ import { applyPlaySurfaceToStorage } from './lib/playEntry'
 import { toDirectChatMemoryWire } from './lib/directChatMemory'
 import { getDirectWayfinders, isInspectableThinking } from './lib/directWayfinders'
 import { bubbleFromDirectPayload, bubblesFromCrewPayload } from './lib/directChatReply'
-import { syncOpenerLanguage } from './lib/openerLanguage'
+import { rewriteOpenerText, syncOpenerLanguage } from './lib/openerLanguage'
+import {
+  OPENERS_BY_CHARACTER,
+  deriveAttitudeTint,
+  pickDirectOpener,
+} from './lib/directOpeners'
+import {
+  firstOpenThread,
+  formatDurableMemoryForWire,
+  type DurableFact,
+} from './lib/directDurableMemory'
 import { quotaBlocksPlay } from './lib/quotaPolicy'
 import { buildStorySceneBill, holdsSceneCurtain } from './lib/storyScene'
 import {
@@ -45,6 +55,7 @@ import {
   canonicalBeatId,
   extractOnStageLore,
 } from './lib/storyReading'
+import { boundedStoryDirection } from './lib/storyCommands'
 import './App.css'
 import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
@@ -156,33 +167,33 @@ const characters: Character[] = [
   {
     id: 'walter', name: 'Walter', color: '#d7e36f',
     oneLiner: { en: 'A chemistry teacher turned empire builder. Precision, pride, and terrible secrets.', zh: '化学老师转型帝国建造者。精确、骄傲，和见不得人的秘密。' },
-    relationOptions: ['former student', 'family member', 'lab partner', 'DEA liability', 'old colleague'],
-    opener: { en: 'Choose your words carefully. The situation is already more delicate than you understand.', zh: '说话谨慎一点。这个局面已经比你理解的更微妙。' },
+    relationOptions: ['family member', 'lab partner', 'former student', 'DEA liability'],
+    opener: { en: 'Porch light keeps buzzing. Come in. What is it?', zh: '门廊灯一直在嗡。进来。什么事？' },
   }, {
     id: 'jesse', name: 'Jesse', color: '#93d7ff',
     oneLiner: { en: 'A cook with a conscience. Street-smart, impulsive, and desperately loyal.', zh: '有良知的制作者。街头聪明、冲动，却又极度忠诚。' },
-    relationOptions: ['partner', 'old friend', 'dealer contact', 'younger sibling figure', 'person he disappointed'],
-    opener: { en: 'Yo, if this is another lecture, I need like five seconds to emotionally leave the room first.', zh: 'Yo，如果这又是一场说教，我需要五秒钟先从精神上离开这个房间。' },
+    relationOptions: ['partner', 'old friend', 'dealer contact', 'person he disappointed'],
+    opener: { en: 'Yo, fridge is empty except mustard. You eating, or just hovering?', zh: 'Yo，冰箱里除了芥末啥也没有。你是来吃的，还是来飘着的？' },
   }, {
     id: 'skyler', name: 'Skyler', color: '#f3d9a2',
     oneLiner: { en: 'The wife who found the cracks. Protective, sharp, and running out of patience.', zh: '发现了裂痕的妻子。护家心切、敏锐，耐心快要耗尽。' },
-    relationOptions: ['spouse', 'family member', 'bookkeeping client', 'neighbor', 'person hiding something'],
-    opener: { en: 'I am going to ask this once plainly, and I would appreciate a plain answer.', zh: '我只会直说一次，也希望你给我一个直白的答案。' },
+    relationOptions: ['spouse', 'family member', 'neighbor', 'person hiding something'],
+    opener: { en: 'Dish rack is still wet. Ask once. Answer once. What happened?', zh: '碗架还是湿的。问一次，答一次。出什么事了？' },
   }, {
     id: 'saul', name: 'Saul', color: '#f7ce46',
     oneLiner: { en: 'A criminal lawyer who sees every problem as a business opportunity.', zh: '把每个问题都看成商机的刑事律师。' },
-    relationOptions: ['client', 'witness', 'business partner', 'problem to solve', 'person with cash'],
+    relationOptions: ['client', 'business partner', 'witness', 'problem to solve'],
     opener: { en: 'Good news: you came to the right office. Bad news: that usually means something went very wrong.', zh: '好消息是：你找对办公室了。坏消息是：这通常说明事情已经非常不对劲。' },
   }, {
     id: 'mike', name: 'Mike', color: '#b9c0a5',
     oneLiner: { en: 'A former cop who cleaned up after everyone. Quiet, lethal, and exhausted by incompetence.', zh: '为所有人善后的前警探。安静、致命，厌倦了愚蠢。' },
-    relationOptions: ['asset', 'employer', 'person under protection', 'loose end', 'rookie'],
+    relationOptions: ['asset', 'employer', 'person under protection', 'loose end'],
     opener: { en: 'Sit down. Talk less. Start with the part you think I do not already know.', zh: '坐下。少说废话。从你以为我还不知道的部分开始。' },
   }, {
     id: 'gus', name: 'Gus', color: '#b2f09a',
     oneLiner: { en: 'A restaurant owner with absolute control. Every gesture is calculated, every silence is a threat.', zh: '拥有绝对控制权的餐厅老板。每个动作都经过计算，每段沉默都是威胁。' },
-    relationOptions: ['employee', 'supplier', 'rival', 'guest', 'person being evaluated'],
-    opener: { en: 'Please, take a seat. A calm conversation prevents unfortunate misunderstandings.', zh: '请坐。冷静的谈话可以避免一些不幸的误会。' },
+    relationOptions: ['employee', 'supplier', 'guest', 'person being evaluated'],
+    opener: { en: 'Please, sit. The fryer just went quiet. What do you need?', zh: '请坐。炸炉刚停了声。你需要什么？' },
   }, {
     id: 'hank', name: 'Hank', color: '#f0a36b',
     oneLiner: {
@@ -193,12 +204,11 @@ const characters: Character[] = [
       'family member',
       'DEA partner',
       'suspect under watch',
-      'neighbor',
       'friend of the family',
     ],
     opener: {
-      en: 'Hey, relax. I am not here to ruin your day. I am just here to notice if your story keeps changing.',
-      zh: '嘿，放松。我不是来毁你一天的，我只是来看看你的故事会不会改口。',
+      en: 'Grill smoke is still on my shirt. Sit. Where does the story get weird?',
+      zh: '衬衫上还沾着烤肉烟味。坐。故事从哪开始不对劲？',
     },
   }, {
     id: 'marie', name: 'Marie', color: '#c8b6e2',
@@ -210,6 +220,7 @@ const characters: Character[] = [
       'Skyler sister-in-law',
       'Hank spouse',
       'supportive but uncomprehending',
+      'neighbor',
     ],
     opener: {
       en: 'Come sit down. I made the kitchen look nice and I want to hear how your day is going.',
@@ -258,7 +269,6 @@ const relationLabels: Record<string, Record<Language, string>> = {
 
 const uiText: Record<Language, Record<string, string>> = {
   en: {
-    tagline: 'Character dossiers, pressure scenes, and consequence-driven roleplay.',
     character: 'Active Profile',
     language: 'Language',
     relation: 'Relation',
@@ -280,7 +290,6 @@ const uiText: Record<Language, Record<string, string>> = {
     send: 'Send',
     sending: 'Thinking…',
     waitingAs: '{character} is thinking…',
-    directFrame: 'An AI is playing this part. Pushback is the character, not a helpdesk.',
     inspectThinking: 'How they played it',
     messagePlaceholder: 'Negotiate with {character} as their {relation}…',
     privateScene: 'Direct',
@@ -385,7 +394,6 @@ const uiText: Record<Language, Record<string, string>> = {
     interSub: 'The director awaits your call',
   },
   zh: {
-    tagline: '进入阿尔伯克基的角色档案、压力现场与随选择改写的剧情。',
     character: '角色档案',
     language: '语言',
     relation: '身份关系',
@@ -407,7 +415,6 @@ const uiText: Record<Language, Record<string, string>> = {
     send: '发送',
     sending: '生成回应…',
     waitingAs: '{character}还在想…',
-    directFrame: 'AI 扮演这一角。顶撞是角色，不是客服。',
     inspectThinking: '他怎么想的',
     messagePlaceholder: '以{relation}身份对 {character} 说…',
     privateScene: '单聊',
@@ -537,10 +544,10 @@ type BeatAction = 'continue' | 'stop' | 'redirect' | 'switch_perspective'
 interface BeatControlsProps {
   t: Record<string, string>
   characters: Character[]
-  onContinue: () => void | Promise<void>
-  onStop: () => void | Promise<void>
-  onRedirect: (prompt: string) => void | Promise<void>
-  onSwitchPerspective: (charId: string) => void | Promise<void>
+  onContinue: () => void | Promise<unknown>
+  onStop: () => void | Promise<unknown>
+  onRedirect: (prompt: string) => void | Promise<unknown>
+  onSwitchPerspective: (charId: string) => void | Promise<unknown>
 }
 
 function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchPerspective }: BeatControlsProps) {
@@ -549,7 +556,7 @@ function BeatControls({ t, characters, onContinue, onStop, onRedirect, onSwitchP
   const [redirectText, setRedirectText] = useState('')
   const [perspectiveOpen, setPerspectiveOpen] = useState(false)
 
-  const wrap = (action: BeatAction, fn: () => void | Promise<void>) => async () => {
+  const wrap = (action: BeatAction, fn: () => void | Promise<unknown>) => async () => {
     if (pending) return
     setPending(action)
     try {
@@ -747,8 +754,16 @@ function App() {
   const language: Language = storedLanguage ?? defaultLanguage
   const t = uiText[language]
 
-  const [selectedCharId, setSelectedCharId] = usePersistedState<CharacterId>('character', 'walter')
+  const [surface, setSurface] = usePersistedState<Surface>('surface', 'story', 0)
+  const view: View = surface === 'story' ? 'story' : 'chat'
+  const mode: ChatMode = surface === 'crew' ? 'crew' : 'direct'
+  // A chat partner is not the player-controlled Story actor.
+  const [chatCharacterId, setChatCharacterId] = usePersistedState<CharacterId>('character', 'walter', 0)
+  const [storyCharacterId, setStoryCharacterId] = usePersistedState<CharacterId>('storyCharacter', 'walter', 0)
+  const selectedCharId = view === 'story' ? storyCharacterId : chatCharacterId
+  const setSelectedCharId = view === 'story' ? setStoryCharacterId : setChatCharacterId
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
+  const threadKey = chatThreadKey(mode, selectedCharId)
 
   // After migrateProductSurfaceBeforePaint, pre-v2 LS already has enteredWorld=false.
   const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
@@ -773,13 +788,10 @@ function App() {
 
   // Relation per character (persist across character switches)
   const [relationByChar, setRelationByChar] = usePersistedState<Record<string, string>>('relation', {})
-  const relation = relationByChar[selectedCharId] ?? selectedChar.relationOptions[0]
-
-  // P2: one player surface (story / solo / crew). view & mode are derived for
-  // the rest of the component, so rendering logic needs no other changes.
-  const [surface, setSurface] = usePersistedState<Surface>('surface', 'story')
-  const view: View = surface === 'story' ? 'story' : 'chat'
-  const mode: ChatMode = surface === 'crew' ? 'crew' : 'direct'
+  const relation = (() => {
+    const raw = relationByChar[threadKey] ?? selectedChar.relationOptions[0]
+    return selectedChar.relationOptions.includes(raw) ? raw : selectedChar.relationOptions[0]
+  })()
 
   const [productSurface, setProductSurface] = usePersistedState<string | null>('productSurface', null)
 
@@ -796,6 +808,7 @@ function App() {
   const [homePreviewOpen, setHomePreviewOpen] = useState(() => new URLSearchParams(window.location.search).get('home') === 'preview')
   const auth = useAuth()
   const quota = useQuota(connection.connectionSessionId, auth.user?.id ?? null)
+  const refreshQuota = quota.refresh
   /** Agent harness is lab-only (?lab=1 or /lab) — not part of the drama surface. */
   const showAgentLab = useMemo(() => {
     if (typeof window === 'undefined') return false
@@ -809,14 +822,66 @@ function App() {
   }, [])
 
   // Chat state
-  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {})
-  const messages = useMemo(() => messagesByChar[selectedCharId] ?? [], [messagesByChar, selectedCharId])
+  const [messagesByChar, setMessagesByChar] = usePersistedState<Record<string, ChatMessage[]>>('messages', {}, 0)
+  const messages = useMemo(() => messagesByChar[threadKey] ?? [], [messagesByChar, threadKey])
+  const [legacyCloudByChar, setLegacyCloudByChar] = useState<Record<string, ChatMessage[]>>({})
+  const legacyMessages = useMemo(() => mergeLegacyChat(
+    messagesByChar[selectedCharId] ?? [], legacyCloudByChar[selectedCharId] ?? [],
+  ), [messagesByChar, legacyCloudByChar, selectedCharId])
+  const [openerRecentByChar, setOpenerRecentByChar] = usePersistedState<Record<string, string[]>>('openerRecent', {})
+  const [openerActiveByChar, setOpenerActiveByChar] = usePersistedState<Record<string, string>>('openerActive', {})
+  const relationLocked = useMemo(
+    () => messages.some((m) => m.sender === 'user'),
+    [messages],
+  )
+
+  const resolveDirectOpener = useCallback((charId: string, lang: Language, rel: string, mem: CharacterMemory) => {
+    const attitude = deriveAttitudeTint(rel, mem.keyFacts ?? [])
+    const openThread = firstOpenThread((mem.keyFacts ?? []) as DurableFact[])
+    const recent = openerRecentByChar[charId] ?? []
+    const picked = pickDirectOpener({
+      characterId: charId,
+      language: lang,
+      attitude,
+      recentIds: recent,
+      openThread,
+    })
+    if (!picked) {
+      const fallback = characters.find((c) => c.id === charId)?.opener
+      return {
+        id: 'legacy',
+        text: fallback?.[lang] ?? fallback?.en ?? '',
+      }
+    }
+    return picked
+  }, [openerRecentByChar])
+
+  const rememberOpenerPick = useCallback((charId: string, openerId: string) => {
+    setOpenerActiveByChar((prev) => ({ ...prev, [charId]: openerId }))
+    if (openerId.startsWith('thread-')) return
+    setOpenerRecentByChar((prev) => {
+      const prior = prev[charId] ?? []
+      const next = [...prior.filter((id) => id !== openerId), openerId].slice(-8)
+      return { ...prev, [charId]: next }
+    })
+  }, [setOpenerActiveByChar, setOpenerRecentByChar])
 
   // First-visit opener is persisted. If the player has not spoken yet, keep it
   // aligned with the UI language (player-lab 2026-09-09 / eval 2026-09-14).
   useEffect(() => {
+    if (view !== 'chat' || mode !== 'direct') return
     setMessagesByChar((prev) => {
-      const current = prev[selectedCharId]
+      const current = prev[threadKey]
+      const activeId = openerActiveByChar[selectedCharId]
+      const fromLibrary = activeId
+        ? OPENERS_BY_CHARACTER[selectedCharId]?.find((o) => o.id === activeId)
+        : null
+      if (fromLibrary) {
+        const nextText = language === 'zh' ? fromLibrary.zh : fromLibrary.en
+        const next = rewriteOpenerText(current, nextText, t.openingEmotion)
+        if (next === current) return prev
+        return { ...prev, [threadKey]: next ?? [] }
+      }
       const next = syncOpenerLanguage(
         current,
         selectedCharId,
@@ -825,16 +890,43 @@ function App() {
         t.openingEmotion,
       )
       if (next === current) return prev
-      return { ...prev, [selectedCharId]: next ?? [] }
+      return { ...prev, [threadKey]: next ?? [] }
     })
-  }, [language, selectedCharId, selectedChar.opener, t.openingEmotion, setMessagesByChar])
-  const [message, setMessage] = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  }, [
+    language,
+    selectedCharId,
+    selectedChar.opener,
+    t.openingEmotion,
+    openerActiveByChar,
+    setMessagesByChar,
+    threadKey,
+    view,
+    mode,
+  ])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const message = drafts[threadKey] ?? ''
+  const setMessage = useCallback((text: string) => {
+    setDrafts(prev => ({ ...prev, [threadKey]: text }))
+  }, [threadKey])
+  const [sendingByThread, setSendingByThread] = useState<Record<string, boolean>>({})
+  const isSending = sendingByThread[threadKey] ?? false
+  const setIsSending = useCallback((sending: boolean) => {
+    setSendingByThread(prev => ({ ...prev, [threadKey]: sending }))
+  }, [threadKey])
+  const errorScope = view === 'story' ? 'story' : threadKey
+  const [errorsByScope, setErrorsByScope] = useState<Record<string, string | null>>({})
+  const error = errorsByScope[errorScope] ?? null
+  const setError = useCallback((message: string | null) => {
+    setErrorsByScope(prev => ({ ...prev, [errorScope]: message }))
+  }, [errorScope])
   /** Composer textarea: auto-grow + focus target after send / view switch. */
   const composerRef = useRef<HTMLTextAreaElement>(null)
   /** In-flight /api/chat request; aborted by the stop button. */
   const chatAbortRef = useRef<AbortController | null>(null)
+  const chatRequestScopeRef = useRef<string | null>(null)
+  useEffect(() => () => {
+    if (chatRequestScopeRef.current === `${view}:${threadKey}`) chatAbortRef.current?.abort()
+  }, [threadKey, view])
   /** Chat stream: only auto-scroll when the reader is already near the bottom. */
   const [chatPinnedToBottom, setChatPinnedToBottom] = useState(true)
   const [unseenBelow, setUnseenBelow] = useState(false)
@@ -903,7 +995,14 @@ function App() {
   }, [auth.user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Story state
-  const story = useStoryStream()
+  const story = useStoryStream({ autoResume: hasEnteredWorld && surface === 'story' })
+
+  useEffect(() => {
+    const actor = story.playerActorId
+    if (actor && characters.some(character => character.id === actor)) {
+      setStoryCharacterId(actor as CharacterId)
+    }
+  }, [story.playerActorId, setStoryCharacterId])
   const [storyTask, setStoryTask] = useState('')
   /** Story setup textarea: autofocus target when the board is idle. */
   const storyTaskRef = useRef<HTMLTextAreaElement>(null)
@@ -935,16 +1034,16 @@ function App() {
       || story.connectionState === 'complete'
       || story.connectionState === 'error'
     ) {
-      void quota.refresh()
+      void refreshQuota()
     }
-  }, [story.connectionState, quota.refresh])
+  }, [story.connectionState, refreshQuota])
 
   // Character memory (per character, sliding window)
   const charMemory = useCharacterMemory()
-  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('memory', {})
+  const [memoryByChar, setMemoryByChar] = usePersistedState<Record<string, CharacterMemory>>('memory', {}, 0)
   const currentMemory = useMemo(
-    () => memoryByChar[selectedCharId] ?? { summary: '', keyFacts: [] },
-    [memoryByChar, selectedCharId],
+    () => mode === 'direct' ? memoryByChar[threadKey] ?? { summary: '', keyFacts: [] } : { summary: '', keyFacts: [] },
+    [memoryByChar, threadKey, mode],
   )
 
   // Cloud sync: persist to Supabase when authenticated
@@ -959,10 +1058,13 @@ function App() {
      eliminating the race where one effect would overwrite the other. Flow:
      fetch cloud → merge with local → if merged is empty, insert opener. */
   useEffect(() => {
+    if (view !== 'chat') return
+    let cancelled = false
     // Player-lab (2026-09-09): the visible opener must match the UI language.
-    // voiceExamples are prompt anchors (mostly zh source text) — they caused
-    // Chinese first lines for EN players. Keep them as a fallback only.
-    const opener = selectedChar.opener[language] ?? getVoiceExample(selectedCharId, relation)
+    // Library pick prefers attitude + rotation; legacy voiceExamples stay prompt anchors.
+    const mem = mode === 'direct' ? memoryByChar[threadKey] ?? { summary: '', keyFacts: [] } : { summary: '', keyFacts: [] }
+    const picked = resolveDirectOpener(selectedCharId, language, relation, mem)
+    const opener = picked.text
 
     ;(async () => {
       let cloudMsgs: ChatMessage[] = []
@@ -975,12 +1077,15 @@ function App() {
         } else {
           try {
             setSyncStatus('syncing')
-            const [msgs, mem] = await Promise.all([
+            const [msgs, memCloud, legacy] = await Promise.all([
+              loadChatMessages(auth.user.id, threadKey, { privacyKey: cloudPrivacy.key }),
+              mode === 'direct' ? loadCharacterMemory(auth.user.id, threadKey, { privacyKey: cloudPrivacy.key }) : Promise.resolve(null),
               loadChatMessages(auth.user.id, selectedCharId, { privacyKey: cloudPrivacy.key }),
-              loadCharacterMemory(auth.user.id, selectedCharId, { privacyKey: cloudPrivacy.key }),
             ])
+            if (cancelled) return
+            setLegacyCloudByChar(prev => ({ ...prev, [selectedCharId]: legacy as ChatMessage[] }))
             cloudMsgs = msgs as ChatMessage[]
-            cloudMem = mem as unknown as CharacterMemory
+            cloudMem = memCloud as unknown as CharacterMemory
           } catch {
             setSyncStatus('sync-failed')
           }
@@ -989,22 +1094,24 @@ function App() {
         setSyncStatus(null)
       }
 
+      if (cancelled) return
       setMessagesByChar(prev => {
-        const local = prev[selectedCharId] ?? []
+        if (cancelled) return prev
+        const local = prev[threadKey] ?? []
         const cloudKeys = new Set(cloudMsgs.map(m => JSON.stringify({ sender: m.sender, text: m.text })))
         const localOnly = local.filter(m => !cloudKeys.has(JSON.stringify({ sender: m.sender, text: m.text })))
         const merged = [...localOnly, ...cloudMsgs]
 
         if (auth.user && cloudPrivacy.key && localOnly.length > 0) {
           const messagesToBackfill = localOnly.filter(m => {
-            const key = `${auth.user!.id}:${selectedCharId}:${m.sender}:${m.text}`
+            const key = `${auth.user!.id}:${threadKey}:${m.sender}:${m.text}`
             if (backfilledCloudKeysRef.current.has(key)) return false
             backfilledCloudKeysRef.current.add(key)
             return true
           })
           if (messagesToBackfill.length > 0) {
             persistPrivateChatMessages(auth.user.id, messagesToBackfill.map(m => ({
-              character_id: selectedCharId,
+              character_id: threadKey,
               message: m.text,
               sender: m.sender,
               emotion: m.emotion ?? null,
@@ -1019,9 +1126,11 @@ function App() {
         }
 
         if (merged.length === 0) {
+          if (mode === 'crew') return prev
+          rememberOpenerPick(selectedCharId, picked.id)
           return {
             ...prev,
-            [selectedCharId]: [{
+            [threadKey]: [{
               id: `opener-${selectedCharId}`,
               sender: selectedCharId,
               text: opener,
@@ -1033,14 +1142,15 @@ function App() {
         }
 
         if (merged.length === local.length) return prev
-        return { ...prev, [selectedCharId]: merged }
+        return { ...prev, [threadKey]: merged }
       })
 
       if (cloudMem) {
-        setMemoryByChar(prev => ({ ...prev, [selectedCharId]: cloudMem }))
+        setMemoryByChar(prev => ({ ...prev, [threadKey]: cloudMem }))
       }
     })()
-  }, [auth.user, selectedCharId, language, relation, cloudPrivacy.status, cloudPrivacy.key]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { cancelled = true }
+  }, [auth.user, selectedCharId, threadKey, mode, view, language, relation, cloudPrivacy.status, cloudPrivacy.key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Scene background cross-fade (chat view) ---- */
   const [currentSceneUrl, setCurrentSceneUrl] = useState<string>(pickSceneUrl([]))
@@ -1098,7 +1208,7 @@ function App() {
     const el = e.target
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`
-  }, [])
+  }, [setMessage])
 
   const handleComposerKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter' || e.shiftKey) return
@@ -1140,12 +1250,12 @@ function App() {
       || story.connectionState === 'streaming'
       || story.connectionState === 'beat_paused'
       || story.connectionState === 'complete'
-    if (!playing) return
+    if (!playing || view !== 'story') return
     // Defer so we do not cascade-render inside the effect body (react-hooks/set-state-in-effect).
     queueMicrotask(() => setSidebarCollapsed(true))
-  }, [story.connectionState])
+  }, [story.connectionState, view])
 
-  const beginStoryStream = useCallback(async (prompt: string) => {
+  const beginStoryStream = useCallback(async (prompt: string, scenarioId: 'conversation' | 'desert_crisis' = 'conversation') => {
     const seed = prompt.trim()
     if (!seed) return
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
@@ -1173,23 +1283,24 @@ function App() {
       await story.startStory(
         seed,
         selectedCharId,
-        getVoiceExample(selectedCharId, relation) ?? null,
+        null,
         language,
         bindId,
+        scenarioId,
       )
       setStoryTask('')
     } catch (e) {
       setCurtainRaised(false)
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [story, selectedCharId, relation, language, connection])
+  }, [story, selectedCharId, language, connection, setError])
 
   const handleStartStory = useCallback(async () => {
     await beginStoryStream(storyTask)
   }, [beginStoryStream, storyTask])
 
   const handleRaiseCurtain = useCallback(async () => {
-    await beginStoryStream(pendingStoryPrompt || storyTask)
+    await beginStoryStream(pendingStoryPrompt || storyTask, pendingStoryPrompt ? 'desert_crisis' : 'conversation')
   }, [beginStoryStream, pendingStoryPrompt, storyTask])
 
   /* ---- Cold open → cast → Story (default product surface) ----
@@ -1212,7 +1323,7 @@ function App() {
     setColdOpenStarting(true)
 
     const charId = payload.characterId as CharacterId
-    setSelectedCharId(charId)
+    setStoryCharacterId(charId)
     setColdOpenChoiceId(payload.choiceId)
     setPendingStoryPrompt(payload.storyPrompt)
     setStoryTask(payload.storyPrompt)
@@ -1229,20 +1340,20 @@ function App() {
       coldOpenStartingRef.current = false
       setColdOpenStarting(false)
     }
-  }, [setHasEnteredWorld, setSelectedCharId, setSurface, story.connectionState])
+  }, [setHasEnteredWorld, setStoryCharacterId, setSurface, story.connectionState, setError])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
     setMessagesByChar(prev => ({
       ...prev,
-      [selectedCharId]: updater(prev[selectedCharId] ?? []),
+      [threadKey]: updater(prev[threadKey] ?? []),
     }))
-  }, [selectedCharId, setMessagesByChar])
+  }, [threadKey, setMessagesByChar])
 
   const handleSend = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     const userText = message.trim()
-    if (!userText || isSending) return
+    if (!userText || isSending || view !== 'chat') return
 
     // Bind / open sheet before optimistic UI so a dead BYOK session does not leave a stranded bubble.
     if (!connection.view.canStart) {
@@ -1252,9 +1363,13 @@ function App() {
     }
     setIsSending(true)
     setError(null)
+    const controller = new AbortController()
+    chatAbortRef.current = controller
+    chatRequestScopeRef.current = `${view}:${threadKey}`
     let bindId: string | null
     try {
       bindId = await connection.ensureBound()
+      controller.signal.throwIfAborted()
       if (connection.view.mode === 'byok' && !bindId) {
         connection.setSheetOpen(true)
         throw new Error(
@@ -1263,10 +1378,10 @@ function App() {
             : 'Key session is not ready. Re-save your key in the model engine.',
         )
       }
-      story.setConnectionSessionId(bindId)
     } catch (e) {
       setIsSending(false)
-      setError(e instanceof Error ? e.message : String(e))
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e))
+      if (chatAbortRef.current === controller) chatAbortRef.current = null
       return
     }
 
@@ -1284,27 +1399,14 @@ function App() {
     // Update memory with user turn
     const updatedAfterUser = charMemory.addTurn(selectedCharId, 'user', userText, currentMemory)
 
-    if (auth.user && cloudPrivacy.key) {
-      setSyncStatus('syncing')
-      persistPrivateChatMessage(auth.user.id, {
-        character_id: selectedCharId,
-        message: userText,
-        sender: 'user',
-        emotion: null,
-      }, cloudPrivacy.key)
-        .then(() => setSyncStatus('synced'))
-        .catch(() => setSyncStatus('sync-failed'))
-    } else if (auth.user) {
-      setSyncStatus('privacy-locked')
-    }
-
     const packedMemory = toDirectChatMemoryWire(
       mode,
       nextHistory.map(m => ({ sender: m.sender, text: m.text })),
     )
+    const durableMemory = formatDurableMemoryForWire(
+      (updatedAfterUser.keyFacts ?? []) as DurableFact[],
+    )
 
-    const controller = new AbortController()
-    chatAbortRef.current = controller
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -1318,6 +1420,7 @@ function App() {
           history: packedMemory.history,
           memoryOpening: packedMemory.memoryOpening,
           memoryDigest: packedMemory.memoryDigest,
+          durableMemory: mode === 'direct' ? durableMemory : '',
           language,
           llmProvider: connection.view.providerId,
           modelId: connection.view.modelId,
@@ -1348,6 +1451,7 @@ function App() {
         throw new Error(msg)
       }
       const data = await res.json()
+      controller.signal.throwIfAborted()
       void quota.refresh()
 
       if (mode === 'crew') {
@@ -1366,12 +1470,20 @@ function App() {
 
         if (auth.user && cloudPrivacy.key && debateReplies.length > 0) {
           setSyncStatus('syncing')
-          persistPrivateChatMessages(auth.user.id, debateReplies.map(reply => ({
-            character_id: selectedCharId,
-            message: reply.text,
-            sender: reply.sender,
-            emotion: reply.emotion ?? null,
-          })), cloudPrivacy.key)
+          persistPrivateChatMessages(auth.user.id, [
+            {
+              character_id: threadKey,
+              message: userText,
+              sender: 'user',
+              emotion: null,
+            },
+            ...debateReplies.map(reply => ({
+              character_id: threadKey,
+              message: reply.text,
+              sender: reply.sender,
+              emotion: reply.emotion ?? null,
+            })),
+          ], cloudPrivacy.key)
             .then(() => setSyncStatus('synced'))
             .catch(() => setSyncStatus('sync-failed'))
         } else if (auth.user) {
@@ -1386,21 +1498,29 @@ function App() {
 
         // Update memory with character reply
         const finalMemory = charMemory.addTurn(selectedCharId, selectedCharId, reply.text, updatedAfterUser)
-        setMemoryByChar(prev => ({ ...prev, [selectedCharId]: finalMemory }))
+        setMemoryByChar(prev => ({ ...prev, [threadKey]: finalMemory }))
 
         // Persist to Supabase if authenticated
         if (auth.user && cloudPrivacy.key) {
           setSyncStatus('syncing')
-          persistPrivateChatMessage(auth.user.id, {
-            character_id: selectedCharId,
-            message: reply.text,
-            sender: selectedCharId,
-            emotion: reply.emotion ?? null,
-          }, cloudPrivacy.key)
+          persistPrivateChatMessages(auth.user.id, [
+            {
+              character_id: threadKey,
+              message: userText,
+              sender: 'user',
+              emotion: null,
+            },
+            {
+              character_id: threadKey,
+              message: reply.text,
+              sender: selectedCharId,
+              emotion: reply.emotion ?? null,
+            },
+          ], cloudPrivacy.key)
             .then(() => setSyncStatus('synced'))
             .catch(() => setSyncStatus('sync-failed'))
           persistPrivateCharacterMemory(auth.user.id, {
-            character_id: selectedCharId,
+            character_id: threadKey,
             summary: finalMemory.summary,
             key_facts: finalMemory.keyFacts as unknown as Array<Record<string, unknown>>,
           }, cloudPrivacy.key)
@@ -1411,16 +1531,17 @@ function App() {
         }
       }
     } catch (e) {
+      updateMessages(prev => prev.filter(m => m.id !== userMsg.id))
+      setMessage(userText)
       if (!(e instanceof Error && e.name === 'AbortError')) {
         // Roll back the optimistic bubble and restore the draft so retry is one click.
-        updateMessages(prev => prev.filter(m => m.id !== userMsg.id))
-        setMessage(userText)
         setError(e instanceof Error ? e.message : String(e))
       }
     } finally {
+      const ownsComposer = chatAbortRef.current === controller && !controller.signal.aborted
       if (chatAbortRef.current === controller) chatAbortRef.current = null
       setIsSending(false)
-      const el = composerRef.current
+      const el = ownsComposer ? composerRef.current : null
       if (el) {
         el.focus()
         // Re-grow for a restored draft (or collapse after a cleared one).
@@ -1428,24 +1549,24 @@ function App() {
         el.style.height = `${Math.min(el.scrollHeight, 140)}px`
       }
     }
-  }, [message, isSending, messages, selectedCharId, relation, mode, language, connection, story, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key, quota])
+  }, [message, isSending, messages, selectedCharId, threadKey, view, setMessage, setIsSending, setError, relation, mode, language, connection, updateMessages, auth, currentMemory, charMemory, setMemoryByChar, cloudPrivacy.key, quota])
 
   /* ---- Character change ---- */
   const handleCharChange = useCallback((id: CharacterId) => {
     setSelectedCharId(id)
     setRelationByChar(prev => {
-      const savedRelation = prev[id]
+      const key = chatThreadKey(mode, id)
+      const savedRelation = prev[key]
       if (savedRelation !== undefined) {
         const charName = characters.find(c => c.id === id)?.name ?? id
         setRelationNotice(
           `${charName}: ${getRelationLabel(savedRelation, language)}`,
         )
       }
-      return { ...prev, [id]: savedRelation ?? characters.find(c => c.id === id)!.relationOptions[0] }
+      return { ...prev, [key]: savedRelation ?? characters.find(c => c.id === id)!.relationOptions[0] }
     })
-    setMessage('')
     setError(null)
-  }, [setSelectedCharId, setRelationByChar, language])
+  }, [setSelectedCharId, setRelationByChar, mode, language, setRelationNotice, setError])
 
   const handleReturnToLanding = useCallback(() => {
     story.reset()
@@ -1459,7 +1580,7 @@ function App() {
     // the old setup screen after reset.
     setKnowledgeTrack(null)
     setHasEnteredWorld(false)
-  }, [story, setHasEnteredWorld, setKnowledgeTrack])
+  }, [story, setHasEnteredWorld, setKnowledgeTrack, setError])
 
   const storyContextSummary = useMemo(() => {
     const spoken = story.events
@@ -1560,19 +1681,32 @@ function App() {
 
   const handleContinueChapter = useCallback(async () => {
     const base = defaultStoryPrompt(language)
-    const prompt = language === 'zh'
-      ? `${base}\n\n作为第二章继续。保留第一章后果，提高压力，不要重开故事。\n\n第一章上下文：\n${storyContextSummary || '暂无上下文。'}`
-      : `${base}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.\n\nChapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
-    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
-  }, [relation, selectedCharId, story, storyContextSummary, language])
+    const instruction = language === 'zh'
+      ? `${base}\n\n作为第二章继续。保留第一章后果，提高压力，不要重开故事。`
+      : `${base}\n\nContinue this as Chapter 2. Keep the consequences of Chapter 1 intact, raise the pressure, and do not restart the story.`
+    const context = language === 'zh'
+      ? `第一章上下文：\n${storyContextSummary || '暂无上下文。'}`
+      : `Chapter 1 context:\n${storyContextSummary || 'No previous context was captured.'}`
+    const branchGoal = boundedStoryDirection(instruction, context)
+    await story.sendAction('continue_chapter', { branch_goal: branchGoal }, selectedCharId)
+  }, [selectedCharId, story, storyContextSummary, language])
 
   const handleBranchStory = useCallback(async () => {
     const base = defaultStoryPrompt(language)
-    const prompt = language === 'zh'
-      ? `${base}\n\n从关键节点分叉。保留设定，但因角色冲突走向完全不同的剧情。\n\n原上下文：\n${storyContextSummary || '暂无上下文。'}`
-      : `${base}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.\n\nOriginal context:\n${storyContextSummary || 'No previous context was captured.'}`
-    await story.startStory(prompt, selectedCharId, getVoiceExample(selectedCharId, relation) ?? null, language)
-  }, [relation, selectedCharId, story, storyContextSummary, language])
+    const instruction = language === 'zh'
+      ? `${base}\n\n从关键节点分叉。保留设定，但因角色冲突走向完全不同的剧情。`
+      : `${base}\n\nBranch from the earlier decisive beat. Preserve the setup, then take the plot in a sharply different direction chosen by character conflict rather than coincidence.`
+    const context = language === 'zh'
+      ? `原上下文：\n${storyContextSummary || '暂无上下文。'}`
+      : `Original context:\n${storyContextSummary || 'No previous context was captured.'}`
+    const branchGoal = boundedStoryDirection(instruction, context)
+    const fromBeatId = canonicalBeatId(story.currentBeatId, story.beatIndex)
+    await story.sendAction(
+      'branch',
+      { from_beat_id: fromBeatId, branch_goal: branchGoal },
+      selectedCharId,
+    )
+  }, [selectedCharId, story, storyContextSummary, language])
 
   const handleReplayBeat = useCallback(async () => {
     const beatId = canonicalBeatId(story.currentBeatId, story.beatIndex)
@@ -1598,7 +1732,7 @@ function App() {
       }}
       onChat={(character) => {
         setLanguage('zh')
-        setSelectedCharId(character)
+        setChatCharacterId(character)
         setSurface('direct')
         setHasEnteredWorld(true)
         leaveHomePreview()
@@ -1709,7 +1843,6 @@ function App() {
           <span className="brand-icon" />
           <div>
             <h1>{t.storyTitle}</h1>
-            <p>{t.tagline}</p>
           </div>
           <button type="button" className="brand-return" onClick={handleReturnToLanding}>
             {t.returnToLanding}
@@ -1796,7 +1929,7 @@ function App() {
             <div className="story-hud__metric story-hud__metric--slug">
               <span>{t.location}</span>
               <strong>{storyLocation}</strong>
-              <small>{selectedChar.name} / {getRelationLabel(relation, language)}</small>
+              <small>{language === 'zh' ? '你扮演：' : 'You play: '}{selectedChar.name}</small>
               {storyWorldClock && <small className="world-clock">{storyWorldClock}</small>}
             </div>
             <div className="story-hud__metric story-hud__metric--tension">
@@ -1863,18 +1996,9 @@ function App() {
             <div className="story-setup">
               <h3>{t.setStage}</h3>
               <p>{t.setStageHint}</p>
-              <label className="story-setup__relation" htmlFor="setup-relation">
-                <span>{t.relation}</span>
-                <select
-                  id="setup-relation"
-                  value={relation}
-                  onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
-                >
-                  {selectedChar.relationOptions.map(opt => (
-                    <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
-                  ))}
-                </select>
-              </label>
+              <p className="story-setup__identity">
+                {language === 'zh' ? '你扮演：' : 'You play: '}{selectedChar.name}
+              </p>
               <textarea
                 ref={storyTaskRef}
                 value={storyTask}
@@ -1998,6 +2122,11 @@ function App() {
                     <span>{t.interLabel}</span>
                     <small>{t.interSub}</small>
                   </div>
+                  {story.commandNotice && (
+                    <p className="beat-paused__notice" role="status">
+                      {story.commandNotice.message}
+                    </p>
+                  )}
                   <DramaDecisionBar
                     language={language}
                     suggestions={dramaSuggestions}
@@ -2012,13 +2141,9 @@ function App() {
                     }
                     onPick={(s) => {
                       setDramaHintSeen(true)
-                      story.appendLocalEvent({
-                        type: 'player_turn',
-                        data: { kind: s.kind, content: s.payload },
-                      })
                       void story.sendAction(
-                        'redirect',
-                        { redirect_prompt: s.payload },
+                        'act',
+                        { player_input: s.payload, player_kind: s.kind },
                         selectedCharId,
                       )
                       setDecisionFree('')
@@ -2031,16 +2156,16 @@ function App() {
                       const text = decisionFree.trim()
                       if (!text) return
                       setDramaHintSeen(true)
-                      story.appendLocalEvent({
-                        type: 'player_turn',
-                        data: { kind: 'free', content: text },
-                      })
+                      // Keep the typed line when the move was refused (an
+                      // earlier command is still unconfirmed) — the player
+                      // must not have to remember and retype their words.
                       void story.sendAction(
-                        'redirect',
-                        { redirect_prompt: text },
+                        'act',
+                        { player_input: text, player_kind: 'free' },
                         selectedCharId,
-                      )
-                      setDecisionFree('')
+                      ).then((accepted) => {
+                        if (accepted) setDecisionFree('')
+                      })
                     }}
                     disabled={
                       story.connectionState !== 'beat_paused'
@@ -2103,7 +2228,6 @@ function App() {
                   <h2>
                     {selectedChar.name}
                   </h2>
-                  <p className="chat-header__frame">{t.directFrame}</p>
                   {showSavePrompt && (
                     <div className="save-prompt">
                       {t.savePrompt}
@@ -2121,20 +2245,38 @@ function App() {
             <a className="chat-character-link" href="/?home=preview#characters">{language === 'zh' ? '选择角色' : 'Characters'}</a>
             <label className="chat-header__relation" htmlFor="chat-relation">
               <span className="sr-only">{t.relation}</span>
-              <select
-                id="chat-relation"
-                value={relation}
-                onChange={e => setRelationByChar(prev => ({ ...prev, [selectedCharId]: e.target.value }))}
-                aria-label={t.relation}
-              >
-                {selectedChar.relationOptions.map(opt => (
-                  <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
-                ))}
-              </select>
+              {relationLocked ? (
+                <span className="chat-header__relation-locked" title={language === 'zh' ? '开聊后关系锚点锁定；可在对话里口头纠正' : 'Locked after you start talking; correct it in chat'}>
+                  {formatRelation(selectedChar, relation, language)}
+                </span>
+              ) : (
+                <select
+                  id="chat-relation"
+                  value={relation}
+                  onChange={e => setRelationByChar(prev => ({ ...prev, [threadKey]: e.target.value }))}
+                  aria-label={t.relation}
+                >
+                  {selectedChar.relationOptions.map(opt => (
+                    <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
+                  ))}
+                </select>
+              )}
             </label>
           </header>
 
+          {legacyMessages.length > 0 && (
+            <details className="chat-legacy-archive" key={selectedCharId}>
+              <summary>{language === 'zh' ? '旧版聊天记录（只读）' : 'Legacy conversations (read-only)'}</summary>
+              <p>{language === 'zh'
+                ? '旧版记录未区分单聊和群聊，保留供回看，不自动带入新对话。'
+                : 'These older records did not distinguish Direct from Crew. They are preserved for reading, not sent into new conversations.'}</p>
+              {legacyMessages.map((row, index) => <p key={index}><strong>{row.sender}: </strong>{row.text}</p>)}
+            </details>
+          )}
           <div className="chat-stream" ref={chatStreamRef} onScroll={handleChatScroll}>
+            {mode === 'crew' && messages.length === 0 && <p className="chat-empty">
+              {language === 'zh' ? '这是一段独立的群聊。你想先和谁聊什么？' : 'A separate group conversation. Who would you like to talk to first?'}
+            </p>}
             {messages.map(msg => {
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)

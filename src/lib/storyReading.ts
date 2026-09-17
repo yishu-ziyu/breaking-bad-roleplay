@@ -10,6 +10,9 @@ export type ReadingBlock = {
   text: string
   source: 'user' | 'model'
   speaker?: string
+  /** The player line is sent but the server has not confirmed it yet: it is a
+   * claim, not committed story text, and must not read like settled history. */
+  pending?: boolean
 }
 
 export type OnStageLore = {
@@ -52,6 +55,7 @@ export function buildReadingBlocks(
         kind: 'player',
         text,
         source: 'user',
+        pending: evt.data.pending === true,
       })
       return
     }
@@ -125,6 +129,24 @@ export function trimFeedForBeatRedraw(
   }
   if (cut < 0) return []
   return events.slice(0, cut + 1)
+}
+
+export function trimFeedThroughBeat(
+  events: readonly StoryEvent[],
+  beatId: string,
+): StoryEvent[] {
+  const target = beatNumberFromId(beatId)
+  if (target == null) return [...events]
+  let cut = -1
+  for (let i = 0; i < events.length; i += 1) {
+    if (
+      events[i].type === 'beat_ready'
+      && beatNumberFromId(events[i].data.beat_id) === target
+    ) {
+      cut = i
+    }
+  }
+  return cut < 0 ? [...events] : events.slice(0, cut + 1)
 }
 
 export function looksLikePlotEngineCopy(text: string): boolean {

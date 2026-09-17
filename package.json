@@ -11,10 +11,11 @@
     "preview": "vite preview",
     "e2e": "playwright test",
     "test:frontend": "tsx --tsconfig tsconfig.app.json --test 'tests/*.spec.ts' 'test/**/*.test.js' 'src/**/*.test.ts'",
-    "test:backend": "cd backend && uv run pytest",
+    "test:backend": "cd backend && uv run python -m pytest",
     "test:e2e": "playwright test",
+    "test:e2e:auth": "AUTH_E2E=1 VITE_SUPABASE_URL=https://fake.supabase.test VITE_SUPABASE_PUBLISHABLE_KEY=fake playwright test tests/e2e/auth-profile.spec.ts",
     "test:all": "npm-run-all -p test:frontend test:backend",
-    "test:ci": "npm-run-all -s test:frontend test:backend test:e2e",
+    "test:ci": "npm-run-all -s test:frontend test:backend test:e2e test:e2e:auth",
     "verify:rls": "node scripts/verify-supabase-rls.mjs",
     "audit:gifs": "cd backend && uv run python ../scripts/audit_gifs.py",
     "e2e:ui": "playwright test --ui"

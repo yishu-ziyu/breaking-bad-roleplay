@@ -15,7 +15,7 @@ describe('play-QA wiring in App', () => {
     assert.match(app, /bubbleFromDirectPayload/)
     assert.match(app, /bubblesFromCrewPayload/)
     assert.match(app, /getDirectWayfinders/)
-    assert.match(app, /chat-header__frame/)
+    assert.doesNotMatch(app, /chat-header__frame|directFrame|顶撞是角色|不是客服|Pushback is the character/)
     assert.match(app, /isInspectableThinking/)
     assert.doesNotMatch(app, /我需要你的建议|I could use your advice/)
     assert.match(app, /onEnterDirect/)

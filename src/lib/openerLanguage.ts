@@ -13,7 +13,7 @@ export type OpenerMessage = {
 
 export function isOpenerOnlyThread(messages: OpenerMessage[] | undefined, characterId: string): boolean {
   if (!messages || messages.length !== 1) return false
-  return messages[0].id === `opener-${characterId}`
+  return messages[0].id === `opener-${characterId}` || messages[0].id.startsWith(`opener-${characterId}-`)
 }
 
 export function openerTextForLanguage(
@@ -33,6 +33,16 @@ export function syncOpenerLanguage<T extends OpenerMessage>(
 ): T[] | undefined {
   if (!isOpenerOnlyThread(messages, characterId) || !messages) return messages
   const nextText = openerTextForLanguage(opener, language)
+  return rewriteOpenerText(messages, nextText, openingEmotion)
+}
+
+/** Rewrite opener-only thread to an already-resolved line (library / thread callback). */
+export function rewriteOpenerText<T extends OpenerMessage>(
+  messages: T[] | undefined,
+  nextText: string,
+  openingEmotion: string,
+): T[] | undefined {
+  if (!messages || messages.length !== 1) return messages
   const current = messages[0]
   if (current.text === nextText && current.emotion === openingEmotion) return messages
   return [

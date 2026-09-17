@@ -1,42 +1,65 @@
 # ABQ Roleplay Lab
 
-《绝命毒师》主题的 AI 角色扮演。当前默认入口和玩法见 [docs/AS_BUILT.md](docs/AS_BUILT.md)：无参数打开是索尔门，再选剧情 / 单聊 / 群聊。进门之后可以选角色、建关系再聊。六回合夜晚已实现，只走 `?night=1`，不是默认首页。
+《绝命毒师》主题的 AI 角色扮演。当前默认入口和玩法见 [docs/AS_BUILT.md](docs/AS_BUILT.md)：无参数打开是 Story / Direct / Crew 三卡展台。进入 Direct / Crew 后可以选角色、建关系再聊；Story 先进入场面卡。六回合夜晚已实现，只走 `?night=1`，不是默认首页。
+
+三个模式，不是一条强制联通的游戏流程：Direct 是一对一 AI 角色聊天，Crew 是多角色 AI 聊天，Story 才采用「局势 → 行动 → 结算 → 后果」的叙事游戏循环。聊天对象、记录和私聊记忆不随 Story 玩家身份或进度改变。
 
 ## What It Does
 
-- Default visit: Saul door, then Story / Direct / Crew (see `docs/AS_BUILT.md`).
-- Lets the user choose Walter, Jesse, Skyler, Saul, Mike, Gus, or Hank.
-- Forces a relationship anchor such as `Walter's former student`, `Saul's client`, or `Gus's employee` before chatting.
-- Supports English / Simplified Chinese switching for UI copy, relationship labels, prompt language control, and demo replies.
-- Supports private pressure scenes and lightweight crew scenes.
-- Uses the real MiniMax Token Plan service through the project `/api/chat` server endpoint.
-- Renders GIF cards from `gif_search_query` trigger words.
+- Default visit: a three-card Story / Direct / Crew showcase.
+- Story: a Director-led scene pauses for the player's action, then runtime-v1
+  settles a finite world state before any public event is streamed.
+- Direct: one-on-one character conversation with a relationship anchor, core
+  character policy and bounded durable memory.
+- Crew: independent multi-character conversation, not a mandatory Story encounter.
+- English and Simplified Chinese UI, prompts and replies.
+- Platform quota plus BYOK provider binding; provider keys stay on the server
+  or in the browser's encrypted connection vault.
+- The UI currently exposes eight portraits including Marie. The production
+  Director roster is still seven characters; see the known mismatch in
+  `docs/AS_BUILT.md` before changing that boundary.
 
-## Prompt Engine
+## Current Architecture
 
-The implementation uses the same three-layer architecture in `src/App.tsx`.
+### Story runtime v1
 
-1. System Prompt
+```text
+player command
+  -> story.service claim + revision/idempotency check
+  -> scenes.world_state deterministic resolution
+  -> Director / Character policy performance
+  -> validation
+  -> atomic world snapshot + story_turns outbox commit
+  -> SSE replay of committed public events
+```
 
-   `buildSystemPrompt(character, language)` defines static role identity, personality traits, signature notes, speaking style, target reply language, immersion rules, and safety boundaries.
+New sessions use this path. Pre-migration sessions with no `world_state` keep
+the legacy beat runtime so existing saves remain readable.
 
-2. Dynamic Context Injection
+### Direct and Crew
 
-   `buildContextPrompt(character, relation, mode, history, userText, language)` injects the relationship anchor, chat mode, recent history, target language, and current user message for each request.
+`POST /api/chat` routes through `DirectorAgent`, compiled character policy and
+the shared accepted-turn validator. Direct uses a lean no-tool presentation
+stack, but it does not bypass identity, knowledge or publication gates.
 
-3. Output Schema
+The standalone chat entry filters out Story session/world fields and does not
+read a Story save. Local and encrypted cloud chats use the same versioned key,
+`chat-v2:<direct|crew>:<NPC id>`, in the existing text `character_id` storage
+column. `/api/chat` still receives the canonical NPC id. Unclassified legacy
+records are preserved in a separate read-only archive; they are not silently
+assigned to either mode or injected into new conversations. No database
+migration is needed for this key separation. See
+[`chat-story-mode-boundaries.md`](docs/specs/chat-story-mode-boundaries.md).
 
-   `responseSchema` requires the model to return:
+### Durable memory
 
-   ```json
-   {
-     "reply_text": "in-character reply",
-     "emotion_state": "current emotion state",
-     "gif_search_query": "1-3 English keywords, or null"
-   }
-   ```
+Direct stores a bounded set of attributed conversation facts in five categories:
+open thread, secret, attitude shift, player fact and agreement. These are
+retrieved as untrusted conversation data, not promoted to system instructions
+or authoritative Story effects.
 
-The UI includes an `Inspect compiled prompt` drawer for checking the actual system and context prompt text.
+The load-bearing boundaries are documented in
+[`docs/architecture/layering.md`](docs/architecture/layering.md).
 
 ## Safety Boundary
 
@@ -72,18 +95,40 @@ The FastAPI backend runs on `http://localhost:8001`.
 
 Make sure `.env` is configured in `backend/` with the required API keys (`MINIMAX_API_KEY`, `STEPFUN_API_KEY`, `DATABASE_URL`).
 
+### Verification
+
+```bash
+npm test
+npm run test:backend
+npm run build
+npm run lint
+npm run test:e2e
+npm run test:e2e:auth
+```
+
+`test:e2e` executes only current product contracts. Historical selectors and
+the migration map are preserved under `docs/archive/e2e/2026-09-17/`.
+The auth/profile contract uses an isolated fake Supabase origin and runs through
+`test:e2e:auth`; `test:ci` includes both browser suites.
+
 ## API
 
 The Python backend exposes the following endpoints:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/chat` | POST | Send a chat message (legacy compatibility) |
-| `/api/session` | POST | Create a new roleplay session |
-| `/api/session/{id}/action` | POST | Send player decision (continue / stop / redirect / switch_perspective) |
-| `/api/events/{session_id}` | GET | SSE event stream for real-time story events |
+| `/api/chat` | POST | Direct or Crew message |
+| `/api/session/create` | POST | Create a Story session and runtime-v1 opening command |
+| `/api/session/{id}/action` | POST | Submit `act`, continue, stop, redirect, branch, replay, or perspective change |
+| `/api/session/{id}/stream` | GET | Stream or replay committed Story events over SSE |
+| `/api/session/{id}/state` | GET | Restore player-visible world state and the committed branch outbox |
+| `/api/session/{id}/messages` | GET | Paginated persisted dialogue / legacy recovery |
+| `/api/session/{id}/plot-graph` | GET | Player-facing situation map |
+| `/api/quota` | GET | Current platform/BYOK quota state |
 
-Event types streamed via SSE: `scene_change`, `agent_act`, `agent_speak`, `agent_think`, `world_state_delta`, `beat_ready`.
+Runtime-v1 public events include `outline`, `player_turn`, `scene_change`,
+accepted character performance, `beat_ready`, and `complete`. Event IDs are
+stable within a command so reconnects do not duplicate the manuscript.
 
 ## MiniMax Token Plan
 

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("MINIMAX_API_KEY", "test-key")
 os.environ.setdefault("STEPFUN_API_KEY", "test-key")
@@ -164,3 +166,65 @@ class TestRefundPlatformQuota:
         assert await refund_platform_quota(byok) is False
         zero = replace(byok, identity="g:x", cost=0)
         assert await refund_platform_quota(zero) is False
+
+
+class TestEndpointFailureRefunds:
+    async def test_tts_provider_failure_refunds_the_reserved_credit(self):
+        from agents.tts import TTSError
+        from api.routes import TtsRequest, synthesize_tts
+        from fastapi import HTTPException
+
+        billed = MagicMock(cost=1)
+        refund = AsyncMock(return_value=True)
+        provider = MagicMock()
+        provider.effective_minimax_tts_key.return_value = "test-key"
+
+        with (
+            patch(
+                "api.routes._require_platform_quota",
+                AsyncMock(return_value=billed),
+            ),
+            patch(
+                "api.routes.synthesize_character_speech",
+                AsyncMock(side_effect=TTSError("provider failed", status_code=502)),
+            ),
+            patch("api.routes.refund_platform_quota", refund),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await synthesize_tts(
+                request=_FakeRequest(),
+                payload=TtsRequest(text="hello", characterId="walter"),
+                provider=provider,
+            )
+
+        assert exc_info.value.status_code == 502
+        refund.assert_awaited_once_with(billed)
+
+    async def test_live_agent_failure_refunds_the_reserved_credit(self):
+        from api.routes import AgentRunRequest, agent_run
+        from fastapi import HTTPException
+
+        billed = MagicMock(cost=1)
+        refund = AsyncMock(return_value=True)
+        service = MagicMock()
+        service.run = AsyncMock(side_effect=RuntimeError("model failed"))
+        request = _FakeRequest()
+        request.app = SimpleNamespace(state=SimpleNamespace(provider=MagicMock()))
+
+        with (
+            patch("api.routes._live_provider_available", return_value=True),
+            patch(
+                "api.routes._require_platform_quota",
+                AsyncMock(return_value=billed),
+            ),
+            patch("agents.harness.service.get_harness_service", return_value=service),
+            patch("api.routes.refund_platform_quota", refund),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await agent_run(
+                request=request,
+                payload=AgentRunRequest(message="hello", offline=False),
+            )
+
+        assert exc_info.value.status_code == 500
+        refund.assert_awaited_once_with(billed)

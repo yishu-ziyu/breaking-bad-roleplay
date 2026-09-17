@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import re
+from copy import deepcopy
 from typing import Any, AsyncIterator
 
 from agents.provider import ProviderFacade
@@ -40,7 +41,6 @@ from agents.narrative_contracts import (
 )
 from agents.turn_acceptance import (
     drop_character_group,
-    revalidate_events_after_rewrite,
     should_publish_turn,
     strip_unverified_effects,
 )
@@ -160,9 +160,10 @@ def _language_directive(lang: str, zh_guard: bool = True) -> str:
 
 
 def format_direct_conversation_memory(context: dict[str, Any]) -> str:
-    """Opening pin + middle digest for Direct, when recent history no longer holds them."""
+    """Opening pin + middle digest + durable relationship facts for Direct."""
     opening = context.get("memoryOpening") or context.get("memory_opening") or []
     digest = str(context.get("memoryDigest") or context.get("memory_digest") or "").strip()
+    durable = str(context.get("durableMemory") or context.get("durable_memory") or "").strip()
     if not isinstance(opening, list):
         opening = []
     opening = opening[:4]
@@ -182,6 +183,8 @@ def format_direct_conversation_memory(context: dict[str, Any]) -> str:
         parts.append(
             "What happened after that, before the most recent turns:\n" + digest[:2000]
         )
+    if durable:
+        parts.append(durable[:2000])
     if not parts:
         return ""
     parts.append("Use this only as memory of this conversation. Do not recap it unless asked.")
@@ -1543,7 +1546,7 @@ class DirectorAgent:
         task: str,
         outline: str,
         beat_index: int,
-        context: dict[str, str],
+        context: dict[str, Any],
         scene_desc: str | None = None,
         db: Any = None,
         session_factory: Any = None,
@@ -1614,6 +1617,19 @@ class DirectorAgent:
             return
         assert events is not None
 
+        player_actor = str(context.get("player_actor_id") or "")
+        allowed_actors = context.get("allowed_actor_ids")
+        if player_actor or allowed_actors is not None:
+            from agents.continuity_board import normalize_character_id
+            filtered = []
+            for candidate in events:
+                data = candidate.get("data")
+                actor = normalize_character_id(str(data.get("character_id") or "")) if isinstance(data, dict) else ""
+                if actor and (actor == player_actor or (allowed_actors is not None and actor not in allowed_actors)):
+                    continue
+                filtered.append(candidate)
+            events = filtered
+
         events = hoist_perspective_speak(events, active_character_id)
         events = self._prepare_beat_events(events)
         # If language is zh but the planner still emitted English narrative,
@@ -1623,6 +1639,20 @@ class DirectorAgent:
         )
         if _norm_lang(language) == "zh":
             events = normalize_zh_names_in_events(events)
+            # Legacy scenes may contain a standalone inner monologue with no
+            # speaking turn. It cannot use the per-speaker rewrite below.
+            speakers = {(event.get("data") or {}).get("character_id")
+                        for event in events if event.get("type") == "agent_speak"}
+            orphan_indexes = [index for index, event in enumerate(events)
+                              if event.get("type") == "agent_think"
+                              and (event.get("data") or {}).get("character_id") not in speakers]
+            if orphan_indexes:
+                polished = await rewrite_dubbing_in_events(
+                    [events[index] for index in orphan_indexes], provider=self.provider,
+                    model_route=self.active_route, language=language,
+                )
+                for index, event in zip(orphan_indexes, polished):
+                    events[index] = event
         # Resolve per-beat model route: prefer LLM-suggested, fall back to rule-based
         llm_suggested: str | None = None
         for evt in events:
@@ -1680,12 +1710,15 @@ class DirectorAgent:
         )
         continuity_board: dict[str, Any] | None = None
         try:
-            continuity_board = await load_or_init_session_board(
-                session_factory,
-                session_id or "",
-                location=current_scene or scene_desc or "",
-            )
-            if current_scene or scene_desc:
+            if isinstance(context.get("board_override"), dict):
+                continuity_board = deepcopy(context["board_override"])
+            else:
+                continuity_board = await load_or_init_session_board(
+                    session_factory,
+                    session_id or "",
+                    location=current_scene or scene_desc or "",
+                )
+            if (current_scene or scene_desc) and not context.get("board_override"):
                 continuity_board = set_location(
                     continuity_board, current_scene or scene_desc or ""
                 )
@@ -1828,6 +1861,17 @@ class DirectorAgent:
                             f"- pressure: {beat_contract.pressure_source}\n"
                             f"- forbidden: {beat_contract.forbidden_outcomes}\n"
                         )
+                    scene_input = f"Scene: {scene_desc}\nContext: {task}\n"
+                    if continuity_board is not None and continuity_board.get("authoritative"):
+                        # Planner drafts, contracts and outlines can contain
+                        # private facts. Actor knowledge must not arrive through
+                        # this side channel after the board has been filtered.
+                        contract_note = ""
+                        draft_note = ""
+                        scene_input = (
+                            "Public scene: " + str(context.get("public_scene") or continuity_board.get("location") or "")
+                            + "\nReact only to your permitted facts and earlier public lines.\n"
+                        )
                     sub_result = await character_agent.respond_structured(
                         context=peer_context,
                         user_message=(
@@ -1836,7 +1880,7 @@ class DirectorAgent:
                             f"{prior_note}"
                             f"{contract_note}"
                             f"{draft_note}"
-                            f"Scene: {scene_desc}\nContext: {task}\n"
+                            f"{scene_input}"
                             "Respond as Character Policy: fill action, thinking, "
                             "speech strategy fields, and reply_text."
                         ),
@@ -1906,6 +1950,28 @@ class DirectorAgent:
                         surface_intent=str(sub_result.get("surface_intent") or ""),
                         subtext=str(sub_result.get("subtext") or ""),
                     )
+                    # Polish this speaker BEFORE validation, continuity and the
+                    # next speaker. A later batch rewrite cannot retract facts
+                    # already shown to a peer.
+                    if _norm_lang(language) == "zh":
+                        candidate_events = [{"type": "agent_speak", "data": {
+                            "character_id": character_id, "content": turn.line,
+                        }}]
+                        if turn.inner_monologue:
+                            candidate_events.insert(0, {"type": "agent_think", "data": {
+                                "character_id": character_id, "thought_content": turn.inner_monologue,
+                            }})
+                        polished = await rewrite_dubbing_in_events(
+                            candidate_events, provider=self.provider,
+                            model_route=beat_model_route, language=language,
+                        )
+                        for final_event in polished:
+                            if final_event["type"] == "agent_speak":
+                                turn = turn.model_copy(update={"line": sanitize_speak_content(
+                                    str(final_event["data"].get("content") or ""))})
+                            elif final_event["type"] == "agent_think":
+                                turn = turn.model_copy(update={"inner_monologue": sanitize_speak_content(
+                                    str(final_event["data"].get("thought_content") or ""))})
                     # Canonicalize action verb onto the closed ontology.
                     if turn.action and (turn.action.verb or "").strip():
                         canon_verb, _mapped = map_action_verb(turn.action.verb)
@@ -2046,29 +2112,6 @@ class DirectorAgent:
                     {"character_id": character_id, "content": content}
                 )
             i += 1
-
-        # ------------------------------------------------------------------
-        # Dubbing guard (detect→rewrite) — only fires on zh "译制腔" hits.
-        # Runs AFTER the character sub-agent pass so agent_speak.content is
-        # final; placement here means the rewrite is what gets yielded AND
-        # persisted. Cheap-first: clean/suspicious never trigger an LLM call.
-        # ------------------------------------------------------------------
-        if _norm_lang(language) == "zh":
-            events = await rewrite_dubbing_in_events(
-                events,
-                provider=self.provider,
-                model_route=beat_model_route,
-                language=language,
-            )
-            world_mode = parse_world_mode(
-                context.get("world_mode") or context.get("worldMode")
-            )
-            events = revalidate_events_after_rewrite(
-                events,
-                contract=beat_contract,
-                board=continuity_board,
-                world_mode=world_mode,
-            )
 
         # ------------------------------------------------------------------
         # Phase 2 — yield enriched events (think already Character-bound)
@@ -2527,9 +2570,21 @@ class DirectorAgent:
               { participants, scene_goal, tension_note, debate_logs }
         """
         mode = context.get("mode", "direct")
+        if mode not in {"direct", "crew"}:
+            raise ValueError("Independent chat mode must be direct or crew")
+        # Shared character code must not implicitly attach a Story save. The
+        # Story renderer has its own explicit world/ActorView entry point.
+        allowed = {
+            "relation", "history", "language", "llmProvider", "modelId",
+            "voiceExample", "era", "world_mode",
+        }
+        if mode == "direct":
+            allowed.update({"memoryOpening", "memoryDigest", "durableMemory", "durable_memory"})
+        context = {key: value for key, value in context.items() if key in allowed}
+        context["mode"] = mode
         if mode == "crew":
-            return await self._handle_crew_chat(character_id, user_message, context, session_factory)
-        return await self._handle_direct_chat(character_id, user_message, context, session_factory)
+            return await self._handle_crew_chat(character_id, user_message, context, None)
+        return await self._handle_direct_chat(character_id, user_message, context, None)
     async def _handle_direct_chat(
         self,
         character_id: str,
@@ -2537,62 +2592,61 @@ class DirectorAgent:
         context: dict[str, Any],
         session_factory: Any = None,
     ) -> dict[str, Any]:
-        """Direct-mode: call the character agent with structured output."""
+        """Direct-mode: lean chat stack (not the Story performance pipeline)."""
         backend_id = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
         character_cls = CHARACTER_AGENTS.get(backend_id)
         if character_cls is None:
             character_cls = CHARACTER_AGENTS["Walter White"]
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
-        target_language = "Simplified Chinese" if language == "zh" else "English"
         llm_provider: str = context.get("llmProvider", "stepfun")
         session_id = str(
             context.get("sessionId")
             or context.get("session_id")
             or ""
         ).strip()
-        # Resolve model route
         scene_context = f"{backend_id} {relation} {user_message}".lower()
         model_route = self.provider.resolve_model_route(
             scene_context=scene_context,
             characters=list(CHARACTER_AGENTS.keys()),
         )
-        # Override from frontend / BYOK selection (any catalog provider).
         model_route = self._route_for_provider(
             llm_provider,
             context.get("modelId"),
             fallback=model_route,
         )
-        # Build context messages from history (hard cap — never trust client size)
         history: list[dict] = context.get("history", [])
         if not isinstance(history, list):
             history = []
         history = history[-12:]
-        ctx_messages: list[dict] = []
-        for turn in history:
-            role = turn.get("sender", "user")
-            if role == "user":
-                ctx_messages.append({"role": "user", "content": turn.get("text", "")})
-            else:
-                ctx_messages.append({"role": "assistant", "content": turn.get("text", "")})
-        voice_example: str | None = context.get("voiceExample")
-        memory_block = format_direct_conversation_memory(context)
-        user_msg_with_context = (
-            f"{user_message}\n\n"
-            f"[Reply language: {target_language} only.]\n"
-            f"{_language_directive(language)}"
+
+        from agents.direct_chat_stack import (
+            build_direct_dossier,
+            build_labeled_history,
+            build_direct_memory_message,
         )
-        if memory_block:
-            user_msg_with_context = f"{memory_block}\n\n{user_msg_with_context}"
-        if voice_example:
-            user_msg_with_context += (
-                "\n\n[Reference speaking style: "
-                "use this only for cadence and relationship pressure. "
-                "Do not copy the reference language; translate the style into "
-                f"{target_language}: {voice_example}]"
-            )
-        # Direct used to skip session boards (NULL session_id leaked dossiers
-        # across players). Load only when a session id is present.
+
+        durable = str(context.get("durableMemory") or context.get("durable_memory") or "")
+        voice_example: str | None = context.get("voiceExample")
+        dossier = build_direct_dossier(
+            backend_id,
+            relation=relation,
+            language=language,
+            voice_example=voice_example,
+        )
+        ctx_messages = build_labeled_history(
+            history,
+            character_id=backend_id,
+            relation=relation,
+            language=language,
+        )
+        memory_message = build_direct_memory_message(durable)
+        if memory_message is not None:
+            ctx_messages.insert(0, memory_message)
+        # Latest ask only — memory digest stays out of the user turn so identity
+        # and the last line stay on top of the stack.
+        user_msg_with_context = str(user_message).strip()
+
         board = None
         chat_era = str(
             context.get("era")
@@ -2640,8 +2694,10 @@ class DirectorAgent:
                 backend_id=backend_id,
                 board=board,
                 world_mode=context.get("world_mode") or context.get("worldMode") or "alternate",
-                voice_example=voice_example,
+                voice_example=None,
                 language=language,
+                extra_dossier=dossier,
+                lean_chat=True,
             )
         except TurnGenerationError:
             logger.exception("Direct turn generation failed for %s", backend_id)
@@ -2659,25 +2715,28 @@ class DirectorAgent:
                 "retryable": True,
             }
         result = accepted.result
-        reply_text = result["reply_text"]
-        thinking = result.get("thinking")
-        gif_query = sanitize_direct_gif_query(result.get("gif_search_query"))
+        from agents.direct_chat_stack import strip_self_prefix
+
+        reply_text = strip_self_prefix(
+            str(result["reply_text"] or ""),
+            backend_id,
+            language=language,
+        )
+        thinking = None
+        gif_query = None
+        emotion_state = result.get("emotion_state") or "tense"
         if _norm_lang(language) == "zh":
             if _needs_zh_rewrite(str(reply_text or "")):
                 reply_text = await self._translate_one_field_to_zh(
                     str(reply_text), model_route=model_route
                 )
-            if thinking and _needs_zh_rewrite(str(thinking)):
-                thinking = await self._translate_one_field_to_zh(
-                    str(thinking), model_route=model_route
-                )
         return {
             "reply_text": reply_text,
-            "emotion_state": result["emotion_state"],
+            "emotion_state": emotion_state,
             "gif_search_query": gif_query,
             "thinking": thinking,
-            "tool_executed": result["tool_executed"],
-            "tool_log": result["tool_log"],
+            "tool_executed": None,
+            "tool_log": None,
             "updated_relationship_state": None,
             "policy_version": accepted.policy_version,
         }

@@ -87,6 +87,7 @@ export function openFetchSse(
           options.onEvent(evt.event, evt.data)
         }
       }
+      if (ac.signal.aborted) return
       options.onClose?.()
     } catch (err) {
       if (ac.signal.aborted) return

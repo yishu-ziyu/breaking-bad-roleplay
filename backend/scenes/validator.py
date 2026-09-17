@@ -164,6 +164,13 @@ def validate_world_turn(
     # --- action ontology ---
     if turn.action and (turn.action.verb or "").strip():
         verb, mapped = map_action_verb(turn.action.verb)
+        if board and board.get("authoritative") and verb in {
+            "enter", "exit", "hand_over", "open", "close", "walk_to",
+        }:
+            issues.append(ValidationIssue(
+                code="unsettled_action", message="Physical changes require a world-rule command",
+                actor_id=actor, severity="error", field="action.verb",
+            ))
         if mapped and verb == "idle_tense":
             issues.append(
                 ValidationIssue(

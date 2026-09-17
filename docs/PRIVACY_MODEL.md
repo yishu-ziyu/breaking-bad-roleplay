@@ -1,6 +1,6 @@
 # ABQ Roleplay Lab Privacy Model
 
-Last updated: 2026-07-01
+Last updated: 2026-09-17
 
 This document describes what the project currently protects, what it does not protect, and which rules future development must preserve.
 
@@ -14,6 +14,9 @@ The product can say:
 - Cloud-saved chat turns and character memory are encrypted before they are stored in Supabase.
 - Production logs must not contain raw user messages, memory summaries, key facts, full prompts, or model responses.
 - Local guest progress stays on the user's device unless they sync a profile.
+- Story sessions require a per-session ownership key at the FastAPI boundary;
+  backend-owned PostgreSQL tables have RLS enabled with no browser-facing
+  anon/authenticated policy.
 
 The product must not say:
 
@@ -45,6 +48,15 @@ This was verified against the live Supabase project with `npm run verify:rls`:
 - User B cannot read User A rows.
 - User B cannot insert rows while spoofing User A's `user_id`.
 - Anonymous clients cannot read the rows.
+
+The FastAPI Story/game/quota schema is a separate server-owned surface. Its
+tables (`sessions`, `messages`, `character_states`, `character_dossiers`,
+`story_turns`, BYOK/quota audit tables, and game-kernel tables) enable
+PostgreSQL RLS **without** PostgREST policies. Browser access must go through
+FastAPI, which checks the Story session key or the relevant API ownership rule.
+The backend migration role owns these tables and therefore retains access;
+do not switch production to a non-owner DB role without adding and testing a
+server-role policy first.
 
 ### Developer Visibility
 
@@ -112,7 +124,10 @@ Guardrail:
 | Guest chat | browser localStorage | local to device, plaintext on that device |
 | Logged-in cloud chat | Supabase `chat_messages.message` | client-encrypted for new writes |
 | Character memory | Supabase `character_memory` | client-encrypted for new writes |
-| Story sessions in FastAPI DB | backend database | not yet client-encrypted |
+| Story session metadata/world | FastAPI `sessions` | server plaintext, session-key protected, RLS blocks direct Data API reads |
+| Story commands/events | FastAPI `story_turns` | server plaintext; payload, effects, snapshots and public outbox are not client-encrypted |
+| Story dialogue | FastAPI `messages` | server plaintext, session-key protected at API, direct Data API blocked by RLS |
+| Game kernel / quota / BYOK audit metadata | backend database | server-only tables with RLS; BYOK secret keys themselves are not persisted here |
 | Current `/api/chat` request | backend process memory | transient plaintext, must not be logged |
 | LLM provider request | external model provider | plaintext sent for generation |
 
@@ -124,13 +139,16 @@ When adding any feature that touches user text, memory, prompts, or model output
 2. Do not persist cloud profile text outside the privacy vault.
 3. Keep RLS tests and encryption tests passing.
 4. If a new Supabase column stores user-authored text, either encrypt it or document why it is public/non-sensitive.
-5. If a new backend table stores private story text, add a privacy decision before shipping it.
+5. If a new backend table stores private story text, enable server-only RLS,
+   add an ownership test, and update this data map before shipping it.
 6. If debugging requires reading a user's content, use explicit user consent and avoid leaving copies in logs or screenshots.
 
 ## Known Gaps
 
 - `story_sessions` in Supabase is RLS-protected but not currently used by the React Story path.
-- FastAPI story/session tables are not client-encrypted yet.
+- FastAPI Story world, commands, events and dialogue are not client-encrypted.
+  RLS and the session key prevent direct cross-user access; database operators
+  and the LLM provider can still process/read the relevant plaintext.
 - The backend and LLM provider necessarily process current request plaintext.
 - No export/recovery UI exists for the privacy key.
 - Password-change re-encryption is not implemented.

@@ -8,7 +8,7 @@
  * 自动加 abq_ 前缀。失败静默（console.warn），不阻塞 UI。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const PREFIX = 'abq_'
 
@@ -36,20 +36,27 @@ function writeToStorage<T>(fullKey: string, value: T): void {
 export function usePersistedState<T>(
   key: string,
   initialValue: T,
+  writeDelayMs = 300,
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const fullKey = PREFIX + key
   const [state, setState] = useState<T>(() => readFromStorage(fullKey, initialValue))
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
+    if (writeDelayMs === 0) {
+      // Accepted dialogue and durable memory must survive an immediate refresh.
+      // Layout effects run before the newly rendered reply is painted.
+      writeToStorage(fullKey, state)
+      return
+    }
     timerRef.current = setTimeout(() => {
       writeToStorage(fullKey, state)
-    }, 300)
+    }, writeDelayMs)
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [fullKey, state])
+  }, [fullKey, state, writeDelayMs])
 
   return [state, setState]
 }

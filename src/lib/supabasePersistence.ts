@@ -17,6 +17,11 @@ type PersistenceOptions = {
   privacyKey?: CryptoKey | null
 }
 
+// The legacy database column is named character_id but is TEXT, not an enum
+// or cast FK. Current chat callers pass chatThreadKey(mode, canonicalNpcId).
+// The canonical NPC ID is still used in /api/chat. Raw old character keys are
+// read only by the explicitly labeled legacy archive, never silently migrated.
+
 export async function loadChatMessages(userId: string, characterId: string, options: PersistenceOptions = {}) {
   const supabase = options.supabase ?? createClient()
   if (!supabase) return []

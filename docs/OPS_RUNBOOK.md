@@ -34,7 +34,7 @@ Copy this into the mental loop. Do not skip because "it is only a GIF".
 ```text
 [ ] reproduce / confirm fix locally if possible
 [ ] frontend: npm run build (and tests when behavior changed)
-[ ] backend: cd backend && uv run pytest (when API/quota/TTS/routes changed)
+[ ] backend: cd backend && uv run python -m pytest (when API/quota/TTS/routes changed)
 [ ] commit: English conventional commits (feat/fix/docs/chore) - no AI co-author trailer
 [ ] push: origin main
 [ ] deploy:

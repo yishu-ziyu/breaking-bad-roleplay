@@ -6,6 +6,7 @@ import {
   canonicalBeatId,
   extractOnStageLore,
   trimFeedForBeatRedraw,
+  trimFeedThroughBeat,
   inWorldPlayerLine,
   looksLikePlotEngineCopy,
 } from './storyReading.ts'
@@ -118,6 +119,24 @@ describe('trimFeedForBeatRedraw', () => {
   })
 })
 
+describe('trimFeedThroughBeat', () => {
+  it('keeps the selected branch point and removes only its abandoned future', () => {
+    const events: StoryEvent[] = [
+      speak('Walter White', 'beat one'),
+      beat('beat_1'),
+      speak('Gus Fring', 'abandoned beat two'),
+      beat('beat_2'),
+    ]
+
+    assert.deepEqual(trimFeedThroughBeat(events, 'beat_1'), events.slice(0, 2))
+  })
+
+  it('does not destroy the feed when the selected beat is missing', () => {
+    const events: StoryEvent[] = [speak('Walter White', 'kept')]
+    assert.deepEqual(trimFeedThroughBeat(events, 'beat_9'), events)
+  })
+})
+
 describe('canonicalBeatId', () => {
   it('normalizes hyphen ids for the replay action', () => {
     assert.equal(canonicalBeatId('beat-2', 0), 'beat_2')
@@ -151,5 +170,26 @@ describe('in-world copy', () => {
       inWorldPlayerLine('我直接点破压力点，逼对方表态：杰西 · 下落 房车 → 黑地', 'say', 'zh'),
       /→/,
     )
+  })
+})
+
+describe('pending player text (P0 unconfirmed acknowledgement)', () => {
+  it('marks a player line the server has not confirmed yet', () => {
+    const blocks = buildReadingBlocks([
+      { type: 'player_turn', data: { content: '把手机交给杰西', kind: 'do', pending: true } },
+    ], 'zh')
+    assert.equal(blocks.length, 1)
+    assert.equal(blocks[0].kind, 'player')
+    assert.equal(blocks[0].pending, true)
+  })
+
+  it('does not mark committed player lines or dialogue', () => {
+    const blocks = buildReadingBlocks([
+      { type: 'player_turn', data: { content: '把手机交给杰西', kind: 'do' } },
+      speak('Jesse Pinkman', '好，我拿着。'),
+    ], 'zh')
+    assert.equal(blocks[0].pending, false)
+    assert.equal(blocks[1].kind, 'dialogue')
+    assert.equal(blocks[1].pending, undefined)
   })
 })

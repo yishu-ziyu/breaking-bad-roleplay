@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>冷启动页改造方案对比 · Breaking Bad Roleplay</title>
+<style>
+  :root {
+    --bg-dark: #09090b;
+    --paper: #f4eedb;
+    --paper-dim: rgba(244, 238, 219, 0.72);
+    --gold: #d4a359;
+    --gold-bright: #eec170;
+    --green-chem: #39b54a;
+    --sand-amber: #e69d45;
+    --surface-glass: rgba(18, 15, 13, 0.82);
+    --surface-border: rgba(212, 163, 89, 0.22);
+    --font-sans: "MiSans", "PingFang SC", "Noto Sans SC", -apple-system, sans-serif;
+    --font-serif: "Songti SC", "Noto Serif SC", serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-dark);
+    color: var(--paper);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* 顶部方案切换条 */
+  .proposal-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: rgba(10, 9, 8, 0.94);
+    border-bottom: 1px solid rgba(212, 163, 89, 0.3);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 24px;
+    gap: 16px;
+  }
+  .proposal-bar__title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .proposal-bar__title span {
+    font-size: 11px;
+    background: rgba(212, 163, 89, 0.15);
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: var(--paper-dim);
+  }
+  .proposal-tabs {
+    display: flex;
+    gap: 8px;
+  }
+  .proposal-tab-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--paper-dim);
+    padding: 7px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+  .proposal-tab-btn:hover {
+    background: rgba(212, 163, 89, 0.15);
+    color: var(--paper);
+  }
+  .proposal-tab-btn.active {
+    background: var(--gold);
+    color: #120e0a;
+    border-color: var(--gold-bright);
+    font-weight: 700;
+    box-shadow: 0 0 16px rgba(212, 163, 89, 0.4);
+  }
+
+  /* 方案视口容器 */
+  .view-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .proposal-view {
+    display: none;
+    position: absolute;
+    inset: 0;
+    padding-top: 50px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .proposal-view.active {
+    display: block;
+    animation: fadeIn 0.35s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(1.01); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* 暗角与微光滤镜 */
+  .vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 60% 30%, transparent 20%, rgba(9, 8, 7, 0.55) 60%, rgba(9, 8, 7, 0.92) 100%),
+                linear-gradient(to top, rgba(9, 8, 7, 0.95) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  /* 通用品牌角标 */
+  .brand-header {
+    position: absolute;
+    top: 70px;
+    left: 48px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 10;
+  }
+  .chem-logo {
+    display: flex;
+    gap: 3px;
+  }
+  .chem-sq {
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255,255,255,0.4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 15px;
+    line-height: 1;
+    position: relative;
+    background: rgba(0,0,0,0.5);
+  }
+  .chem-sq.green {
+    border-color: var(--green-chem);
+    color: var(--green-chem);
+    box-shadow: inset 0 0 10px rgba(57, 181, 74, 0.25);
+  }
+  .chem-sq span {
+    font-size: 8px;
+    position: absolute;
+    top: 2px;
+    left: 3px;
+    opacity: 0.8;
+  }
+  .brand-text h1 {
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    color: var(--paper);
+  }
+  .brand-text p {
+    font-size: 10px;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+  }
+
+  /* 说明浮标 */
+  .rationale-badge {
+    position: absolute;
+    bottom: 24px;
+    right: 32px;
+    z-index: 20;
+    background: rgba(12, 10, 8, 0.88);
+    border: 1px solid rgba(212, 163, 89, 0.3);
+    padding: 12px 18px;
+    border-radius: 8px;
+    max-width: 360px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--paper-dim);
+    backdrop-filter: blur(8px);
+  }
+  .rationale-badge strong {
+    color: var(--gold-bright);
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+
+  /* =======================================================
+     方案 A：索尔三条出路 (整合平铺式)
+     ======================================================= */
+  .view-a-content {
+    position: absolute;
+    bottom: 48px;
+    left: 48px;
+    max-width: 620px;
+    z-index: 10;
+  }
+  .hero-titles {
+    margin-bottom: 22px;
+  }
+  .hero-titles h2 {
+    font-size: 40px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin-bottom: 6px;
+    color: #fff;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  }
+  .hero-titles p {
+    font-size: 15px;
+    color: var(--paper-dim);
+    letter-spacing: 0.04em;
+  }
+
+  .saul-trio-card {
+    background: var(--surface-glass);
+    border: 1px solid var(--surface-border);
+    border-radius: 14px;
+    padding: 22px;
+    backdrop-filter: blur(16px);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+  }
+  .saul-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .saul-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1.5px solid var(--gold);
+    object-fit: cover;
+  }
+  .saul-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .saul-quote {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--paper);
+    margin-bottom: 18px;
+  }
+  .saul-quote em {
+    color: var(--gold-bright);
+    font-style: normal;
+    font-weight: 700;
+  }
+
+  /* 方案 A 的三条出路卡片排布 */
+  .trio-routes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .route-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(212, 163, 89, 0.18);
+    border-radius: 9px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+  }
+  .route-item:hover {
+    background: rgba(212, 163, 89, 0.12);
+    border-color: var(--gold);
+    transform: translateX(4px);
+  }
+  .route-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .route-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(212, 163, 89, 0.2);
+    color: var(--gold-bright);
+    white-space: nowrap;
+  }
+  .route-info h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--paper);
+    margin-bottom: 2px;
+  }
+  .route-info p {
+    font-size: 12px;
+    color: var(--paper-dim);
+  }
+  .route-btn {
+    font-size: 12px;
+    font-weight: 700;
+    color: #120e0a;
+    background: var(--paper);
+    padding: 6px 14px;
+    border-radius: 999px;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .route-item:hover .route-btn {
+    background: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(238, 193, 112, 0.5);
+  }
+
+  /* =======================================================
+     方案 B：三栏全景展台 (RPG选关派)
+     ======================================================= */
+  .view-b-content {
+    position: absolute;
+    inset: 70px 60px 40px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+  }
+  .view-b-header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .view-b-header h2 {
+    font-size: 46px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: #fff;
+    margin-bottom: 8px;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.9);
+  }
+  .view-b-header p {
+    font-size: 16px;
+    color: var(--gold-bright);
+    letter-spacing: 0.08em;
+  }
+
+  .showcase-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+    max-width: 1100px;
+    width: 100%;
+  }
+  .showcase-card {
+    background: rgba(14, 12, 10, 0.85);
+    border: 1px solid rgba(212, 163, 89, 0.25);
+    border-radius: 14px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    backdrop-filter: blur(14px);
+    transition: all 0.28s ease;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+    position: relative;
+    overflow: hidden;
+  }
+  .showcase-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: transparent;
+    transition: background 0.25s ease;
+  }
+  .showcase-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-6px);
+    box-shadow: 0 24px 60px rgba(212, 163, 89, 0.15);
+  }
+  .showcase-card:hover::before {
+    background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  }
+  .card-tag {
+    align-self: flex-start;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: rgba(212, 163, 89, 0.12);
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+  }
+  .card-body h3 {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: #fff;
+  }
+  .card-body p {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--paper-dim);
+    margin-bottom: 20px;
+  }
+  .card-preview-area {
+    margin-bottom: 20px;
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+  }
+  .avatar-stack {
+    display: flex;
+    align-items: center;
+  }
+  .avatar-stack img {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid #14110e;
+    margin-left: -8px;
+    object-fit: cover;
+  }
+  .avatar-stack img:first-child { margin-left: 0; }
+  .pulse-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--paper);
+  }
+  .showcase-cta {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 0;
+    background: var(--paper);
+    color: #100d0a;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .showcase-card:hover .showcase-cta {
+    background: var(--gold);
+    box-shadow: 0 0 16px rgba(212, 163, 89, 0.4);
+  }
+
+  /* =======================================================
+     方案 C：动态交互向导 (剧情分流·浮岛向导)
+     ======================================================= */
+  .view-c-content {
+    position: absolute;
+    inset: 70px 48px 48px 48px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    z-index: 10;
+  }
+  .view-c-hero {
+    position: absolute;
+    top: 60px;
+    text-align: center;
+  }
+  .view-c-hero h2 {
+    font-size: 42px;
+    font-weight: 900;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .view-c-hero p {
+    font-size: 15px;
+    color: var(--paper-dim);
+  }
+
+  .interactive-dock {
+    max-width: 820px;
+    width: 100%;
+    background: rgba(14, 12, 10, 0.88);
+    border: 1px solid rgba(212, 163, 89, 0.35);
+    border-radius: 18px;
+    padding: 24px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.75);
+    margin-bottom: 20px;
+  }
+  .dock-tabs {
+    display: flex;
+    gap: 8px;
+    background: rgba(0,0,0,0.4);
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+  }
+  .dock-tab {
+    flex: 1;
+    padding: 10px 14px;
+    border: 0;
+    background: transparent;
+    color: var(--paper-dim);
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .dock-tab.active {
+    background: rgba(212, 163, 89, 0.2);
+    color: var(--gold-bright);
+    box-shadow: inset 0 0 10px rgba(212, 163, 89, 0.25);
+  }
+  .dock-body {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    gap: 18px;
+    align-items: center;
+  }
+  .dock-avatar {
+    width: 74px;
+    height: 74px;
+    border-radius: 12px;
+    border: 1.5px solid var(--gold);
+    object-fit: cover;
+  }
+  .dock-text h4 {
+    font-size: 17px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .dock-text p {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--paper-dim);
+  }
+  .dock-text em {
+    color: var(--gold-bright);
+    font-style: normal;
+  }
+  .dock-enter-btn {
+    background: var(--gold);
+    color: #120e0a;
+    border: 0;
+    padding: 14px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+  }
+  .dock-enter-btn:hover {
+    background: var(--gold-bright);
+    box-shadow: 0 0 20px rgba(238, 193, 112, 0.6);
+    transform: scale(1.03);
+  }
+
+  /* 提示 toast */
+  .toast {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(212, 163, 89, 0.95);
+    color: #120e0a;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 20px;
+    border-radius: 999px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    z-index: 2000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .toast.show {
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+  <!-- 顶部方案切换条 -->
+  <header class="proposal-bar">
+    <div class="proposal-bar__title">
+      首次启动页 · 3 种改造方案预览
+      <span>绝命毒师角色扮演</span>
+    </div>
+    <div class="proposal-tabs">
+      <button class="proposal-tab-btn active" onclick="switchProposal('a')">
+        方案 A：索尔三条出路 (平铺推荐)
+      </button>
+      <button class="proposal-tab-btn" onclick="switchProposal('b')">
+        方案 B：全景选关展台 (3栏卡片)
+      </button>
+      <button class="proposal-tab-btn" onclick="switchProposal('c')">
+        方案 C：动态交互向导 (浮岛分流)
+      </button>
+    </div>
+  </header>
+
+  <div id="toast" class="toast">已模拟点击，在实际项目中将一键进入该模式！</div>
+
+  <div class="view-container">
+
+    <!-- =======================================================
+         方案 A：索尔三条出路 (整合平铺式)
+         ======================================================= -->
+    <section id="view-a" class="proposal-view active" style="background-image: url('/backgrounds/hero-desert-noir.jpg')">
+      <div class="vignette"></div>
+
+      <div class="brand-header">
+        <div class="chem-logo">
+          <div class="chem-sq green"><span>35</span>Br</div>
+          <div class="chem-sq"><span>56</span>Ba</div>
+        </div>
+        <div class="brand-text">
+          <h1>BREAKING BAD · ROLEPLAY</h1>
+          <p>ALBUQUERQUE · NIGHT ENTRY</p>
+        </div>
+      </div>
+
+      <div class="view-a-content">
+        <div class="hero-titles">
+          <h2>这部剧，由你改写。</h2>
+          <p>阿尔伯克基。这一夜，有人已经在门口等你。</p>
+        </div>
+
+        <div class="saul-trio-card">
+          <div class="saul-header">
+            <img class="saul-avatar" src="/avatars/desert-noir/saul.jpg" alt="索尔·古德曼">
+            <div>
+              <div class="saul-name">索尔·古德曼</div>
+              <div style="font-size:11px;color:var(--paper-dim);">刑事律师 · 破局向导</div>
+            </div>
+          </div>
+          <div class="saul-quote">
+            “他们说你完蛋了，一点办法都没有。错了。<br>
+            只要你肯坐下，<em>我现在就能给你指出三条出路</em>：”
+          </div>
+
+          <div class="trio-routes">
+            <!-- 剧情 -->
+            <div class="route-item" onclick="triggerMode('剧情模式 (Story)')">
+              <div class="route-left">
+                <span class="route-badge">🎬 剧情流</span>
+                <div class="route-info">
+                  <h4>接通长线 · 剧情演变</h4>
+                  <p>导演把控大局，多回合推演，致命关头由你拍板</p>
+                </div>
+              </div>
+              <div class="route-btn">进局中</div>
+            </div>
+
+            <!-- 单聊 -->
+            <div class="route-item" onclick="triggerMode('单聊模式 (Direct)')">
+              <div class="route-left">
+                <span class="route-badge">💬 1v1 单聊</span>
+                <div class="route-info">
+                  <h4>秘密约见 · 角色私聊</h4>
+                  <p>老白、小粉、炸鸡叔、麦克，单独坐下来把话挑明</p>
+                </div>
+              </div>
+              <div class="route-btn">挑人聊</div>
+            </div>
+
+            <!-- 群聊 -->
+            <div class="route-item" onclick="triggerMode('群聊模式 (Crew)')">
+              <div class="route-left">
+                <span class="route-badge">👥 多人谈判</span>
+                <div class="route-info">
+                  <h4>关门盘道 · 多方博弈</h4>
+                  <p>老白和小粉争权，几条利益网全在场，看谁先顶不住</p>
+                </div>
+              </div>
+              <div class="route-btn">上谈判桌</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rationale-badge">
+        <strong>方案 A 亮点：叙事沉浸 + 零点击漏斗</strong>
+        索尔依然是领门人，借他的台词将 3 种玩法包装为“三条生路”。完全不增加冗余折叠，第一屏同时传达剧情质感与玩法丰富度。
+      </div>
+    </section>
+
+    <!-- =======================================================
+         方案 B：全景选关展台 (RPG选关派)
+         ======================================================= -->
+    <section id="view-b" class="proposal-view" style="background-image: url('/backgrounds/hero-desert-noir.jpg')">
+      <div class="vignette"></div>
+
+      <div class="brand-header">
+        <div class="chem-logo">
+          <div class="chem-sq green"><span>35</span>Br</div>
+          <div class="chem-sq"><span>56</span>Ba</div>
+        </div>
+        <div class="brand-text">
+          <h1>BREAKING BAD · ROLEPLAY</h1>
+          <p>ALBUQUERQUE · NIGHT ENTRY</p>
+        </div>
+      </div>
+
+      <div class="view-b-content">
+        <div class="view-b-header">
+          <h2>这部剧，由你改写。</h2>
+          <p>选择你要踏入阿尔伯克基的方式</p>
+        </div>
+
+        <div class="showcase-grid">
+          <!-- 卡片 1：剧情 -->
+          <div class="showcase-card">
+            <div>
+              <div class="card-tag">STORY · 剧情演绎</div>
+              <div class="card-body">
+                <h3>长线危机推演</h3>
+                <p>McKee 故事引擎驱动，多回合主线分支。导演主控场面，每个停顿点抉择决定生死走向。</p>
+              </div>
+            </div>
+            <div>
+              <div class="card-preview-area">
+                <div class="pulse-chips">
+                  <span class="chip">深夜房车</span>
+                  <span class="chip">追回现金</span>
+                  <span class="chip">毁尸灭迹</span>
+                </div>
+              </div>
+              <button class="showcase-cta" onclick="triggerMode('剧情模式 (Story)')">开启剧情局</button>
+            </div>
+          </div>
+
+          <!-- 卡片 2：单聊 -->
+          <div class="showcase-card">
+            <div>
+              <div class="card-tag">DIRECT · 角色单聊</div>
+              <div class="card-body">
+                <h3>1v1 心理博弈</h3>
+                <p>与 7 位核心角色私下对峙。建立关系锚点，深度解锁带有角色真实记忆与情绪回响的对话。</p>
+              </div>
+            </div>
+            <div>
+              <div class="card-preview-area">
+                <div class="avatar-stack">
+                  <img src="/avatars/desert-noir/walter.jpg" alt="老白" title="沃尔特·怀特">
+                  <img src="/avatars/desert-noir/jesse.jpg" alt="小粉" title="杰西·平克曼">
+                  <img src="/avatars/desert-noir/gus.jpg" alt="炸鸡叔" title="古斯·弗林">
+                  <img src="/avatars/desert-noir/mike.jpg" alt="麦克" title="麦克·厄曼绍特">
+                  <img src="/avatars/desert-noir/saul.jpg" alt="索尔" title="索尔·古德曼">
+                </div>
+              </div>
+              <button class="showcase-cta" onclick="triggerMode('单聊模式 (Direct)')">挑选角色私聊</button>
+            </div>
+          </div>
+
+          <!-- 卡片 3：群聊 -->
+          <div class="showcase-card">
+            <div>
+              <div class="card-tag">CREW · 多人谈判</div>
+              <div class="card-body">
+                <h3>多方利益争辩</h3>
+                <p>多人同时在场互相打断顶撞。当沃尔特与杰西发生不可调和的分歧时，你能否平息残局？</p>
+              </div>
+            </div>
+            <div>
+              <div class="card-preview-area">
+                <div class="pulse-chips">
+                  <span class="chip">双人对质</span>
+                  <span class="chip">权力博弈</span>
+                  <span class="chip">临场调停</span>
+                </div>
+              </div>
+              <button class="showcase-cta" onclick="triggerMode('群聊模式 (Crew)')">进入谈判桌</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rationale-badge">
+        <strong>方案 B 亮点：清晰大气 + 经典选关仪式感</strong>
+        类似现代高品质互动叙事游戏门厅，三张卡片各展所长。角色头像堆叠与核心标签一目了然，自由度极高。
+      </div>
+    </section>
+
+    <!-- =======================================================
+         方案 C：动态交互向导 (浮岛分流)
+         ======================================================= -->
+    <section id="view-c" class="proposal-view" style="background-image: url('/backgrounds/hero-desert-noir.jpg')">
+      <div class="vignette"></div>
+
+      <div class="brand-header">
+        <div class="chem-logo">
+          <div class="chem-sq green"><span>35</span>Br</div>
+          <div class="chem-sq"><span>56</span>Ba</div>
+        </div>
+        <div class="brand-text">
+          <h1>BREAKING BAD · ROLEPLAY</h1>
+          <p>ALBUQUERQUE · NIGHT ENTRY</p>
+        </div>
+      </div>
+
+      <div class="view-c-hero">
+        <h2>这部剧，由你改写。</h2>
+        <p>阿尔伯克基。这一夜，有人已经在门口等你。</p>
+      </div>
+
+      <div class="view-c-content">
+        <div class="interactive-dock">
+          <div class="dock-tabs">
+            <button class="dock-tab active" id="dock-tab-story" onclick="selectDockMode('story')">
+              🎬 剧情推演 (Story)
+            </button>
+            <button class="dock-tab" id="dock-tab-direct" onclick="selectDockMode('direct')">
+              💬 角色私聊 (Direct)
+            </button>
+            <button class="dock-tab" id="dock-tab-crew" onclick="selectDockMode('crew')">
+              👥 多方博弈 (Crew)
+            </button>
+          </div>
+
+          <div class="dock-body">
+            <img id="dock-avatar" class="dock-avatar" src="/avatars/desert-noir/saul.jpg" alt="角色">
+            <div class="dock-text">
+              <h4 id="dock-title">长线剧情：凌晨两点十三分的房车</h4>
+              <p id="dock-desc">索尔：“想走大案子？行啊，今晚房车出了事，搭档卷了钱，车灯正在上山。准备好接招了吗？”</p>
+            </div>
+            <button id="dock-btn" class="dock-enter-btn" onclick="triggerCurrentDock()">以该玩法进局 →</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rationale-badge">
+        <strong>方案 C 亮点：动态角色响应 + 浮岛Dock</strong>
+        切换上方 Tabs 时，索尔/老白/小粉的台词和头像随之联动响应，兼具交互趣味与玩法探索欲。
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    function switchProposal(type) {
+      document.querySelectorAll('.proposal-tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.proposal-view').forEach(view => view.classList.remove('active'));
+
+      const targetBtn = event.currentTarget;
+      const targetView = document.getElementById('view-' + type);
+
+      targetBtn.classList.add('active');
+      targetView.classList.add('active');
+    }
+
+    const dockData = {
+      story: {
+        avatar: '/avatars/desert-noir/saul.jpg',
+        title: '长线剧情：凌晨两点十三分的房车',
+        desc: '索尔：“想走大案子？行啊，今晚房车出了事，搭档卷了钱，车灯正在上山。导演搭台，停下来时你拍板。”',
+        btnText: '开启长线剧情 →',
+        mode: '剧情模式 (Story)'
+      },
+      direct: {
+        avatar: '/avatars/desert-noir/walter.jpg',
+        title: '角色单聊：与沃尔特·怀特面对面',
+        desc: '老白：“我做这些全是为了家庭。如果你真懂化学，坐下来，我们单独谈谈利益分配。”',
+        btnText: '挑选角色私聊 →',
+        mode: '单聊模式 (Direct)'
+      },
+      crew: {
+        avatar: '/avatars/desert-noir/jesse.jpg',
+        title: '多人谈判：老白与杰西的分歧现场',
+        desc: '小粉：“别听他的！他又想把我当枪使！你现在坐下来把话说清楚，今晚到底听谁的？！”',
+        btnText: '踏入争辩局 →',
+        mode: '群聊模式 (Crew)'
+      }
+    };
+
+    let currentDockKey = 'story';
+
+    function selectDockMode(key) {
+      currentDockKey = key;
+      document.querySelectorAll('.dock-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('dock-tab-' + key).classList.add('active');
+
+      const data = dockData[key];
+      document.getElementById('dock-avatar').src = data.avatar;
+      document.getElementById('dock-title').textContent = data.title;
+      document.getElementById('dock-desc').innerHTML = data.desc;
+      document.getElementById('dock-btn').textContent = data.btnText;
+    }
+
+    function triggerCurrentDock() {
+      triggerMode(dockData[currentDockKey].mode);
+    }
+
+    function triggerMode(name) {
+      const toast = document.getElementById('toast');
+      toast.textContent = '【模拟点击】已选定：' + name + '，真实项目中将直达该界面！';
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>

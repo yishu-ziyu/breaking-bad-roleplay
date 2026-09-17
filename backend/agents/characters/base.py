@@ -202,6 +202,8 @@ class BaseCharacter(ABC):
         dossier_context: str | None = None,
         *,
         policy_turn: bool = False,
+        lean_chat: bool = False,
+        dossier_is_policy: bool = False,
     ) -> dict:
         """
         Generate an in-character reply with structured metadata.
@@ -219,9 +221,9 @@ class BaseCharacter(ABC):
         DB), it is injected as a RELATIONSHIP CONTEXT block so the
         character is aware of the player's history with them.
         """
-        # When the caller already compiled an ActorView into dossier_context
-        # (it starts with the policy card), do not prepend the card twice.
-        if dossier_context and dossier_context.lstrip().startswith("You are "):
+        # Only a caller explicitly supplying a compiled policy may replace it.
+        # A scene dossier beginning with "You are" is not an authority signal.
+        if dossier_is_policy and dossier_context:
             system_prompt = ""
         else:
             system_prompt = self.system_prompt()
@@ -241,6 +243,10 @@ class BaseCharacter(ABC):
         schema_prompt = (
             TURN_POLICY_OUTPUT_PROMPT if policy_turn else STRUCTURED_OUTPUT_PROMPT
         )
+        if lean_chat and not policy_turn:
+            from agents.direct_chat_stack import DIRECT_LEAN_OUTPUT_PROMPT
+
+            schema_prompt = DIRECT_LEAN_OUTPUT_PROMPT
         # Build messages with structured-output instruction
         messages: list[dict] = [
             {"role": "system", "content": system_prompt + schema_prompt},
@@ -249,7 +255,8 @@ class BaseCharacter(ABC):
         messages.append({"role": "user", "content": user_message})
 
         try:
-            if self.tools:
+            # Direct lean chat: no tool loop — tools pull the model into gameplay.
+            if self.tools and not lean_chat:
                 result = await self._run_with_tools(messages, model_route)
                 parsed = _extract_structured(result.content)
                 if self._last_tool_results:
@@ -273,7 +280,13 @@ class BaseCharacter(ABC):
             logger.exception("%s LLM call failed", self.__class__.__name__)
             raise
 
-        return _extract_structured(raw)
+        parsed = _extract_structured(raw)
+        if lean_chat:
+            parsed["gif_search_query"] = None
+            parsed["thinking"] = None
+            parsed["tool_executed"] = None
+            parsed["tool_log"] = None
+        return parsed
 
     async def respond_turn_policy(
         self,

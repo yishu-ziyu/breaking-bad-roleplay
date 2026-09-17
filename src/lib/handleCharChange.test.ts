@@ -14,13 +14,13 @@ function cssSource() {
 }
 
 describe('handleCharChange relation preservation', () => {
-  it('keeps prev[id] when it already exists and does not overwrite the default', () => {
+  it('keeps the saved relation inside the selected mode and character scope', () => {
     const app = appSource()
 
     assert.match(
       app,
-      /const savedRelation = prev\[id\][\s\S]*?return \{ \.\.\.prev, \[id\]: savedRelation \?\? characters\.find\(c => c\.id === id\)!\.relationOptions\[0\] \}/,
-      'handleCharChange must keep prev[id] when it already exists',
+      /const key = chatThreadKey\(mode, id\)[\s\S]*?const savedRelation = prev\[key\][\s\S]*?\[key\]: savedRelation \?\? characters\.find\(c => c\.id === id\)!\.relationOptions\[0\]/,
+      'handleCharChange must preserve a scoped relation without borrowing one from another mode',
     )
   })
 

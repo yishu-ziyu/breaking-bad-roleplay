@@ -10,7 +10,7 @@ import {
 import {
   COLD_OPEN_PROMPTS,
   type ColdOpenChoiceId,
-} from './ColdOpenLanding.tsx'
+} from './coldOpenCopy.ts'
 
 const CHOICE_KEYS: ColdOpenChoiceId[] = [
   'find_jesse',

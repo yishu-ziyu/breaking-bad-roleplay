@@ -82,7 +82,33 @@
 .chat-refresh .msg--opening .msg-body { text-align: center; padding: 5px 16px; border: 0; background: transparent; }
 .chat-refresh .msg--opening .msg-body > p { font: 400 22px/1.8 'Noto Serif SC', 'Songti SC', serif; }
 .chat-refresh .msg--opening .msg-meta { display: none; }
-.chat-refresh .msg-body button { background: transparent; color: #66765c; border-color: #cdd4c3; font-size: 11px; border-radius: 18px; padding: 6px 12px; }
+.chat-refresh .msg-body button.voice-player {
+  background: #ecebe1;
+  color: #405343;
+  border: 1px solid #d6d9ca;
+  border-radius: 12px;
+  padding: 6px 11px 6px 9px;
+  font-size: 12px;
+  gap: 7px;
+}
+.chat-refresh .msg-body button.voice-player:hover:not(:disabled) {
+  background: #e4e1d4;
+  color: #293b33;
+  border-color: #cfcbb8;
+}
+.chat-refresh .msg-body button.voice-player--playing {
+  background: #dfe6d9;
+  color: #293b33;
+  border-color: #b9c5ae;
+}
+.chat-refresh .msg-body button {
+  background: transparent;
+  color: #66765c;
+  border-color: #cdd4c3;
+  font-size: 11px;
+  border-radius: 18px;
+  padding: 6px 12px;
+}
 .chat-refresh .chat-starters { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 8px auto 24px; }
 .chat-refresh .chat-starters button { border: 1px solid #d7d8cc; color: #63705e; background: #ecebe1; border-radius: 24px; font: 12px/1.5 'Noto Sans SC',sans-serif; padding: 11px 16px; cursor: pointer; }
 .chat-refresh .chat-starters button:hover { background: #dfe6d9; color: #293b33; }
@@ -168,7 +194,17 @@
   color: #293b33;
 }
 .app-shell--chat-paper .brand-icon {
-  background: #e8e5da;
+  /* Keep the stripe mark; only retint for paper (do not flatten to empty beige). */
+  background:
+    linear-gradient(
+      90deg,
+      #355543 0 30%,
+      transparent 30% 38%,
+      color-mix(in srgb, #355543 45%, transparent) 38% 68%,
+      transparent 68% 76%,
+      #355543 76%
+    ),
+    #fcfaf4;
   border-color: #d6d9ca;
 }
 .app-shell--chat-paper .auth-btn-primary {

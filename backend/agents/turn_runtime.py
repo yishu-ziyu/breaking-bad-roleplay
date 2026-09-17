@@ -72,30 +72,50 @@ async def generate_accepted_turn(
     beat_contract: BeatContract | None = None,
     voice_example: str | None = None,
     language: str = "en",
+    extra_dossier: str | None = None,
+    dossier_override: str | None = None,
+    lean_chat: bool = False,
 ) -> AcceptedTurn | None:
     """Generate one character turn and hard-validate it.
 
     Returns None when the turn must not be published.
     """
+    if dossier_override is not None:
+        dossier = dossier_override.strip()
+    else:
+        dossier = actor_view.prompt_block() or ""
+        extra = (extra_dossier or "").strip()
+        if extra:
+            dossier = f"{dossier}\n\n{extra}" if dossier else extra
     try:
         result = await agent.respond_structured(
             context=list(context),
             user_message=user_message,
             model_route=model_route,
-            voice_example=voice_example,
-            dossier_context=actor_view.prompt_block() or None,
+            voice_example=voice_example if not lean_chat else None,
+            dossier_context=dossier or None,
+            dossier_is_policy=dossier_override is None,
             policy_turn=policy_turn,
+            lean_chat=lean_chat,
         )
     except Exception as exc:
         raise TurnGenerationError(str(exc)) from exc
 
     line = sanitize_speak_content(str(result.get("reply_text") or ""))
     thinking = sanitize_speak_content(str(result.get("thinking") or ""))
+    emotion = result.get("emotion_state")
+    if not (isinstance(emotion, str) and emotion.strip()):
+        # Plain-text fallback envelopes often drop metadata; keep UI usable.
+        emotion = "tense"
     result = {
         **result,
         "reply_text": line,
         "thinking": thinking or None,
+        "emotion_state": emotion,
     }
+    if lean_chat:
+        result["gif_search_query"] = None
+        result["thinking"] = None
     if not line:
         return None
     if contains_operational_howto(line) or contains_operational_howto(thinking):
@@ -118,6 +138,7 @@ async def generate_accepted_turn(
         observed_facts=list(actor_view.visible_facts or []),
     )
     turn = strip_unverified_effects(turn)
+    # Lean affects presentation/tool use, not knowledge or publication rights.
     contract = beat_contract or _direct_contract(backend_id)
     mode = parse_world_mode(world_mode)
     basic = validate_turn_against_contract_basic(contract, turn)

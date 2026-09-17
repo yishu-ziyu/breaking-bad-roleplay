@@ -122,7 +122,7 @@ async def run_probe_on_adapters(
             "tool_log": None,
         }
     )
-    director.provider.call_model = AsyncMock(return_value=json.dumps([
+    story_plan = json.dumps([
         {
             "type": "agent_speak",
             "data": {
@@ -132,7 +132,8 @@ async def run_probe_on_adapters(
                 "gif_search_query": "x",
             },
         }
-    ]))
+    ])
+    director.provider.call_model = AsyncMock(return_value=payload)
     director.provider.call_model_with_tools = AsyncMock(
         return_value=ModelResult(content=payload, tool_calls=[], stop_reason="end_turn")
     )
@@ -171,6 +172,7 @@ async def run_probe_on_adapters(
         policy_version=str((logs[0] or {}).get("policy_version") or policy.version) if logs else policy.version,
     ))
 
+    director.provider.call_model.return_value = story_plan
     collected = []
     async for ev in director._generate_beat(
         task=probe["user_input"],

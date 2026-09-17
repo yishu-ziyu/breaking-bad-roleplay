@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ColdOpenLanding } from './ColdOpenLanding.tsx'
-import { briefStartPayload, COLD_OPEN_PROMPTS, INTRO_COPY, MODE_COPY } from './coldOpenCopy.ts'
+import { briefStartPayload, COLD_OPEN_PROMPTS } from './coldOpenCopy.ts'
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ColdOpenLanding.tsx'), 'utf8')
 
@@ -24,46 +24,33 @@ function renderDoor(showIntro = false) {
   )
 }
 
-test('first visit is a game intro, not a mode menu', () => {
+test('first visit presents 3-card showcase (Story, Direct, Crew)', () => {
   const html = renderDoor(true)
-  assert.match(html, /索尔·古德曼/)
-  assert.match(html, /进来坐/)
-  assert.match(html, /完蛋了/)
-  assert.doesNotMatch(html, /说明书|你可以试一下|走进这场戏|进入阿尔伯克基/)
-  assert.doesNotMatch(html, /aria-label="剧情"/)
-  assert.doesNotMatch(html, /你要怎么进这场戏/)
-  assert.equal(INTRO_COPY.zh.cta, '进来坐。')
-  assert.equal(INTRO_COPY.en.cta, 'Sit down.')
+  assert.match(html, /最好找个好律师/)
+  assert.match(html, /或者，把知道秘密的人都摆平/)
+  assert.match(html, /长线剧情演绎/)
+  assert.match(html, /角色深度对话/)
+  assert.match(html, /群像会谈/)
+  assert.match(html, /开始故事/)
+  assert.match(html, /选择角色对话/)
+  assert.match(html, /进入群像会谈/)
 })
 
-test('door presents 剧情 / 单聊 / 群聊 as first-class choices', () => {
+test('showcase presents 互动剧情 / 角色对话 / 群像会谈 as first-class choices', () => {
   const html = renderDoor()
-  assert.match(html, /你要怎么进这场戏/)
-  assert.match(html, /aria-label="剧情"/)
-  assert.match(html, /aria-label="单聊"/)
-  assert.match(html, /aria-label="群聊"/)
-  assert.match(html, /cold-open__mode/)
-  assert.doesNotMatch(html, /看过，直接开始/)
-  assert.doesNotMatch(html, /也可以先/)
-  assert.doesNotMatch(html, /单人场景|群像会谈/)
-})
-
-test('door panel sits in desert-noir, not a cream light-mode slab', () => {
-  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../App.css'), 'utf8')
-  const door = css.slice(css.indexOf('.cold-open__door {'), css.indexOf('.cold-open__door-q {'))
-  assert.match(door, /--dn-bg/)
-  assert.match(door, /--dn-fg/)
-  assert.doesNotMatch(door, /#f3ece0|#fffdf7|#1c1914/)
+  assert.match(html, /STORY · 互动剧情/)
+  assert.match(html, /DIRECT · 角色对话/)
+  assert.match(html, /CREW · 群像会谈/)
+  assert.match(html, /showcase-card--story/)
+  assert.match(html, /showcase-card--direct/)
+  assert.match(html, /showcase-card--crew/)
 })
 
 test('default new-user brief reaches Direct and Crew without Story', () => {
   assert.match(src, /onEnterDirect/)
   assert.match(src, /onEnterCrew/)
-  assert.match(src, /MODE_COPY/)
-  assert.match(src, /cold-open__door/)
-  assert.equal(MODE_COPY.zh.direct.title, '单聊')
-  assert.equal(MODE_COPY.zh.crew.title, '群聊')
-  assert.equal(MODE_COPY.zh.story.title, '剧情')
+  assert.match(src, /onStart/)
+  assert.match(src, /showcase-card/)
 })
 
 test('brief start payload enters the night as Walter with no prescribed move', () => {

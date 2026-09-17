@@ -1,0 +1,676 @@
+/* ColdOpenShowcase.css — 方案 B 电影级三栏展台组件样式 */
+
+.cold-open-showcase {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #0a0b0d;
+  color: #f4eedb;
+  perspective: 1200px;
+}
+
+/* 全局环境背景 */
+.showcase-bg {
+  position: fixed;
+  inset: -30px;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 20%, rgba(30, 24, 18, 0.45), transparent 70%),
+    radial-gradient(circle at 15% 85%, rgba(18, 28, 22, 0.5), transparent 50%),
+    linear-gradient(to bottom, rgba(10, 11, 13, 0.6) 0%, rgba(10, 11, 13, 0.94) 100%),
+    url('/backgrounds/hero-desert-noir.jpg') center / cover no-repeat;
+  filter: brightness(0.9);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.showcase-vignette {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, rgba(5, 6, 8, 0.8) 80%, rgba(5, 6, 8, 0.96) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 顶部状态条 */
+.showcase-hud {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 14px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(10, 11, 13, 0.75);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.showcase-hud__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.showcase-chem-logo {
+  display: flex;
+  gap: 2px;
+}
+
+.showcase-chem-sq {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255,255,255,0.35);
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #f4eedb;
+}
+
+.showcase-chem-sq.green {
+  border-color: #39b54a;
+  color: #39b54a;
+  box-shadow: inset 0 0 8px rgba(57, 181, 74, 0.25);
+}
+
+.showcase-hud__title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #f2c77d;
+}
+
+.showcase-hud__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.showcase-lang-toggle {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.showcase-lang-btn {
+  background: transparent;
+  border: 0;
+  color: rgba(244, 238, 219, 0.6);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.showcase-lang-btn.is-active {
+  background: #d4a359;
+  color: #100d0a;
+}
+
+.showcase-settings-btn {
+  background: rgba(212, 163, 89, 0.12);
+  color: #d4a359;
+  border: 1px solid rgba(212, 163, 89, 0.3);
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.showcase-settings-btn:hover {
+  background: rgba(212, 163, 89, 0.22);
+}
+
+/* 主体容器 */
+.showcase-container {
+  position: relative;
+  z-index: 10;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 96px 36px 50px;
+  max-width: 1380px;
+  margin: 0 auto;
+}
+
+/* 顶部标题 */
+.showcase-hero {
+  text-align: center;
+  margin-bottom: 38px;
+  animation: showcaseFadeDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes showcaseFadeDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.showcase-hero__kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  color: #d4a359;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.showcase-hero__title {
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-bottom: 10px;
+  text-shadow: 0 4px 30px rgba(0,0,0,0.9);
+}
+
+.showcase-hero__sub {
+  font-size: 14px;
+  color: rgba(244, 238, 219, 0.65);
+  letter-spacing: 0.06em;
+}
+
+/* 展台网格 */
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 26px;
+  width: 100%;
+  animation: showcaseGridRise 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+@keyframes showcaseGridRise {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 通用卡片容器 */
+.showcase-card {
+  position: relative;
+  height: 530px;
+  background: rgba(16, 18, 23, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 28px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  cursor: pointer;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.65);
+  transform-style: preserve-3d;
+  transition:
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.4s ease,
+    box-shadow 0.4s ease;
+}
+
+.showcase-card:hover {
+  border-color: rgba(212, 163, 89, 0.45);
+  box-shadow: 0 28px 75px rgba(0, 0, 0, 0.8), 0 0 30px rgba(212, 163, 89, 0.16);
+}
+
+.showcase-card__top {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.showcase-card__badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f4eedb;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.showcase-card__badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.badge-story::before { background: #4fc3f7; box-shadow: 0 0 8px #4fc3f7; }
+.badge-direct::before { background: #f2c77d; box-shadow: 0 0 8px #f2c77d; }
+.badge-crew::before { background: #d4a359; box-shadow: 0 0 8px #d4a359; }
+
+/* 底部区域 */
+.showcase-card__bottom {
+  position: relative;
+  z-index: 4;
+}
+
+.showcase-card__title {
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+}
+
+.showcase-card__summary {
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(244, 238, 219, 0.65);
+  margin-bottom: 22px;
+  min-height: 40px;
+}
+
+.showcase-card__btn {
+  width: 100%;
+  padding: 13px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #f4eedb;
+  color: #120e0a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.showcase-card:hover .showcase-card__btn {
+  background: #f2c77d;
+  box-shadow: 0 0 20px rgba(242, 199, 125, 0.5);
+  color: #0b0907;
+  transform: translateY(-2px);
+}
+
+/* ==================== 卡片 1：互动剧情 (Story) ==================== */
+.card-story-bg {
+  position: absolute;
+  inset: -10px;
+  background: url('/backgrounds/landing-road-night.png') center top / cover no-repeat;
+  z-index: 2;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.4s ease;
+  filter: brightness(0.85) contrast(1.05);
+}
+
+.showcase-card--story:hover .card-story-bg {
+  transform: scale(1.08) translateY(-6px);
+  filter: brightness(1.02) contrast(1.1);
+}
+
+.card-story-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(to top,
+    rgba(8, 9, 12, 0.96) 0%,
+    rgba(8, 9, 12, 0.5) 45%,
+    rgba(8, 9, 12, 0.2) 75%,
+    rgba(8, 9, 12, 0.6) 100%
+  );
+  pointer-events: none;
+}
+
+.siren-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0.25;
+  background: linear-gradient(110deg, transparent 35%, rgba(79, 195, 247, 0.25) 45%, rgba(255, 68, 68, 0.25) 55%, transparent 65%);
+  background-size: 200% 100%;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.showcase-card--story:hover .siren-sweep {
+  opacity: 0.65;
+  animation: sirenPass 2.2s infinite linear;
+}
+
+@keyframes sirenPass {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.crisis-chips {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.crisis-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(79, 195, 247, 0.12);
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  color: #4fc3f7;
+  font-weight: 700;
+}
+
+/* ==================== 卡片 2：角色对话 (Direct) ==================== */
+.cast-slice-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(circle at center, rgba(35, 28, 20, 0.5), rgba(12, 13, 16, 0.95));
+}
+
+.cast-slice-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(to top, rgba(10, 11, 14, 0.95) 0%, rgba(10, 11, 14, 0.35) 60%, rgba(10, 11, 14, 0.7) 100%);
+  pointer-events: none;
+}
+
+.avatars-fan {
+  display: flex;
+  align-items: center;
+  position: relative;
+  top: -20px;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.avatar-card-item {
+  width: 72px;
+  height: 98px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(212, 163, 89, 0.3);
+  overflow: hidden;
+  margin-left: -24px;
+  background: #000;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.avatar-card-item:first-child { margin-left: 0; }
+.avatar-card-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.avatar-card-item.hank-crop img {
+  height: 107%;
+  object-position: center top;
+}
+
+.showcase-card--direct:hover .avatars-fan {
+  transform: translateY(-8px);
+}
+
+.showcase-card--direct:hover .avatar-card-item {
+  margin-left: -12px;
+  border-color: #d4a359;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.8), 0 0 15px rgba(212, 163, 89, 0.3);
+}
+
+.showcase-card--direct:hover .avatar-card-item:hover {
+  transform: translateY(-16px) scale(1.18);
+  z-index: 10;
+  border-color: #f2c77d;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.9), 0 0 25px rgba(242, 199, 125, 0.6);
+}
+
+/* ==================== 卡片 3：群像会谈 (Crew) ==================== */
+.crew-scene-bg {
+  position: absolute;
+  inset: -10px;
+  background: url('/backgrounds/stage-bg-office-neon.jpg') center center / cover no-repeat;
+  z-index: 2;
+  filter: brightness(0.7) contrast(1.15) saturate(0.85);
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.4s ease;
+}
+
+.showcase-card--crew:hover .crew-scene-bg {
+  transform: scale(1.06);
+  filter: brightness(0.88) contrast(1.2) saturate(1.05);
+}
+
+.crew-scene-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(to top,
+    rgba(10, 11, 14, 0.98) 0%,
+    rgba(10, 11, 14, 0.65) 50%,
+    rgba(10, 11, 14, 0.4) 100%
+  );
+  pointer-events: none;
+}
+
+.crew-standoff-stage {
+  position: relative;
+  z-index: 4;
+  margin: 14px 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.crew-factions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.faction-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 219, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.faction-tag span {
+  color: #f2c77d;
+  font-size: 11px;
+}
+
+.crew-cinematic-dialogue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(212, 163, 89, 0.2);
+  border-radius: 9px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.showcase-card--crew:hover .crew-cinematic-dialogue {
+  border-color: rgba(212, 163, 89, 0.45);
+  background: rgba(0, 0, 0, 0.72);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+}
+
+.cinematic-line {
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(244, 238, 219, 0.88);
+  position: relative;
+  padding-left: 10px;
+}
+
+.cinematic-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: rgba(212, 163, 89, 0.4);
+  border-radius: 1px;
+  transition: background 0.3s;
+}
+
+.showcase-card--crew:hover .cinematic-line::before {
+  background: #d4a359;
+}
+
+.cinematic-line strong {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #f2c77d;
+  display: block;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
+.neon-flicker {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 75% 25%, rgba(212, 163, 89, 0.18), transparent 50%);
+  transition: opacity 0.4s ease;
+}
+
+.showcase-card--crew:hover .neon-flicker {
+  opacity: 1;
+  animation: neonHum 3s infinite alternate;
+}
+
+@keyframes neonHum {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.85; }
+}
+
+/* ==================== 剧情背景知识选择小弹窗 ==================== */
+.showcase-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(5, 6, 8, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: dialogFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dialogFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.showcase-dialog {
+  max-width: 480px;
+  width: 100%;
+  background: #14161c;
+  border: 1px solid rgba(212, 163, 89, 0.35);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+}
+
+.showcase-dialog__title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.showcase-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.showcase-dialog__btn {
+  padding: 14px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.showcase-dialog__btn:hover {
+  background: rgba(212, 163, 89, 0.15);
+  border-color: #d4a359;
+  transform: translateX(4px);
+}
+
+.showcase-dialog__btn-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f2c77d;
+  margin-bottom: 4px;
+}
+
+.showcase-dialog__btn-desc {
+  font-size: 12px;
+  color: rgba(244, 238, 219, 0.65);
+}
+
+.showcase-dialog__cancel {
+  background: transparent;
+  border: 0;
+  color: rgba(244, 238, 219, 0.5);
+  font-size: 12px;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  padding: 8px;
+}
+
+.showcase-dialog__cancel:hover {
+  color: #f4eedb;
+}
+
+/* 响应式断点 */
+@media (max-width: 1024px) {
+  .showcase-grid {
+    grid-template-columns: 1fr;
+    max-width: 540px;
+  }
+  .showcase-card {
+    height: 480px;
+  }
+}

@@ -19,6 +19,9 @@ playwright-report
 !.vscode/extensions.json
 .idea
 .omx
+.playwright-mcp/
+.statamcp/
+.tmp-play/
 .DS_Store
 *.suo
 *.ntvs*

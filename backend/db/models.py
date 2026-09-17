@@ -29,6 +29,12 @@ class Session(Base):
         Integer, default=0, nullable=False, server_default="0"
     )
     owner_token_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    world_state: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    world_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    pending_command_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    last_command_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    generation_token: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    generation_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
@@ -83,6 +89,26 @@ class Message(Base):
     )
 
     session: Mapped["Session"] = relationship(back_populates="messages")
+
+
+class StoryTurn(Base):
+    """Command ledger + saved public-event outbox, committed with the world."""
+
+    __tablename__ = "story_turns"
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True,
+    )
+    command_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    accepted_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parent_command_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    snapshot_before: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot_after: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    events: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    effects: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
 class CharacterState(Base):

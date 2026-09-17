@@ -195,7 +195,7 @@ export const MODE_COPY: Record<
     story: { title: '剧情', hint: '导演演场面，停下来时由你决定。' },
     direct: { title: '单聊', hint: '和一个角色私下谈。' },
     crew: { title: '群聊', hint: '几个人同时在场，互相顶。' },
-    back: '返回三种玩法',
+    back: '返回三种模式',
   },
   en: {
     question: 'How do you want to play?',
@@ -292,3 +292,128 @@ export const COLD_OPEN_CAST: CastMember[] = [
   { id: 'saul', name: { en: 'Saul', zh: '索尔' }, accent: '#f7ce46' },
   { id: 'mike', name: { en: 'Mike', zh: '迈克' }, accent: '#b9c0a5' },
 ]
+
+export const SHOWCASE_COPY: Record<
+  ColdOpenLanguage,
+  {
+    brandTitle: string
+    kicker: string
+    title: string
+    subtitle: string
+    story: {
+      badge: string
+      chip1: string
+      chip2: string
+      title: string
+      desc: string
+      cta: string
+    }
+    direct: {
+      badge: string
+      title: string
+      desc: string
+      cta: string
+    }
+    crew: {
+      badge: string
+      faction: string
+      allPresent: string
+      line1Speaker: string
+      line1Text: string
+      line2Speaker: string
+      line2Text: string
+      title: string
+      desc: string
+      cta: string
+    }
+    knowledgeDialog: {
+      question: string
+      fan: string
+      fanHint: string
+      fresh: string
+      freshHint: string
+      back: string
+    }
+  }
+> = {
+  zh: {
+    brandTitle: 'BREAKING BAD · ROLEPLAY',
+    kicker: 'ALBUQUERQUE NOIR · 沉浸犯罪剧',
+    title: '最好找个好律师',
+    subtitle: '或者，把知道秘密的人都摆平',
+    story: {
+      badge: 'STORY · 互动剧情',
+      chip1: '长线危机推演',
+      chip2: '致命抉择',
+      title: '长线剧情演绎',
+      desc: '扮演角色，通过对话和行动推进故事。导演主控全局节奏，在需要决定时等待你的输入。',
+      cta: '开始故事',
+    },
+    direct: {
+      badge: 'DIRECT · 角色对话',
+      title: '角色深度对话',
+      desc: '挑选剧中人物，确定你们的关系。聊生活、试探心事，继续只属于你们的对话。',
+      cta: '选择角色对话',
+    },
+    crew: {
+      badge: 'CREW · 群像会谈',
+      faction: '谈判现场 · 密室分歧',
+      allPresent: '多方在场',
+      line1Speaker: '沃尔特 · 控制与逻辑',
+      line1Text: '“按规矩做，这是活下来的唯一方式。”',
+      line2Speaker: '杰西 · 爆发与反抗',
+      line2Text: '“他人不在，规矩倒全摆这儿了？！”',
+      title: '群像会谈',
+      desc: '和多位角色一起聊天，听他们彼此回应、争论或沉默。群聊记录独立保存。',
+      cta: '进入群像会谈',
+    },
+    knowledgeDialog: {
+      question: '你看过《绝命毒师》吗？',
+      fan: '看过 · 直入危机',
+      fanHint: '直接进入房车险境，不堆设定背景',
+      fresh: '没看过 · 随进程解释',
+      freshHint: '在情节推进中交代角色与恩怨',
+      back: '返回选择模式',
+    },
+  },
+  en: {
+    brandTitle: 'BREAKING BAD · ROLEPLAY',
+    kicker: 'ALBUQUERQUE NOIR · CRIME DRAMA',
+    title: 'Better call a lawyer',
+    subtitle: 'Or take care of everyone who knows the secret',
+    story: {
+      badge: 'STORY · NARRATIVE',
+      chip1: 'Crisis Driven',
+      chip2: 'Crucial Choices',
+      title: 'Cinematic Story Engine',
+      desc: 'Step into the scene. The director drives the pacing, pausing when it needs your move.',
+      cta: 'Start Story',
+    },
+    direct: {
+      badge: 'DIRECT · DIALOGUE',
+      title: 'One-on-One Dialogue',
+      desc: 'Pick a character and establish your relationship. Talk about life, test the waters, and return to your private conversation.',
+      cta: 'Start Conversation',
+    },
+    crew: {
+      badge: 'CREW · CONFRONTATION',
+      faction: 'Negotiation · Internal Split',
+      allPresent: 'All Present',
+      line1Speaker: 'Walter · Control & Logic',
+      line1Text: '"Follow the process. It is the only way we survive this."',
+      line2Speaker: 'Jesse · Defiance',
+      line2Text: '"He’s not even here, but his rules are all over the place?!"',
+      title: 'Crew Standoff',
+      desc: 'Talk with several characters as they respond, disagree, or fall quiet. This group conversation has its own history.',
+      cta: 'Enter Negotiation',
+    },
+    knowledgeDialog: {
+      question: 'Have you seen Breaking Bad?',
+      fan: 'Yes · Straight to crisis',
+      fanHint: 'Drop into the RV with zero exposition',
+      fresh: 'No · Explain as we go',
+      freshHint: 'Characters and stakes introduced inline',
+      back: 'Back to modes',
+    },
+  },
+}

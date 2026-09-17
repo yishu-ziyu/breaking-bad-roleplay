@@ -1,6 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
+import { installCommonApi } from './commonApi'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
+
+test.beforeEach(async ({ page }) => {
+  await installCommonApi(page)
+})
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -20,6 +25,10 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
   // inside the init script. We re-parse strings that look like JSON objects/arrays.
   await page.addInitScript((data) => {
     window.localStorage.setItem('abq_enteredWorld', 'true')
+    window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
+    if (!Object.prototype.hasOwnProperty.call(data, 'abq_surface')) {
+      window.localStorage.setItem('abq_surface', JSON.stringify('direct'))
+    }
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -37,7 +46,7 @@ function chatState(
 ): Record<string, unknown> {
   return {
     abq_character: charId,
-    abq_messages: { [charId]: messages },
+    abq_messages: { [`chat-v2:${extras.abq_mode === 'crew' ? 'crew' : 'direct'}:${charId}`]: messages },
     ...extras,
   }
 }
@@ -48,12 +57,6 @@ async function seedMessages(page: Page, charId: string, messages: unknown[]) {
 
 async function seedCharacter(page: Page, charId: string) {
   await seedStorage(page, { abq_character: charId })
-}
-
-async function selectCharacter(page: Page, name: string) {
-  const button = page.locator('.char-card', { hasText: name })
-  await button.click()
-  await expect(button).toHaveClass(/selected/)
 }
 
 async function sendChatMessage(page: Page, text: string) {
@@ -107,35 +110,16 @@ async function mockChatCrew(
   })
 }
 
-async function mockAutoStoryStart(page: Page) {
-  await page.route('**/api/session/create', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ session_id: 'first-immersive-session' }),
-    })
-  })
-  await page.route('**/api/session/*/stream**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/event-stream',
-      body: '',
-    })
-  })
-}
-
 /* ------------------------------------------------------------------ */
 /*  AC-1: Fresh incognito → guest entry CTA visible                    */
 /* ------------------------------------------------------------------ */
 
-test('AC-1: fresh session shows guest entry CTA', async ({ page }) => {
-  await mockAutoStoryStart(page)
+test('AC-1: fresh session shows the current three-mode showcase', async ({ page }) => {
   await gotoFresh(page)
-  // Click through landing screen to reveal auth section
-  const enterBtn = page.getByRole('button', { name: /Chat with Walter|和 Walter 聊聊|ENTER THE WORLD|进入世界/ })
-  if (await enterBtn.count() > 0) await enterBtn.click()
-  const cta = page.getByRole('button', { name: /Enter as Guest|以访客身份进入/ })
-  await expect(cta).toBeVisible()
+  await expect(page.locator('.cold-open-showcase')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start Story|开始故事/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start Conversation|选择角色对话/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Enter Negotiation|进入群像会谈/ })).toBeVisible()
 })
 
 /* ------------------------------------------------------------------ */
@@ -198,7 +182,7 @@ test('AC-4: Skyler direct reply renders a GIF card', async ({ page }) => {
   })
 
   await gotoFresh(page)
-  await selectCharacter(page, 'Skyler')
+  await expect(page.locator('.chat-header h2')).toContainText('Skyler')
   await sendChatMessage(page, 'What do you want?')
 
   await expect(page.locator('.msg--char p', { hasText: 'I am going to ask this once plainly.' })).toBeVisible()
@@ -236,7 +220,7 @@ test('AC-6: VoicePlayer renders enabled play button when speechSynthesis availab
   const playButton = page.locator('.msg--char .voice-player').first()
   await expect(playButton).toBeVisible()
   await expect(playButton).toBeEnabled()
-  await expect(playButton).toContainText(/Voice|▶/)
+  await expect(playButton).toContainText(/Play|播放/)
 })
 
 /* ------------------------------------------------------------------ */
@@ -273,7 +257,7 @@ test('AC-7: VoicePlayer renders disabled placeholder when speechSynthesis unavai
 /* ------------------------------------------------------------------ */
 
 test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }) => {
-  await seedStorage(page, chatState('walter', [], { abq_mode: 'crew', abq_view: 'chat' }))
+  await seedStorage(page, chatState('walter', [], { abq_surface: 'crew' }))
   await mockChatCrew(page, [
     { sender: 'walter', text: 'We need to be careful.', emotion: 'tense', gifQuery: 'tense' },
     { sender: 'gus', text: 'Everything is under control.', emotion: 'business', gifQuery: 'business' },

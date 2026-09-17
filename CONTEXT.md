@@ -1,6 +1,6 @@
 # CONTEXT — ABQ Roleplay Lab (Breaking Bad Roleplay)
 
-Shared product language for **what already shipped**. Historical roadmaps are not constraints: [docs/PLANNING.md](docs/PLANNING.md). 当前默认入口（索尔门再进三种玩法）见 [docs/AS_BUILT.md](docs/AS_BUILT.md)。
+Shared product language for **what already shipped**. Historical roadmaps are not constraints: [docs/PLANNING.md](docs/PLANNING.md). 当前默认入口（三卡展台：Story / Direct / Crew）见 [docs/AS_BUILT.md](docs/AS_BUILT.md)。
 
 ## Characters (playable)
 

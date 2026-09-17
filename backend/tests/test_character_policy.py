@@ -85,7 +85,7 @@ async def test_direct_chat_injects_relation_into_model_input():
             "llmProvider": "stepfun",
         },
     )
-    blob = json.dumps(captured, ensure_ascii=False)
+    blob = json.dumps(provider.call_model.await_args.args[0], ensure_ascii=False)
     assert "family member" in blob
     assert "PLAYER RELATION" in blob
 

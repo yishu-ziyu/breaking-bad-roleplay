@@ -150,7 +150,12 @@ class TestCreateSession:
         assert added_session.current_mode == "story"
         assert added_session.next_beat_index == 0
         # DB was touched: one add, one commit, one refresh
-        assert mock_db.add.call_count == 1
+        assert mock_db.add.call_count == 2
+        from db.models import StoryTurn
+        opening = mock_db.add.call_args_list[0].args[0]
+        assert isinstance(opening, StoryTurn)
+        assert opening.command_id == "opening"
+        assert opening.session_id == added_session.id
         assert mock_db.commit.await_count == 1
         assert mock_db.refresh.await_count == 1
 

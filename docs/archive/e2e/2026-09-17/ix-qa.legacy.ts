@@ -1,3 +1,6 @@
+// ARCHIVED 2026-09-17: deleted landing/sidebar-era UI contract.
+// Current equivalents live under tests/e2e/current-interactions.spec.ts,
+// cold-open-drama.spec.ts, sse-story.spec.ts and reliable-story-memory.spec.ts.
 import { test, expect, type Page } from '@playwright/test'
 import { installMockEventSource, expectDirectorControls } from './mockSse'
 

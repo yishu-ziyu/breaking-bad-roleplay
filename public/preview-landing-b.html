@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cinzel:wght@700;900&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Mono:wght@700&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-base: #0a0b0d;
+    --paper: #f4eedb;
+    --paper-dim: rgba(244, 238, 219, 0.65);
+    --gold: #d4a359;
+    --gold-bright: #f2c77d;
+    --gold-glow: rgba(212, 163, 89, 0.28);
+    --green-chem: #39b54a;
+    --blue-crystal: #4fc3f7;
+    --sans: "MiSans", "PingFang SC", "Noto Sans SC", -apple-system, sans-serif;
+    --serif: "Songti SC", "Noto Serif SC", serif;
+    --mono: "SF Mono", "Fira Code", monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-base);
+    color: var(--paper);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+    perspective: 1200px;
+  }
+
+  /* 全局大环境背景 */
+  .stage-background {
+    position: fixed;
+    inset: -30px;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 20%, rgba(30, 24, 18, 0.45), transparent 70%),
+      radial-gradient(circle at 15% 85%, rgba(18, 28, 22, 0.5), transparent 50%),
+      linear-gradient(to bottom, rgba(10, 11, 13, 0.6) 0%, rgba(10, 11, 13, 0.94) 100%),
+      url('/backgrounds/hero-desert-noir.jpg') center / cover no-repeat;
+    filter: brightness(0.9);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .stage-vignette {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, transparent 30%, rgba(5, 6, 8, 0.8) 80%, rgba(5, 6, 8, 0.96) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* 顶部状态条 */
+  .hud-header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 16px 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    backdrop-filter: blur(12px);
+    background: rgba(10, 11, 13, 0.75);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .hud-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .chem-logo {
+    display: flex;
+    gap: 2px;
+  }
+  .chem-sq {
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(255,255,255,0.35);
+    font-size: 13px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  .chem-sq.green {
+    border-color: var(--green-chem);
+    color: var(--green-chem);
+    box-shadow: inset 0 0 8px rgba(57, 181, 74, 0.25);
+  }
+  .hud-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--gold-bright);
+  }
+  .hud-pill {
+    font-size: 11px;
+    background: rgba(212, 163, 89, 0.12);
+    color: var(--gold);
+    border: 1px solid rgba(212, 163, 89, 0.3);
+    padding: 4px 12px;
+    border-radius: 999px;
+  }
+
+  /* 主体展台容器 */
+  .showcase-wrapper {
+    position: relative;
+    z-index: 10;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 96px 40px 50px;
+    max-width: 1380px;
+    margin: 0 auto;
+  }
+
+  /* 顶部标题区 */
+  .hero-block {
+    text-align: center;
+    margin-bottom: 38px;
+    animation: heroFadeDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes heroFadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .hero-kicker {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.3em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .hero-headline {
+    font-size: 50px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: #fff;
+    margin-bottom: 12px;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.9);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .hero-sub {
+    font-size: 15px;
+    color: var(--paper-dim);
+    letter-spacing: 0.06em;
+    min-height: 24px;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* 字体方案实验室类 */
+  .font-style-default {
+    font-family: var(--sans);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+  .font-style-serif {
+    font-family: "Playfair Display", "Cinzel", "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", serif;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-shadow: 0 4px 35px rgba(0,0,0,0.95), 0 0 35px rgba(212, 163, 89, 0.2);
+  }
+  .font-style-industrial {
+    font-family: "Bebas Neue", "Oswald", "Impact", "PingFang SC", "MiSans", "Noto Sans SC", sans-serif;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    text-shadow: 0 6px 40px rgba(0,0,0,0.95);
+  }
+  .font-style-dossier {
+    font-family: "Space Mono", "Zhuque Fangsong", "STFangsong", "FangSong", monospace;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-shadow: 0 0 20px rgba(242, 199, 125, 0.25), 0 4px 30px rgba(0,0,0,0.95);
+  }
+  .font-style-cinematic {
+    font-family: "Cinzel", "Copperplate", "Georgia", "Source Han Serif SC", "Songti SC", serif;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    font-variant: small-caps;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.9);
+  }
+
+  /* 字体实验室切换条 */
+  .font-lab-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 6px 16px;
+    background: rgba(18, 18, 22, 0.82);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(212, 163, 89, 0.35);
+    border-radius: 999px;
+    z-index: 30;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+  .switcher-label {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    margin-right: 4px;
+  }
+  .switcher-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: inherit;
+  }
+  .switcher-btn:hover {
+    color: #fff;
+    border-color: rgba(212, 163, 89, 0.5);
+    background: rgba(212, 163, 89, 0.08);
+  }
+  .switcher-btn.active {
+    background: var(--gold);
+    color: #0c0b0a;
+    border-color: var(--gold);
+    font-weight: 800;
+    box-shadow: 0 0 16px rgba(212, 163, 89, 0.45);
+  }
+
+  /* 三栏卡片网格 */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 26px;
+    width: 100%;
+    animation: gridRise 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+  }
+  @keyframes gridRise {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 通用卡片容器 (应用 motion-web 弹簧与材质规范) */
+  .play-card {
+    position: relative;
+    height: 530px;
+    background: rgba(16, 18, 23, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 28px;
+    backdrop-filter: blur(16px);
+    cursor: pointer;
+    box-shadow: 0 16px 45px rgba(0, 0, 0, 0.65);
+    transform-style: preserve-3d;
+    transition:
+      transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.4s ease,
+      box-shadow 0.4s ease;
+  }
+
+  .play-card:hover {
+    border-color: rgba(212, 163, 89, 0.45);
+    box-shadow: 0 28px 75px rgba(0, 0, 0, 0.8), 0 0 30px rgba(212, 163, 89, 0.16);
+  }
+
+  /* 顶部标签 */
+  .card-top {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-badge {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: var(--paper);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    display: inline-block;
+  }
+  .badge-story::before { background: var(--blue-crystal); box-shadow: 0 0 8px var(--blue-crystal); }
+  .badge-direct::before { background: var(--gold-bright); box-shadow: 0 0 8px var(--gold-bright); }
+  .badge-crew::before { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+
+  /* 底部内容区 */
+  .card-bottom {
+    position: relative;
+    z-index: 4;
+  }
+  .card-title {
+    font-size: 26px;
+    font-weight: 900;
+    color: #fff;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+  }
+  .card-summary {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--paper-dim);
+    margin-bottom: 22px;
+    min-height: 40px;
+  }
+  .card-action-btn {
+    width: 100%;
+    padding: 13px 18px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--paper);
+    color: #120e0a;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .play-card:hover .card-action-btn {
+    background: var(--gold-bright);
+    box-shadow: 0 0 20px rgba(242, 199, 125, 0.5);
+    color: #0b0907;
+    transform: translateY(-2px);
+  }
+
+  /* ========================================================
+     卡片 1：互动剧情 (Story) —— 黑夜公路老白防化服大底
+     ======================================================== */
+  .card-story-bg {
+    position: absolute;
+    inset: -10px;
+    background: url('/backgrounds/landing-road-night.png') center top / cover no-repeat;
+    z-index: 2;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.4s ease;
+    filter: brightness(0.85) contrast(1.05);
+  }
+  .play-card-story:hover .card-story-bg {
+    transform: scale(1.08) translateY(-6px);
+    filter: brightness(1.02) contrast(1.1);
+  }
+  .card-story-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: linear-gradient(to top,
+      rgba(8, 9, 12, 0.96) 0%,
+      rgba(8, 9, 12, 0.5) 45%,
+      rgba(8, 9, 12, 0.2) 75%,
+      rgba(8, 9, 12, 0.6) 100%
+    );
+    pointer-events: none;
+  }
+  .siren-sweep {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    opacity: 0.25;
+    background: linear-gradient(110deg, transparent 35%, rgba(79, 195, 247, 0.25) 45%, rgba(255, 68, 68, 0.25) 55%, transparent 65%);
+    background-size: 200% 100%;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .play-card-story:hover .siren-sweep {
+    opacity: 0.65;
+    animation: sirenPass 2.2s infinite linear;
+  }
+  @keyframes sirenPass {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .crisis-chips {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .crisis-chip {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(79, 195, 247, 0.12);
+    border: 1px solid rgba(79, 195, 247, 0.3);
+    color: var(--blue-crystal);
+    font-weight: 700;
+  }
+
+  /* ========================================================
+     卡片 2：角色单聊 (Direct) —— 8位核心角色插画肖像切片展开
+     ======================================================== */
+  .cast-slice-stage {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: radial-gradient(circle at center, rgba(35, 28, 20, 0.5), rgba(12, 13, 16, 0.95));
+  }
+  .cast-slice-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: linear-gradient(to top, rgba(10, 11, 14, 0.95) 0%, rgba(10, 11, 14, 0.35) 60%, rgba(10, 11, 14, 0.7) 100%);
+    pointer-events: none;
+  }
+  .avatars-fan {
+    display: flex;
+    align-items: center;
+    position: relative;
+    top: -20px;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .avatar-card-item {
+    width: 72px;
+    height: 98px;
+    border-radius: 10px;
+    border: 1.5px solid rgba(212, 163, 89, 0.3);
+    overflow: hidden;
+    margin-left: -24px;
+    background: #000;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+  }
+  .avatar-card-item:first-child { margin-left: 0; }
+  .avatar-card-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .avatar-card-item.hank-crop img {
+    height: 107%;
+    object-position: center top;
+  }
+  .play-card-direct:hover .avatars-fan {
+    transform: translateY(-8px);
+  }
+  .play-card-direct:hover .avatar-card-item {
+    margin-left: -12px;
+    border-color: var(--gold);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.8), 0 0 15px rgba(212, 163, 89, 0.3);
+  }
+  .play-card-direct:hover .avatar-card-item:hover {
+    transform: translateY(-16px) scale(1.18);
+    z-index: 10;
+    border-color: var(--gold-bright);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.9), 0 0 25px rgba(242, 199, 125, 0.6);
+  }
+
+  /* ========================================================
+     卡片 3：群像会谈 (Crew) —— 彻底去AI味！
+     电影级实景密室（索尔办公室长桌）+ 多方暗影对峙 + 真实剧本字幕交错
+     ======================================================== */
+  .crew-scene-bg {
+    position: absolute;
+    inset: -10px;
+    background: url('/backgrounds/stage-bg-office-neon.jpg') center center / cover no-repeat;
+    z-index: 2;
+    filter: brightness(0.7) contrast(1.15) saturate(0.85);
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.4s ease;
+  }
+  .play-card-crew:hover .crew-scene-bg {
+    transform: scale(1.06);
+    filter: brightness(0.88) contrast(1.2) saturate(1.05);
+  }
+  .crew-scene-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: linear-gradient(to top,
+      rgba(10, 11, 14, 0.98) 0%,
+      rgba(10, 11, 14, 0.65) 50%,
+      rgba(10, 11, 14, 0.4) 100%
+    );
+    pointer-events: none;
+  }
+
+  /* 电影级现场对峙舞台：流式安全排布，彻底杜绝文字重叠 */
+  .crew-standoff-stage {
+    position: relative;
+    z-index: 4;
+    margin: 14px 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+  }
+
+  /* 利益博弈阵营标签条 */
+  .crew-factions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+  }
+  .faction-tag {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(244, 238, 219, 0.6);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .faction-tag span {
+    color: var(--gold-bright);
+    font-size: 11px;
+  }
+
+  /* 对峙核心：电影分镜级字幕流 (Cinematic Script Intercept) */
+  .crew-cinematic-dialogue {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(212, 163, 89, 0.2);
+    border-radius: 9px;
+    backdrop-filter: blur(10px);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .play-card-crew:hover .crew-cinematic-dialogue {
+    border-color: rgba(212, 163, 89, 0.45);
+    background: rgba(0, 0, 0, 0.72);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  }
+
+  .cinematic-line {
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(244, 238, 219, 0.88);
+    position: relative;
+    padding-left: 10px;
+  }
+  .cinematic-line::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: rgba(212, 163, 89, 0.4);
+    border-radius: 1px;
+    transition: background 0.3s;
+  }
+  .play-card-crew:hover .cinematic-line::before {
+    background: var(--gold);
+  }
+
+  .cinematic-line strong {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--gold-bright);
+    display: block;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+  }
+
+  /* 悬停时出现的微弱霓虹脉冲 */
+  .neon-flicker {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle at 75% 25%, rgba(212, 163, 89, 0.18), transparent 50%);
+    transition: opacity 0.4s ease;
+  }
+  .play-card-crew:hover .neon-flicker {
+    opacity: 1;
+    animation: neonHum 3s infinite alternate;
+  }
+  @keyframes neonHum {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.85; }
+  }
+
+  /* 提示 toast */
+  .demo-toast {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(212, 163, 89, 0.96);
+    color: #0b0907;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 9px 24px;
+    border-radius: 999px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .demo-toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+  <!-- 全屏暗调环境背景 -->
+  <div class="stage-background"></div>
+  <div class="stage-vignette"></div>
+
+  <!-- 顶部状态栏 -->
+  <header class="hud-header">
+    <div class="hud-brand">
+      <div class="chem-logo">
+        <div class="chem-sq green">Br</div>
+        <div class="chem-sq">Ba</div>
+      </div>
+      <span class="hud-title">BREAKING BAD · ROLEPLAY</span>
+    </div>
+    <div class="hud-pill">Motion-Web 物理阻尼与电影质感迭代</div>
+  </header>
+
+  <div id="toast" class="demo-toast">已选定该模式！实际工程将直通对应界面。</div>
+
+  <!-- 展台主体 -->
+  <main class="showcase-wrapper">
+
+    <!-- 顶部主标 -->
+    <section class="hero-block">
+      <h1 id="heroHeadline" class="hero-headline font-style-serif">最好找个好律师</h1>
+      <p id="heroSub" class="hero-sub">或者，把知道秘密的人都摆平</p>
+    </section>
+
+    <!-- 三栏展台卡片 -->
+    <div class="cards-grid">
+
+      <!-- ==================== 卡片 1：互动剧情 (Story) ==================== -->
+      <article class="play-card play-card-story" onclick="fireAction('互动剧情 (Story)')">
+        <div class="card-story-bg"></div>
+        <div class="card-story-overlay"></div>
+        <div class="siren-sweep"></div>
+
+        <div class="card-top">
+          <span class="card-badge badge-story">STORY · 互动剧情</span>
+        </div>
+
+        <div class="card-bottom">
+          <div class="crisis-chips">
+            <span class="crisis-chip">长线危机推演</span>
+            <span class="crisis-chip">致命抉择</span>
+          </div>
+          <h2 class="card-title">长线剧情演绎</h2>
+          <p class="card-summary">
+            扮演角色，通过对话和行动推进故事。导演主控全局节奏，在需要决定时等待你的输入。
+          </p>
+          <button class="card-action-btn">
+            <span>开始故事</span>
+            <span>→</span>
+          </button>
+        </div>
+      </article>
+
+      <!-- ==================== 卡片 2：角色单聊 (Direct) ==================== -->
+      <article class="play-card play-card-direct" onclick="fireAction('角色单聊 (Direct)')">
+        <div class="cast-slice-stage">
+          <div class="cast-slice-overlay"></div>
+          <div class="avatars-fan">
+            <div class="avatar-card-item" title="沃尔特·怀特">
+              <img src="/avatars/desert-noir/walter.jpg" alt="老白">
+            </div>
+            <div class="avatar-card-item" title="杰西·平克曼">
+              <img src="/avatars/illustrated/jesse.png" alt="小粉">
+            </div>
+            <div class="avatar-card-item" title="古斯·弗林">
+              <img src="/avatars/illustrated/gus.png" alt="炸鸡叔">
+            </div>
+            <div class="avatar-card-item" title="索尔·古德曼">
+              <img src="/avatars/illustrated/saul.png" alt="索尔">
+            </div>
+            <div class="avatar-card-item" title="麦克·厄曼绍特">
+              <img src="/avatars/illustrated/mike.png" alt="麦克">
+            </div>
+            <div class="avatar-card-item hank-crop" title="汉克·施拉德">
+              <img src="/avatars/illustrated/hank.png" alt="汉克">
+            </div>
+          </div>
+        </div>
+
+        <div class="card-top">
+          <span class="card-badge badge-direct">DIRECT · 角色对话</span>
+        </div>
+
+        <div class="card-bottom">
+          <h2 class="card-title">角色深度对话</h2>
+          <p class="card-summary">
+            挑选剧中人物并确定你们的身份。开启一场无旁人打扰的面对面交谈。
+          </p>
+          <button class="card-action-btn">
+            <span>选择角色对话</span>
+            <span>→</span>
+          </button>
+        </div>
+      </article>
+
+      <!-- ==================== 卡片 3：群像会谈 (Crew) —— 彻底去AI味重构 ==================== -->
+      <article class="play-card play-card-crew" onclick="fireAction('群像会谈 (Crew)')">
+        <!-- 索尔谈判密室实景 -->
+        <div class="crew-scene-bg"></div>
+        <div class="crew-scene-overlay"></div>
+        <div class="neon-flicker"></div>
+
+        <div class="card-top">
+          <span class="card-badge badge-crew">CREW · 群像会谈</span>
+        </div>
+
+        <!-- 电影级暗部对峙分镜 -->
+        <div class="crew-standoff-stage">
+          <div class="crew-factions">
+            <div class="faction-tag">谈判现场 · <span>密室分歧</span></div>
+            <div class="faction-tag"><span>多方在场</span></div>
+          </div>
+
+          <!-- 电影台词记录，杜绝左黄右红的灰塑料框 -->
+          <div class="crew-cinematic-dialogue">
+            <div class="cinematic-line">
+              <strong>沃尔特 · 控制与逻辑</strong>
+              “按规矩做，这是活下来的唯一方式。”
+            </div>
+            <div class="cinematic-line">
+              <strong>杰西 · 爆发与反抗</strong>
+              “他人不在，规矩倒全摆这儿了？！”
+            </div>
+          </div>
+        </div>
+
+        <div class="card-bottom">
+          <h2 class="card-title">群像会谈</h2>
+          <p class="card-summary">
+            多位角色同场对峙，互相顶撞争辩。在不可调和的分歧中周旋谈判。
+          </p>
+          <button class="card-action-btn">
+            <span>进入群像会谈</span>
+            <span>→</span>
+          </button>
+        </div>
+      </article>
+
+    </div>
+
+  </main>
+
+  <script>
+    const COPY_VARIANTS = [
+      {
+        kicker: 'AI CHARACTER ROLEPLAY',
+        headline: '这部剧，由你改写。',
+        sub: '选择你要踏入阿尔伯克基的方式'
+      },
+      {
+        kicker: 'ALBUQUERQUE NOIR · 交互犯罪推演',
+        headline: '深渊就在脚下，你敢走多远？',
+        sub: '每一次开口都是博弈，每一个抉择都在称量生死。'
+      },
+      {
+        kicker: 'THE CHEMISTRY OF CHANGE · 因果之重',
+        headline: '化学是变化的学问。而你，是催化剂。',
+        sub: '推演故事、单独对质、或者坐上谈判桌。'
+      },
+      {
+        kicker: 'INTERACTIVE CRIME DRAMA · 掌局者',
+        headline: '全剧的终局已经落幕。现在，换你洗牌。',
+        sub: '决定他们的生死，或者成为帝国的新主人。'
+      },
+      {
+        kicker: 'NEW MEXICO · 2:13 AM · 危机现场',
+        headline: '警笛还在远处，你的车已经发动了。',
+        sub: '挑选你的入局姿态：长线逃亡、单人对质、或是密室谈判。'
+      }
+    ];
+
+    function setFontStyle(styleName, btn) {
+      document.querySelectorAll('.font-lab-bar .switcher-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      const headline = document.getElementById('heroHeadline');
+      const sub = document.getElementById('heroSub');
+      const kicker = document.getElementById('heroKicker');
+
+      ['font-style-default', 'font-style-serif', 'font-style-industrial', 'font-style-dossier', 'font-style-cinematic'].forEach(cls => {
+        headline.classList.remove(cls);
+        sub.classList.remove(cls);
+        kicker.classList.remove(cls);
+      });
+
+      const targetClass = 'font-style-' + styleName;
+      headline.classList.add(targetClass);
+      sub.classList.add(targetClass);
+      kicker.classList.add(targetClass);
+    }
+
+    function fireAction(name) {
+      const toast = document.getElementById('toast');
+      toast.textContent = '【已选定】' + name + ' —— 真正接入后将直接开局！';
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2200);
+    }
+
+    // Motion-Web 物理微弹簧跟随：卡片 3D Tilt 阻尼求解器
+    const cards = document.querySelectorAll('.play-card');
+    cards.forEach(card => {
+      let currentX = 0, currentY = 0;
+      let targetX = 0, targetY = 0;
+      let isHovered = false;
+
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left - rect.width / 2;
+        const y = e.clientY - rect.top - rect.height / 2;
+        // 限制倾斜幅度在 ±7deg
+        targetX = -(y / (rect.height / 2)) * 7;
+        targetY = (x / (rect.width / 2)) * 7;
+        isHovered = true;
+      });
+
+      card.addEventListener('mouseleave', () => {
+        targetX = 0;
+        targetY = 0;
+        isHovered = false;
+      });
+
+      // 弹簧阻尼循环
+      function tickSpring() {
+        // 物理弹簧阻尼系数
+        const damping = 0.12;
+        currentX += (targetX - currentX) * damping;
+        currentY += (targetY - currentY) * damping;
+
+        if (isHovered || Math.abs(currentX) > 0.05 || Math.abs(currentY) > 0.05) {
+          card.style.transform = `rotateX(${currentX.toFixed(2)}deg) rotateY(${currentY.toFixed(2)}deg) translateY(${isHovered ? -8 : 0}px)`;
+        } else {
+          card.style.transform = '';
+        }
+        requestAnimationFrame(tickSpring);
+      }
+      tickSpring();
+    });
+  </script>
+</body>
+</html>

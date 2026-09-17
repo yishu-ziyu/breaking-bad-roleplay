@@ -5,7 +5,8 @@
 > DEC-0003 (McKee Story engine), sole-writer invariant in `backend/scenes/state_reducer.py`.
 > **Owners:** `backend/agents/` = LLM-facing proposal/emitter code.
 > `backend/scenes/` = deterministic correctness, validation, scoring,
-> and state-reduction code.
+> and state-reduction code. `backend/story/` = runtime orchestration and the
+> transactional command/outbox boundary.
 
 This document is the load-bearing architectural rule for the Story-mode
 pipeline. It exists so a future contributor can answer the question
@@ -47,21 +48,39 @@ effects to the Continuity Board.
 | `scenes/validator.py` | Hard rules: knowledge boundary, actor presence, irreversible costs, preconditions. The only authority that may reject a turn. |
 | `scenes/critic.py` | Soft quality: intentionality, causal relevance, continuity, dramatic value, visual executability (weights 30/25/20/15/10). Comparable, not unique. |
 | `scenes/state_reducer.py` | **Sole writer** of the Continuity Board (Loop 12 P4). Applies validated effects. |
+| `scenes/world_state.py` | Finite runtime-v1 world rules: known items, presence, movement, claims, promises and deterministic effects. No LLM calls. |
 | `scenes/*` (future) | `stage_kit/` for 3D cue emission; follows the same deterministic contract. |
+
+### 1.3 `backend/story/` — orchestration and durable commit
+
+This layer was added with runtime v1. It is deliberately small:
+
+| Module | Role |
+|---|---|
+| `story/renderer.py` | Interprets one claimed command, asks the Director/characters for performance, buffers all candidate events, and hands only the accepted result to the transaction boundary. It never publishes a candidate before commit. |
+| `story/service.py` | Claims commands with a fencing token, enforces idempotency/revision checks, and atomically commits the world snapshot, command ledger, public-event outbox and persisted dialogue. No LLM calls. |
+
+`story/service.py` is the sole writer of the runtime-v1 `sessions.world_state`
+and `story_turns` truth. That does not replace the older Continuity Board
+invariant: `scenes/state_reducer.py` remains the sole writer of Continuity Board
+facts used by the legacy narrative path.
 
 ---
 
 ## 2. Allowed dependency direction
 
 ```
-  backend/agents/  (LLM emitters)
+  backend/api/
         │
-        │  produces: BeatContract, TurnProposal, ActionProposal
         ▼
-  backend/scenes/  (correctness)
-        │
-        │  reads / writes: Continuity Board (state_reducer only)
-        ▼
+  backend/story/   (command claim, orchestration, atomic outbox commit)
+      │       │
+      │       ├──────────────► backend/agents/ (untrusted proposals)
+      │       │                         │
+      │       │                         ▼
+      │       └──────────────► backend/scenes/ (deterministic rules/validation)
+      │
+      ▼
   backend/db/      (persistence)
 ```
 
@@ -74,6 +93,10 @@ effects to the Continuity Board.
   It must not import the LLM-calling emitters themselves.
 * Neither layer may reach into `backend/db/` directly for mutations;
   the Board is mutated only by `scenes/state_reducer.py`.
+* `backend/story/service.py` may mutate the runtime-v1 session/ledger tables;
+  it must not call a model or infer narrative truth.
+* `backend/story/renderer.py` may call agents and scenes, but it must buffer
+  candidates and call `story.service.commit_turn` before exposing public events.
 
 **Forbidden edges:**
 
@@ -82,6 +105,8 @@ effects to the Continuity Board.
   freely; committing is the reducer's job).
 * Any free-text LLM delta being written to `shared_facts`,
   `present_cast`, `updated_at_beat`, or `irreversible_costs`.
+* SSE delivery deciding or mutating truth. It may replay the committed outbox only.
+* `story/service.py` calling an LLM provider.
 
 ---
 

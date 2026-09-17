@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agents import quota as quota_mod
-from agents.quota import client_ip, enforce_platform_quota
+from agents.quota import client_ip
 from agents.session_guard import hash_session_key
 from api.routes import get_db
 from main import app
@@ -143,7 +143,7 @@ def test_session_action_rejects_wrong_key(client):
         next_beat_index=0,
         active_character_id="walter",
         owner_token_hash=hash_session_key("correct-key"),
-        updated_at=datetime.utcnow(),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     result = MagicMock()
     result.scalar_one_or_none = MagicMock(return_value=session)
@@ -167,7 +167,7 @@ def test_session_action_accepts_matching_key(client):
         next_beat_index=0,
         active_character_id="walter",
         owner_token_hash=hash_session_key("correct-key"),
-        updated_at=datetime.utcnow(),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     result = MagicMock()
     result.scalar_one_or_none = MagicMock(return_value=session)

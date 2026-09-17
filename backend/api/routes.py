@@ -6,6 +6,7 @@ from sqlalchemy import select
 from typing import AsyncGenerator
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import uuid
@@ -70,12 +71,30 @@ def _guest_id_from_request(request: Request, explicit: str | None = None) -> str
 _pending_quota_refunds: set[asyncio.Task] = set()
 
 
+def _quota_refund_done(task: asyncio.Task) -> None:
+    _pending_quota_refunds.discard(task)
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        logger.exception("Detached quota refund failed")
+
+
 def _schedule_quota_refund(snapshot) -> None:
     if snapshot is None or getattr(snapshot, "cost", 0) <= 0:
         return
     task = asyncio.ensure_future(refund_platform_quota(snapshot))
     _pending_quota_refunds.add(task)
-    task.add_done_callback(_pending_quota_refunds.discard)
+    task.add_done_callback(_quota_refund_done)
+
+
+async def _refund_failed_request(snapshot, *, operation: str) -> None:
+    """Best-effort refund without replacing the original endpoint error."""
+    try:
+        await refund_platform_quota(snapshot)
+    except Exception:
+        logger.exception("Quota refund failed after %s", operation)
 
 
 def _quota_http_exception(decision) -> HTTPException:
@@ -435,7 +454,7 @@ async def connections_test(payload: ConnectionTestRequest):
 
     except HTTPException:
         raise
-    except httpx.HTTPError as exc:
+    except httpx.HTTPError:
         latency = int((time.perf_counter() - started) * 1000)
         return {
             "ok": False,
@@ -614,6 +633,7 @@ async def synthesize_tts(
             api_key = provider.effective_minimax_tts_key() or api_key
 
     if not api_key:
+        await _refund_failed_request(snap, operation="TTS configuration failure")
         raise HTTPException(status_code=503, detail="Speech is not configured on this server.")
 
     try:
@@ -626,9 +646,11 @@ async def synthesize_tts(
             )
     except TTSError as exc:
         # Never echo raw provider bodies (may include account hints).
+        await _refund_failed_request(snap, operation="TTS provider failure")
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
         logger.exception("TTS endpoint failed for character %s", payload.characterId)
+        await _refund_failed_request(snap, operation="TTS failure")
         raise HTTPException(status_code=500, detail="TTS internal error.") from None
 
     return Response(
@@ -677,6 +699,8 @@ async def create_session(
         created_at=now,
         updated_at=now,
     )
+    from story.service import initialize_story
+    initialize_story(db, new_session, scenario_id=payload.scenario_id)
     db.add(new_session)
     await db.commit()
     await db.refresh(new_session)
@@ -687,6 +711,9 @@ async def create_session(
         status=new_session.status,
         created_at=new_session.created_at,
         session_key=raw_key,
+        command_id="opening",
+        world_revision=0,
+        runtime_version=1,
     )
 
 
@@ -706,7 +733,9 @@ async def session_action(
 
     Supported actions:
       - continue         : no-op ack; frontend reconnects to /stream for next beat
-      - stop             : pause the session (status -> "paused")
+      - stop             : runtime v1 abandons the pending command
+                            (status -> "stopped", committed history kept);
+                            legacy sessions still go to "paused"
       - redirect         : replace task_prompt with a new direction
       - switch_perspective: change active_character_id
       - continue_chapter : append a fresh chapter to the running outline
@@ -722,6 +751,53 @@ async def session_action(
     _require_session_owner(session, request)
 
     action = payload.action
+
+    if isinstance(getattr(session, "world_state", None), str) and action == "stop":
+        from story.service import stop_turn
+
+        result = await stop_turn(db, session)
+        await db.commit()
+        return SessionActionResponse(
+            status="ok", session_id=session_id, command_id=result["command_id"],
+            world_revision=result["world_revision"], runtime_version=1,
+        )
+
+    if isinstance(getattr(session, "world_state", None), str) and action != "stop":
+        from story.service import StoryConflict, enqueue_turn, find_beat
+        allowed = {"act", "continue", "replay", "branch", "continue_chapter", "redirect", "switch_perspective"}
+        if action not in allowed:
+            raise HTTPException(status_code=400, detail="Unknown story action.")
+        if action != "replay" and (
+            not payload.command_id or payload.expected_revision is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{action} requires command_id and expected_revision.",
+            )
+        if action == "act" and (
+            not (payload.player_input or "").strip()
+        ):
+            raise HTTPException(status_code=400, detail="act requires player_input.")
+        if action == "redirect" and not payload.redirect_prompt:
+            raise HTTPException(status_code=400, detail="redirect_prompt is required.")
+        if action == "switch_perspective" and not payload.target_character:
+            raise HTTPException(status_code=400, detail="target_character is required.")
+        try:
+            if action == "replay":
+                turn = await find_beat(db, session, payload.beat_id or "")
+                if turn is None:
+                    raise HTTPException(status_code=404, detail="Saved beat not found.")
+                result = {"command_id": turn.command_id, "world_revision": session.world_revision}
+            else:
+                result = await enqueue_turn(db, session, payload.model_dump(exclude_none=True))
+                await db.commit()
+        except StoryConflict as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail={"code": exc.code, "world_revision": exc.revision}) from exc
+        return SessionActionResponse(
+            status="ok", session_id=session_id, command_id=result["command_id"],
+            world_revision=result["world_revision"], runtime_version=1,
+        )
 
     if action == "continue":
         # Resume the session in case a prior "stop" flipped status to
@@ -883,6 +959,7 @@ async def stream_session(
     access_token: str | None = Query(default=None),
     session_key: str | None = Query(default=None),
     zh_guard: str | None = Query(default=None),
+    command_id: str | None = Query(default=None, max_length=80),
     director: DirectorAgent = Depends(get_director),
 ):
     """
@@ -927,6 +1004,7 @@ async def stream_session(
         _require_session_owner(session, request, query_key=session_key)
 
         resolved_session_id = session.id
+        durable_story = isinstance(getattr(session, "world_state", None), str)
 
     header_conn = request.headers.get("x-connection-session") or request.headers.get(
         "X-Connection-Session"
@@ -946,18 +1024,7 @@ async def stream_session(
         header_token = auth.split(None, 1)[1].strip()
     access_token = header_token or access_token
 
-    # Charge only after the session is known valid (do not bill 404s).
-    # P2: keep the billed snapshot — the stream refunds this charge if no
-    # beat_ready/complete payload ever reaches the transport.
-    billed = await _require_platform_quota(
-        request,
-        action="story_beat",
-        connection_session_id=connection_session,
-        guest_id=_guest_id_from_request(request, guest_id),
-        access_token=access_token,
-    )
-
-    bind_override = _resolve_override_from_session(connection_session)
+    bind_override = None if durable_story else _resolve_override_from_session(connection_session)
 
     def _bind_model_route() -> str | None:
         if bind_override is None or not bind_override.provider_id:
@@ -974,6 +1041,66 @@ async def stream_session(
         )
         model = bind_override.model_id or fallback
         return f"{pid}/{model}"
+
+    if durable_story:
+        from story.renderer import render_turn
+        from story.service import StoryConflict, claim_turn, release_turn, renew_claim
+        try:
+            claim = await claim_turn(
+                async_session_factory, resolved_session_id,
+                command_id if isinstance(command_id, str) else None,
+            )
+        except StoryConflict as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "world_revision": exc.revision}) from exc
+        billed = None
+        try:
+            if claim.saved_events is None:
+                bind_override = _resolve_override_from_session(connection_session)
+                billed = await _require_platform_quota(
+                    request, action="story_beat", connection_session_id=connection_session,
+                    guest_id=_guest_id_from_request(request, guest_id), access_token=access_token,
+                )
+        except BaseException:
+            await release_turn(async_session_factory, claim)
+            raise
+
+        async def committed_event_generator() -> AsyncGenerator[bytes, None]:
+            try:
+                with use_credentials(bind_override), use_model_route(_bind_model_route()):
+                    async for event in _iter_with_heartbeat(render_turn(
+                        director, async_session_factory, claim, language=language,
+                        voice_example=voice_example, zh_guard=zh_guard != "0",
+                    ), interval=SSE_HEARTBEAT_INTERVAL_SECONDS):
+                        if event is None:
+                            await renew_claim(async_session_factory, claim)
+                            yield SSE_PING_FRAME
+                            continue
+                        event_id = str(event.data.get("event_id") or "")
+                        yield (f"id: {event_id}\nevent: {event.type}\n"
+                               f"data: {event.model_dump_json()}\n\n").encode("utf-8")
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                logger.exception("Committed Story generation failed for session %s", resolved_session_id)
+                event = AgentEvent(type="error", data={
+                    "message": "This turn could not be completed. Your committed progress is unchanged.",
+                    "retryable": True,
+                })
+                yield f"event: error\ndata: {event.model_dump_json()}\n\n".encode("utf-8")
+            finally:
+                if not claim.committed:
+                    released = await release_turn(async_session_factory, claim)
+                    if billed is not None and released:
+                        _schedule_quota_refund(billed)
+        return StreamingResponse(committed_event_generator(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no",
+        })
+
+    # Legacy saves retain their old runtime; new sessions use the ledger above.
+    billed = await _require_platform_quota(
+        request, action="story_beat", connection_session_id=connection_session,
+        guest_id=_guest_id_from_request(request, guest_id), access_token=access_token,
+    )
 
     async def event_generator() -> AsyncGenerator[bytes, None]:
         bound_route = _bind_model_route()
@@ -1071,6 +1198,29 @@ async def stream_session(
 # Message history — recover story beats after page refresh
 # ---------------------------------------------------------------------------
 
+@router.get("/session/{session_id}/state")
+async def story_state_view(request: Request, session_id: str, db: AsyncSession = Depends(get_db)):
+    from story.service import recovery_lineage, recovery_world
+
+    session = (await db.execute(select(SessionModel).where(SessionModel.id == session_id))).scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_owner(session, request)
+    if not session.world_state:
+        return {"runtime_version": 0}
+    turns = await recovery_lineage(db, session)
+    world = await recovery_world(db, session)
+    events = [event for turn in reversed(turns) for event in json.loads(turn.events or "[]")]
+    return {
+        "runtime_version": 1, "world_revision": session.world_revision, "status": session.status,
+        "pending_command_id": session.pending_command_id,
+        "command_id": session.pending_command_id or session.last_command_id,
+        "player_actor_id": world.player_id,
+        "world": world.player_view(),
+        "events": events[-200:],
+    }
+
+
 class MessageOut(BaseModel):
     id: str
     session_id: str
@@ -1142,9 +1292,9 @@ class PlotGraphResponse(BaseModel):
     title: str
     task_prompt: str = ""
     era: str = ""
-    summary: dict = {}
-    nodes: list[dict] = []
-    edges: list[dict] = []
+    summary: dict = Field(default_factory=dict)
+    nodes: list[dict] = Field(default_factory=list)
+    edges: list[dict] = Field(default_factory=list)
     mermaid: str = ""
 
 
@@ -1175,34 +1325,81 @@ async def get_session_plot_graph(
         raise HTTPException(status_code=404, detail="Session not found")
     _require_session_owner(session, request)
 
-    msg_result = await db.execute(
-        select(MessageModel)
-        .where(MessageModel.session_id == session_id)
-        .order_by(MessageModel.created_at.asc())
-        .limit(500)
-    )
-    messages = list(msg_result.scalars().all())
-
     board = None
-    try:
-        dres = await db.execute(
-            select(CharacterDossier).where(
-                CharacterDossier.session_id == session_id,
-                CharacterDossier.owner_id == BOARD_OWNER_ID,
-                CharacterDossier.subject_id == BOARD_SUBJECT_ID,
+    graph_outline = session.plot_outline
+    if session.world_state:
+        from agents.continuity_board import filter_board_for_character
+        from db.models import StoryTurn
+        from scenes.state_reducer import board_from_world
+        from story.service import recovery_lineage, recovery_world
+
+        branch_turns = await recovery_lineage(db, session, limit=500)
+        branch_beats = {
+            f"beat_{turn.accepted_revision}"
+            for turn in branch_turns
+            if turn.accepted_revision is not None
+        }
+        if branch_beats:
+            msg_result = await db.execute(
+                select(MessageModel)
+                .where(
+                    MessageModel.session_id == session_id,
+                    MessageModel.beat_id.in_(branch_beats),
+                )
+                .order_by(MessageModel.created_at.asc())
+                .limit(500)
             )
+            messages = list(msg_result.scalars().all())
+        else:
+            messages = []
+        if session.pending_command_id:
+            pending_turn = await db.get(
+                StoryTurn,
+                (session.id, session.pending_command_id),
+            )
+            if pending_turn is not None:
+                try:
+                    pending_payload = json.loads(pending_turn.payload)
+                except (TypeError, ValueError):
+                    pending_payload = {}
+                if pending_payload.get("action") in {
+                    "branch",
+                    "redirect",
+                    "continue_chapter",
+                }:
+                    # The replacement outline does not exist until the command
+                    # commits. Showing the abandoned outline during recovery is
+                    # more misleading than showing no future spine at all.
+                    graph_outline = None
+        world = await recovery_world(db, session)
+        board = filter_board_for_character(board_from_world(world), world.player_id)
+    else:
+        msg_result = await db.execute(
+            select(MessageModel)
+            .where(MessageModel.session_id == session_id)
+            .order_by(MessageModel.created_at.asc())
+            .limit(500)
         )
-        drow = dres.scalar_one_or_none()
-        if drow is not None:
-            board = parse_board(drow.knowledge)
-    except Exception:
-        board = None
+        messages = list(msg_result.scalars().all())
+        try:
+            dres = await db.execute(
+                select(CharacterDossier).where(
+                    CharacterDossier.session_id == session_id,
+                    CharacterDossier.owner_id == BOARD_OWNER_ID,
+                    CharacterDossier.subject_id == BOARD_SUBJECT_ID,
+                )
+            )
+            drow = dres.scalar_one_or_none()
+            if drow is not None:
+                board = parse_board(drow.knowledge)
+        except Exception:
+            board = None
 
     graph = build_plot_graph(
         session_id=session_id,
         title=session.title,
         task_prompt=session.task_prompt,
-        outline=session.plot_outline,
+        outline=graph_outline,
         messages=messages,
         board=board,
         language=language,
@@ -1225,6 +1422,7 @@ class ChatRequest(BaseModel):
     voiceExample: str | None = Field(default=None, max_length=2000)
     memoryOpening: list[dict] = Field(default_factory=list, max_length=4)
     memoryDigest: str = Field(default="", max_length=2000)
+    durableMemory: str = Field(default="", max_length=2000)
     connectionSessionId: str | None = None
     # Optional experiment path: Agent Harness pipeline instead of director.
     # Default False keeps production chat unchanged.
@@ -1245,7 +1443,7 @@ class ChatResponseCrew(BaseModel):
     participants: list[str]
     scene_goal: str | None = None
     tension_note: str | None = None
-    debate_logs: list[dict] = []
+    debate_logs: list[dict] = Field(default_factory=list)
 
 
 def _map_harness_to_chat_direct(harness_out: dict) -> dict:
@@ -1345,6 +1543,7 @@ async def chat(
             from agents.harness.service import get_harness_service
         except Exception:
             logger.exception("harness service import failed (chat useHarness)")
+            await _refund_failed_request(snap, operation="chat harness import")
             raise HTTPException(status_code=503, detail="Agent harness unavailable.")
 
         # Harness on /api/chat prefers offline tools+memory path for reliability.
@@ -1387,11 +1586,13 @@ async def chat(
                 result = {**result, "quotaRemaining": snap.remaining}
             return result
         except HTTPException:
+            await _refund_failed_request(snap, operation="chat harness HTTP failure")
             raise
         except Exception:
             logger.exception(
                 "Chat harness path failed for character %s", payload.characterId
             )
+            await _refund_failed_request(snap, operation="chat harness failure")
             raise HTTPException(
                 status_code=500,
                 detail="Internal server error.",
@@ -1421,18 +1622,30 @@ async def chat(
                     "voiceExample": payload.voiceExample,
                     "memoryOpening": payload.memoryOpening,
                     "memoryDigest": payload.memoryDigest,
+                    "durableMemory": payload.durableMemory,
                 },
                 session_factory=async_session_factory,
+            )
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": str(result.get("error")),
+                    "message": "The character response was rejected. Please retry.",
+                    "retryable": bool(result.get("retryable", True)),
+                },
             )
         if isinstance(result, dict) and not snap.byok:
             result = {**result, "quotaRemaining": snap.remaining}
         return result
     except HTTPException:
+        await _refund_failed_request(snap, operation="chat HTTP failure")
         raise
     except Exception:
         # Sanitize: never leak raw exception detail to the client.
         # Full traceback is preserved in server logs.
         logger.exception("Chat endpoint failed for character %s", payload.characterId)
+        await _refund_failed_request(snap, operation="chat failure")
         raise HTTPException(
             status_code=500,
             detail="Internal server error.",
@@ -1507,15 +1720,16 @@ async def agent_run(request: Request, payload: AgentRunRequest):
         )
 
     try:
-        from agents.harness.service import AgentHarnessService, get_harness_service
+        from agents.harness.service import get_harness_service
     except Exception:
         logger.exception("harness service import failed")
         raise HTTPException(status_code=503, detail="Agent harness unavailable.")
 
     use_offline = bool(payload.offline) or not _live_provider_available(request)
     provider = None
+    billed = None
     if not use_offline:
-        await _require_platform_quota(
+        billed = await _require_platform_quota(
             request,
             action="chat",
             mode=payload.mode if payload.mode in ("direct", "crew") else "direct",
@@ -1537,9 +1751,13 @@ async def agent_run(request: Request, payload: AgentRunRequest):
         )
         return result
     except HTTPException:
+        if billed is not None:
+            await _refund_failed_request(billed, operation="agent harness HTTP failure")
         raise
     except Exception:
         logger.exception("agent/run failed")
+        if billed is not None:
+            await _refund_failed_request(billed, operation="agent harness failure")
         raise HTTPException(status_code=500, detail="Internal server error.")
 
 
@@ -1644,6 +1862,6 @@ async def agent_stats():
         }
 
 
-from api.game_routes import router as game_router
+from api.game_routes import router as game_router  # noqa: E402 — registered after route definitions
 
 router.include_router(game_router)

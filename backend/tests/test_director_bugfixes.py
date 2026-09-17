@@ -235,17 +235,15 @@ class TestChatLanguageControl:
         director,
         mock_provider,
     ):
-        # Direct chat now routes the character reply through
-        # call_model_with_tools (native function calling, DEC-0001), which
-        # returns a ModelResult carrying the structured JSON envelope.
-        mock_provider.call_model_with_tools.return_value = _mr(json.dumps({
+        # Lean Direct uses the plain model transport, never the tool loop.
+        mock_provider.call_model.return_value = json.dumps({
             "reply_text": "Sit down. We are going to be precise.",
             "emotion_state": "tense",
             "gif_search_query": "walter white tense stare",
             "thinking": "He needs control.",
             "tool_executed": None,
             "tool_log": None,
-        }))
+        })
         context = {
             "mode": "direct",
             "history": [],
@@ -257,11 +255,12 @@ class TestChatLanguageControl:
 
         await director._handle_direct_chat("walter", "Why did you call me?", context)
 
-        messages = mock_provider.call_model_with_tools.call_args.args[0]
-        user_prompt = messages[-1]["content"]
-        assert "Reply language: English only." in user_prompt
-        assert "Do not copy the reference language" in user_prompt
-        assert "我记得你" in user_prompt
+        messages = mock_provider.call_model.call_args.args[0]
+        assert "Reply in English only." in messages[0]["content"]
+        assert "Do not copy the reference language" in messages[0]["content"]
+        assert "我记得你" in messages[0]["content"]
+        assert messages[-1]["content"] == "Why did you call me?"
+        mock_provider.call_model_with_tools.assert_not_called()
 
 
 # ===================================================================
@@ -1088,7 +1087,17 @@ class TestCycle17_ExceptionSanitization:
         fake_request.client = MagicMock(host="127.0.0.1")
         fake_request.headers = {}
 
-        with pytest.raises(HTTPException) as exc_info:
+        billed = MagicMock()
+        billed.cost = 1
+        refund = AsyncMock(return_value=True)
+        with (
+            patch(
+                "api.routes._require_platform_quota",
+                AsyncMock(return_value=billed),
+            ),
+            patch("api.routes.refund_platform_quota", refund),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await chat(request=fake_request, payload=payload, director=mock_director)
 
         assert exc_info.value.status_code == 500
@@ -1098,6 +1107,42 @@ class TestCycle17_ExceptionSanitization:
             f"Raw exception leaked into HTTPException detail: {detail}"
         )
         assert sensitive_msg not in detail
+        refund.assert_awaited_once_with(billed)
+
+    async def test_rejected_chat_turn_is_refunded_and_surfaces_as_retryable(self):
+        from api.routes import ChatRequest, chat
+        from fastapi import HTTPException
+
+        mock_director = MagicMock()
+        mock_director.handle_chat_message = AsyncMock(return_value={
+            "reply_text": "",
+            "error": "turn_rejected",
+            "retryable": True,
+        })
+        payload = ChatRequest(characterId="walter", userInput="hello")
+        fake_request = MagicMock()
+        fake_request.client = MagicMock(host="127.0.0.1")
+        fake_request.headers = {}
+        billed = MagicMock(cost=1)
+        refund = AsyncMock(return_value=True)
+
+        with (
+            patch(
+                "api.routes._require_platform_quota",
+                AsyncMock(return_value=billed),
+            ),
+            patch("api.routes.refund_platform_quota", refund),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await chat(request=fake_request, payload=payload, director=mock_director)
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == {
+            "code": "turn_rejected",
+            "message": "The character response was rejected. Please retry.",
+            "retryable": True,
+        }
+        refund.assert_awaited_once_with(billed)
 
     async def test_sse_stream_does_not_leak_raw_exception(self):
         """Given director.process raises during SSE streaming, the error
@@ -1308,14 +1353,14 @@ class TestLoop4_DossierInjection:
         mock_result.scalars.return_value.all.return_value = [fake_dossier]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        mock_provider.call_model_with_tools.return_value = _mr(json.dumps({
+        mock_provider.call_model.return_value = json.dumps({
             "reply_text": "I know exactly who you are.",
             "emotion_state": "tense",
             "gif_search_query": "walter white knowing",
             "thinking": "He remembers me.",
             "tool_executed": None,
             "tool_log": None,
-        }))
+        })
 
         context = {
             "mode": "direct",
@@ -1340,14 +1385,14 @@ class TestLoop4_DossierInjection:
     ):
         """Given no session_factory, _handle_direct_chat should still work
         without querying the DB (graceful degrade)."""
-        mock_provider.call_model_with_tools.return_value = _mr(json.dumps({
+        mock_provider.call_model.return_value = json.dumps({
             "reply_text": "I don't know you.",
             "emotion_state": "calm",
             "gif_search_query": "walter white neutral",
             "thinking": "Stranger.",
             "tool_executed": None,
             "tool_log": None,
-        }))
+        })
 
         context = {
             "mode": "direct",

@@ -1,5 +1,9 @@
 /**
- * Breaking Bad Roleplay — Round 1 Interaction QA
+ * ARCHIVED 2026-09-17 — Breaking Bad Roleplay Round 1 Interaction QA.
+ *
+ * This file documents the deleted landing/sidebar-era UI. It is intentionally
+ * outside Playwright's active test directory. Current equivalents live in
+ * tests/e2e/current-interactions.spec.ts and the current Story suites.
  * Focus: button states, disabled states, loading feedback, error handling,
  *        navigation flow, state consistency, hover/focus states
  */

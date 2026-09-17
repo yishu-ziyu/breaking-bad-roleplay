@@ -1,8 +1,21 @@
+it('stable event ids deduplicate non-adjacent replay without suppressing a new identical line', () => {
+  const first = { type: 'agent_speak', data: { event_id: 'a:0', character_id: 'jesse', content: 'Wait.' } }
+  let feed = applyIncomingEvent([], first)
+  feed = applyIncomingEvent(feed, { type: 'agent_act', data: { event_id: 'a:1', action: 'look_at' } })
+  assert.equal(applyIncomingEvent(feed, first), feed)
+  const next = applyIncomingEvent(feed, { ...first, data: { ...first.data, event_id: 'b:0' } })
+  assert.equal(next.length, feed.length + 1)
+})
 /** P5② (full-stack review): the feed must NOT swallow legitimate repeated
  * dialogue. Regression guard for the old GLOBAL character+content dedup. */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyIncomingEvent, MAX_FEED_EVENTS, type StoryEvent } from './storyFeed'
+import {
+  applyIncomingEvent,
+  MAX_FEED_EVENTS,
+  settleCommandEvents,
+  type StoryEvent,
+} from './storyFeed'
 
 const speak = (character: string, content: string): StoryEvent => ({
   type: 'agent_speak',
@@ -58,5 +71,43 @@ describe('storyFeed dedup (P5②)', () => {
     let feed: StoryEvent[] = [speak('walter', 'Enough.')]
     feed = applyIncomingEvent(feed, speak('skyler', 'Enough.'))
     assert.equal(feed.length, 2)
+  })
+})
+
+describe('settleCommandEvents (an unconfirmed move is never committed text)', () => {
+  const optimistic = (commandId: string): StoryEvent => ({
+    type: 'player_turn',
+    data: { kind: 'do', content: 'Give Jesse the phone', command_id: commandId, pending: true },
+  })
+
+  it('promotes the optimistic line in place once the server commits it', () => {
+    const feed = settleCommandEvents([optimistic('cmd-1')], 'cmd-1', 'committed')
+    assert.equal(feed.length, 1)
+    assert.equal(feed[0].data.pending, false)
+    assert.equal(feed[0].data.content, 'Give Jesse the phone')
+  })
+
+  it('removes a move the server never received instead of leaving an orphan', () => {
+    const feed = settleCommandEvents(
+      [speak('jesse', 'Wait.'), optimistic('cmd-1')],
+      'cmd-1',
+      'absent',
+    )
+    assert.equal(feed.length, 1)
+    assert.equal(feed[0].data.content, 'Wait.')
+  })
+
+  it('keeps the line and its marker while the server is still working', () => {
+    const feed = settleCommandEvents([optimistic('cmd-1')], 'cmd-1', 'pending')
+    assert.equal(feed.length, 1)
+    assert.equal(feed[0].data.pending, true)
+  })
+
+  it('leaves other commands and committed lines untouched', () => {
+    const committed = { type: 'player_turn', data: { content: 'Older move', command_id: 'cmd-0' } }
+    const feed = settleCommandEvents([committed, optimistic('cmd-1')], 'cmd-0', 'committed')
+    assert.equal(feed.length, 2)
+    assert.equal(feed[0], committed)
+    assert.equal(feed[1].data.pending, true)
   })
 })

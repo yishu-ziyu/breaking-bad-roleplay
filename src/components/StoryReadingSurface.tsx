@@ -13,11 +13,11 @@ export type StoryReadingSurfaceProps = {
 
 const COPY = {
   zh: {
-    redraw: '换一版这一拍',
+    redraw: '回看这一拍',
     you: '你',
   },
   en: {
-    redraw: 'Redraw this beat',
+    redraw: 'Replay this beat',
     you: 'You',
   },
 } as const
@@ -49,7 +49,10 @@ export function StoryReadingSurface({
             }
             if (block.kind === 'player') {
               return (
-                <p key={block.id} className="story-manuscript__player">
+                <p
+                  key={block.id}
+                  className={`story-manuscript__player${block.pending ? ' story-manuscript__player--pending' : ''}`}
+                >
                   <cite>{t.you}</cite>
                   <span>{block.text}</span>
                 </p>

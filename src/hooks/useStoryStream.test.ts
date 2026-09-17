@@ -6,6 +6,7 @@ import {
   deriveBeatProgressFromMessages,
   pingSession,
   readPersistedStoryLanguage,
+  shouldApplyStoryIdentity,
 } from './useStoryStream'
 
 const originalFetch = globalThis.fetch
@@ -121,6 +122,15 @@ describe('useStoryStream beat progress helpers', () => {
     ])
 
     assert.deepEqual(progress, { beatId: null, beatIndex: 0 })
+  })
+})
+
+describe('story identity revision guard', () => {
+  it('does not rewind the player identity while replaying an older beat', () => {
+    assert.equal(shouldApplyStoryIdentity(7, 6), false)
+    assert.equal(shouldApplyStoryIdentity(7, 7), true)
+    assert.equal(shouldApplyStoryIdentity(7, 8), true)
+    assert.equal(shouldApplyStoryIdentity(7, undefined), true)
   })
 })
 

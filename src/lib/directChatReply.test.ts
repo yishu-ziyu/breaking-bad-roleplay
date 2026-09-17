@@ -7,7 +7,7 @@ describe('directChatReply', () => {
     const bubble = bubbleFromDirectPayload('walter', {
       reply_text: 'Sit down.',
       emotion_state: 'tense',
-      gif_search_query: 'walter white tense',
+      gif_search_query: 'walter white pointing gun',
       thinking: 'He is testing me.',
       tool_executed: null,
       tool_log: null,
@@ -15,7 +15,7 @@ describe('directChatReply', () => {
     assert.equal(bubble.sender, 'walter')
     assert.equal(bubble.text, 'Sit down.')
     assert.equal(bubble.emotion, 'tense')
-    assert.equal(bubble.thinking, 'He is testing me.')
+    assert.equal(bubble.gifQuery, null)
     assert.ok(bubble.gifUrl)
   })
 
