@@ -77,12 +77,12 @@ E2E：
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-第三次（终稿）在**冻结快照**上串行测得，快照内容指纹 `2b224cceef2844b2`（487 文件；活树当时有第二个会话在写，不能作为验收面）：
+第三次（终稿）在**冻结快照**上串行测得，快照内容指纹 `9dcf11172146d6ed`（487 文件；活树当时仍有第二个会话在写，不能作为验收面）：
 
 | 前端单测 | `npm test` | **231 passed / 0 failed**（45 suites） |
 |---|---|---|
 | 后端 | `npm run test:backend` | **730 passed / 0 failed**（2 个既有依赖告警） |
-| E2E 默认 | `npx playwright test` | **69 passed / 3 skipped / 0 failed**（含 13 条 network-recovery；跳过的是需显式假 Supabase 的 Auth 契约） |
+| E2E 默认 | `npx playwright test` | **70 passed / 3 skipped / 0 failed**（含 14 条 network-recovery；跳过的是需显式假 Supabase 的 Auth 契约） |
 | E2E Auth | `npm run test:e2e:auth` | **3 passed / 0 failed** |
 | 构建 | `npm run build` | 通过（保留既有 >500 kB 提示，非本轮） |
 | Lint | `npm run lint` | exit 0，0 error / 0 warning（与 `npm run build` 并发跑时 eslint 遍历会在刚写入的 `dist/` 上抛错，必须串行） |
@@ -124,7 +124,19 @@ E2E：
 | F4 409 接管用两次 `/state`，第二次失败会停在无流的 `connecting` | `adoptServerCommand` 复用首次 `/state` 快照（`recoverTurn` 新增 `snapshot` 选项，不再二次探测）；reality 为 absent 时回到 `beat_paused`，不会停在 connecting | 跨标签页用例新增断言：被拒 action 与目标 stream 之间**只有一次** `/state` |
 | F5「beat_ready 只在 command_id 匹配时清 pending」与代码不符（`null` 也会清） | 改为：只有 command_id 完全一致（或本地也没有 command_id 的 legacy 情况）才清 | 代码 + 既有回归 |
 
-使用过的修复验证：第二轮复核报告的 F1/F2/F3/F4/F5 均已逐条复现并覆盖测试；复核确认无新的双扣/双退。
+### 5.3 第三轮复核后的第四轮修复（终稿）
+
+第三轮复核确认 F1 主 POST、F3、F3b、F4、F5 已真修，但指出 F2 只挡住了「正在等 `/state`」这一种恢复，且两条路径仍可越过 Stop：
+
+| 复核项 | 现在的做法 | 证据 |
+|---|---|---|
+| 自动 resend 无 deadline、不被 Stop fence | `resendPendingCommand` 接收 AbortSignal + 20s deadline，返回 `accepted/failed/stale`；await 之前与之后都比对 epoch / recovery owner / abort，stale 时不改 `commandRef`、不弹 notice、**不开流**。恢复请求组由 `abortRecoveryRef` 承载，Stop / reset / 新 command / 卸载都会立刻 abort | `Stop during an in-flight resend still stops the run` |
+| Stop 确认前无法作废恢复（旧 F2 用例是假阳性） | Stop 分支现在就 `recoveryEpochRef += 1` + 清 owner + `abortActiveRecovery()` + 关 SSE；用例改成 **Stop 一直不确认**（`failNextStops(99)`），这样「清 session 后才 bump」的解释无法通过 | `an unconfirmed Stop still fences a recovery that is already in flight` |
+| `connectStream` 在 `await authHeaders()` 期间可被 Stop 漏掉 | 新增 `streamGenerationRef`：`closeEventSource()` 递增，`connectStream` 在 await 前后各比对一次，过期就不建 SSE、已建则立刻 close | 同上（旧实现里这条路径会把流开回来） |
+| 409 接管的首个 `/state` 可无限挂 | `probeStorySnapshot` 内置 10s deadline（并遵守调用方 signal）；`adoptServerCommand` 探测失败时回到 `beat_paused` + notice，不再停在无连接的 `streaming` | 跨标签页用例 + `an action POST that never answers ...` |
+| Stop 自身 20s deadline 触发时静默返回 | `aborted` 且 `actionTimedOut` 时按「停止尚未确认」提示；Stop 分支先清 deadline timer，早退路径不再留下 stale timer | `an unconfirmed Stop keeps the session key and says so` |
+
+**假阳性自查（可复现）**：把 Stop 的 epoch/abort、resend 的 stale 检查、`connectStream` 的 generation 判断三处回退到上一版实现后，在同一 mock 上跑上面两条 Stop 用例——两条都失败，失败点都是 `streamUrls` 里出现了被停掉 command 的 stream 请求。也就是说这两条用例确实咬住了新逻辑，不再依赖「Stop 成功后才 bump epoch」这条旧路径。
 
 已知限制（本轮不修，如实记录）：
 

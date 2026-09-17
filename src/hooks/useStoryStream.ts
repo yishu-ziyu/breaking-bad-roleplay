@@ -338,6 +338,11 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
   const [commandNotice, setCommandNotice] = useState<UseStoryStreamReturn['commandNotice']>(null)
 
   const esRef = useRef<SseController | null>(null)
+  /* Bumped whenever the client stops wanting a stream (close, reset, stop,
+   * a newer connect). connectStream awaits the auth headers before the SSE
+   * controller exists, so this is what stops a closed connection from
+   * reopening behind the player's back. */
+  const streamGenerationRef = useRef(0)
   const sessionRef = useRef<string | null>(null)
   const hasAttemptedResumeRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -405,6 +410,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
   }, [connectionState])
 
   const closeEventSource = useCallback(() => {
+    streamGenerationRef.current += 1
     if (esRef.current) {
       esRef.current.close()
       esRef.current = null
@@ -885,6 +891,9 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
 
   const connectStream = useCallback((sid: string, voiceExample?: string | null, language?: string) => {
     closeEventSource()
+    // Captured after the close above: any later close (Stop, reset, a newer
+    // connect) invalidates this attempt before it reaches the network.
+    const generation = streamGenerationRef.current
     if (voiceExample !== undefined) voiceExampleRef.current = voiceExample
     const resolvedLanguage =
       language
@@ -895,6 +904,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
 
     void (async () => {
       const auth = await authHeaders()
+      if (generation !== streamGenerationRef.current) return
       const qs = buildStreamQuery({
         voiceExample: voiceExampleRef.current,
         language: resolvedLanguage,
@@ -1142,6 +1152,12 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
         onNetworkError: handleUnexpectedTransportEnd,
         onClose: handleUnexpectedTransportEnd,
       })
+      if (generation !== streamGenerationRef.current) {
+        // The connection was closed while the headers were being fetched
+        // (Stop, reset, beat_ready): do not adopt this controller.
+        es.close()
+        return
+      }
       esRef.current = es
       armStallWatchdog(sid)
     })()

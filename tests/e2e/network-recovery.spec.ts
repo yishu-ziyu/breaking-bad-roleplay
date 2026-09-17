@@ -91,6 +91,8 @@ function installRecoveryApi(page: Page, options: {
     actionHangs: 0,
     /** Fail the next N automatic resends (502 after the server recorded it). */
     resendFailures: 0,
+    /** Delay the next automatic resend's answer (it is still in the air). */
+    delayResendMs: 0,
     streamFailures: 0,
     emptyStreams: 0,
   }
@@ -182,6 +184,11 @@ function installRecoveryApi(page: Page, options: {
       const isResend = state.bodies.has(command)
       state.bodies.set(command, body)
       state.pending = command
+      if (isResend && state.delayResendMs > 0) {
+        const delay = state.delayResendMs
+        state.delayResendMs = 0
+        await sleep(delay)
+      }
       if (isResend && state.resendFailures > 0) {
         // The server took the resent command, then failed to answer again.
         state.resendFailures -= 1
@@ -295,6 +302,7 @@ function installRecoveryApi(page: Page, options: {
     failNextActionWith502: () => { state.action502 = 1 },
     hangNextActions: (n: number) => { state.actionHangs = n },
     failNextResends: (n: number) => { state.resendFailures = n },
+    delayNextResend: (ms: number) => { state.delayResendMs = ms },
   }
 }
 
@@ -640,7 +648,7 @@ test('an action POST that never answers recovers instead of spinning forever', a
   expect(errors).toEqual([])
 })
 
-test('Stop invalidates a recovery that is already in flight', async ({ page }) => {
+test('an unconfirmed Stop still fences a recovery that is already in flight', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await seedStory(page)
@@ -649,14 +657,17 @@ test('Stop invalidates a recovery that is already in flight', async ({ page }) =
 
   await startStory(page)
   // The probe for the lost acknowledgement is slow and still unanswered when
-  // the player hits Stop.
+  // the player hits Stop. The stop itself NEVER confirms, so clearing the
+  // session cannot be what saves us: the recovery must be fenced the moment
+  // Stop is pressed.
   api.delayNextState(3_000)
   await submitAction(page, PLAYER_LINE)
   await expect(page.locator('.beat-paused__notice')).toBeVisible()
 
+  api.failNextStops(99)
   await page.locator('.beat-paused__advanced summary').click()
   await page.locator('.beat-controls button', { hasText: '停止' }).first().click()
-  await expect(page.locator('.story-setup textarea')).toBeVisible()
+  await expect(page.locator('.beat-paused__notice')).toContainText('停止尚未确认', { timeout: 15_000 })
 
   const streamsAtStop = api.state.streamUrls.length
   const command = String(api.state.actions[0].command_id)
@@ -665,8 +676,40 @@ test('Stop invalidates a recovery that is already in flight', async ({ page }) =
   await page.waitForTimeout(4_000)
   expect(api.state.streamUrls.length).toBe(streamsAtStop)
   expect(api.state.streamUrls.some((u) => u.includes(`command_id=${command}`))).toBe(false)
-  await expect(page.locator('.story-setup textarea')).toBeVisible()
-  await expect(page.locator('.beat-paused--drama')).toHaveCount(0)
+  expect(api.state.generated).not.toContain(command)
+  await expect(page.locator('.story-setup textarea')).toHaveCount(0)
+  await expect(page.locator('.story-error')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('Stop during an in-flight resend still stops the run', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await seedStory(page)
+  const api = installRecoveryApi(page, { loseAckWithoutRecording: true })
+  await api.install
+
+  await startStory(page)
+  // The first POST is dropped without the server recording it, so the client
+  // resends the same body — and that resend is still in the air when the
+  // player stops.
+  api.delayNextResend(3_000)
+  await submitAction(page, PLAYER_LINE)
+  await expect(page.locator('.story-manuscript__player--pending')).toHaveCount(1)
+
+  api.failNextStops(99)
+  await page.locator('.beat-paused__advanced summary').click()
+  await page.locator('.beat-controls button', { hasText: '停止' }).first().click()
+  await expect(page.locator('.beat-paused__notice')).toContainText('停止尚未确认', { timeout: 15_000 })
+
+  const streamsAtStop = api.state.streamUrls.length
+  const command = String(api.state.actions[0].command_id)
+  await page.waitForTimeout(4_000)
+  // The late resend answer must not adopt the session or open a stream.
+  expect(api.state.streamUrls.length).toBe(streamsAtStop)
+  expect(api.state.streamUrls.some((u) => u.includes(`command_id=${command}`))).toBe(false)
+  expect(api.state.generated).not.toContain(command)
+  await expect(page.locator('.story-error')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
