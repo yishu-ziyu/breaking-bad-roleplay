@@ -389,11 +389,16 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
    * (commandRef, notices, connection state), so a response that arrives for a
    * command the client has already moved past must change nothing. */
   const activeRecoveryCommandRef = useRef<string | null>(null)
+  /* The in-flight recovery request set. Stop / reset / unmount / a newer
+   * command aborts it so a slow /state or resend cannot outlive the decision. */
+  const abortRecoveryRef = useRef<AbortController | null>(null)
 
   const STREAM_STALL_TIMEOUT_MS = 90_000
   /* An /action POST that never answers is indistinguishable from a lost
    * acknowledgement — after this long the client stops waiting and recovers. */
   const ACTION_DEADLINE_MS = 20_000
+  /* Same idea for the /state probe: a half-open GET must not strand the UI. */
+  const PROBE_DEADLINE_MS = 10_000
 
   useEffect(() => {
     connectionStateRef.current = connectionState
@@ -449,6 +454,11 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
    * Called on every terminal state (beat_ready / complete / error / reset /
    * stop) and on any live event, so a stale timer can never fire into a new
    * beat or resurrect an abandoned command. */
+  const abortActiveRecovery = useCallback(() => {
+    abortRecoveryRef.current?.abort()
+    abortRecoveryRef.current = null
+  }, [])
+
   const clearTurnRetry = useCallback(() => {
     if (turnRetryTimerRef.current != null) {
       window.clearTimeout(turnRetryTimerRef.current)
@@ -482,6 +492,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     // reopen a stream for a session this client has just abandoned.
     recoveryEpochRef.current += 1
     activeRecoveryCommandRef.current = null
+    abortActiveRecovery()
     clearTurnRetry()
     setCommandNotice(null)
     updateConnectionState('idle')
@@ -503,7 +514,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     if (options?.clearStorage) {
       clearSavedSessionId()
     }
-  }, [clearTurnRetry, closeEventSource, updateConnectionState])
+  }, [abortActiveRecovery, clearTurnRetry, closeEventSource, updateConnectionState])
 
   const appendEvent = useCallback((evt: StoryEvent) => {
     setEvents((prev) => {
@@ -538,16 +549,27 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     missing: boolean
     snapshot: Record<string, unknown> | null
   }> => {
+    // A /state that never answers must not pin the UI: the probe has its own
+    // deadline, and the caller's abort (Stop / reset / newer command) also
+    // cancels it. Either way the answer becomes 'unknown' and the caller's
+    // bounded loop decides what to do.
+    const controller = new AbortController()
+    const deadline = window.setTimeout(() => controller.abort(), PROBE_DEADLINE_MS)
+    const onOuterAbort = () => controller.abort()
+    signal?.addEventListener('abort', onOuterAbort, { once: true })
     try {
       const res = await fetch(`/api/session/${sid}/state`, {
         headers: { ...sessionAuthHeaders() },
-        signal,
+        signal: controller.signal,
       })
       if (res.status === 404) return { missing: true, snapshot: null }
       if (!res.ok) return { missing: false, snapshot: null }
       return { missing: false, snapshot: (await res.json()) as Record<string, unknown> }
     } catch {
       return { missing: false, snapshot: null }
+    } finally {
+      window.clearTimeout(deadline)
+      signal?.removeEventListener('abort', onOuterAbort)
     }
   }, [])
 
@@ -624,19 +646,34 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
    * confirmed it never arrived. Bound to one automatic attempt per command. */
   const resendPendingCommand = useCallback(async (
     sid: string,
+    commandId: string,
     pending: { signature: string; body: Record<string, unknown>; ack: string },
-  ): Promise<boolean> => {
+    signal?: AbortSignal,
+  ): Promise<'accepted' | 'failed' | 'stale'> => {
+    const epoch = recoveryEpochRef.current
+    const stale = () => epoch !== recoveryEpochRef.current
+      || activeRecoveryCommandRef.current !== commandId
+      || signal?.aborted === true
+    const controller = new AbortController()
+    const deadline = window.setTimeout(() => controller.abort(), ACTION_DEADLINE_MS)
+    const onOuterAbort = () => controller.abort()
+    signal?.addEventListener('abort', onOuterAbort, { once: true })
     try {
       const res = await fetch(`/api/session/${sid}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...sessionAuthHeaders() },
         body: JSON.stringify(pending.body),
+        signal: controller.signal,
       })
+      // A Stop (or a newer command) may have happened while this was in the
+      // air: touch nothing, open nothing.
+      if (stale()) return 'stale'
       if (!res.ok) {
         setNotice('unconfirmed')
-        return false
+        return 'failed'
       }
       const accepted = await res.json() as Record<string, unknown>
+      if (stale()) return 'stale'
       if (accepted.runtime_version === 1) {
         runtimeVersionRef.current = 1
         if (typeof accepted.world_revision === 'number') {
@@ -649,10 +686,12 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       if (!esRef.current) {
         connectStreamRef.current(sid, undefined, undefined)
       }
-      return true
+      return 'accepted'
     } catch {
-      setNotice('unconfirmed')
-      return false
+      return stale() ? 'stale' : 'failed'
+    } finally {
+      window.clearTimeout(deadline)
+      signal?.removeEventListener('abort', onOuterAbort)
     }
   }, [setNotice])
 
@@ -668,14 +707,18 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     const epoch = recoveryEpochRef.current
     // This call owns recovery from here on: any older probe that comes back
     // later is stale and must not touch refs, notices or the stream.
+    abortActiveRecovery()
+    const controller = new AbortController()
+    abortRecoveryRef.current = controller
     activeRecoveryCommandRef.current = commandId
     const { missing, snapshot } = options?.snapshot
       ? { missing: false, snapshot: options.snapshot }
-      : await probeStorySnapshot(sid)
+      : await probeStorySnapshot(sid, controller.signal)
     // Reset/stop happened while we were probing, or a newer command took over:
     // the answer is about a run/command this client already left. Do nothing.
     if (epoch !== recoveryEpochRef.current) return 'stale'
     if (activeRecoveryCommandRef.current !== commandId) return 'stale'
+    if (controller.signal.aborted) return 'stale'
     if (missing) {
       clearTurnRetry()
       setNotice(null)
@@ -736,8 +779,9 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     }
     if (autoResendCommandRef.current !== commandId) {
       autoResendCommandRef.current = commandId
-      const accepted = await resendPendingCommand(sid, mine)
-      if (!accepted) {
+      const outcome = await resendPendingCommand(sid, commandId, mine, controller.signal)
+      if (outcome === 'stale') return 'stale'
+      if (outcome === 'failed') {
         // The resend itself may have landed without an answer. Keep asking
         // /state inside the bounded budget instead of stranding the move.
         scheduleRetryRef.current(sid, commandId)
@@ -746,8 +790,8 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     }
     setNotice('unconfirmed')
     return reality
-  }, [applyCommittedSnapshot, clearStorySessionState, clearTurnRetry, probeStorySnapshot,
-      resendPendingCommand, setNotice, updateConnectionState])
+  }, [abortActiveRecovery, applyCommittedSnapshot, clearStorySessionState, clearTurnRetry,
+      probeStorySnapshot, resendPendingCommand, setNotice, updateConnectionState])
 
   const scheduleRetryRef = useRef<(sid: string, commandId: string) => void>(() => undefined)
 
@@ -759,7 +803,14 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
   const adoptServerCommand = useCallback(async (sid: string): Promise<boolean> => {
     const epoch = recoveryEpochRef.current
     const { missing, snapshot } = await probeStorySnapshot(sid)
-    if (epoch !== recoveryEpochRef.current || missing || !snapshot) return false
+    if (epoch !== recoveryEpochRef.current) return false
+    if (missing || !snapshot) {
+      // The session is gone, or /state did not answer inside its deadline:
+      // never leave the player on a spinner with nothing streaming.
+      setNotice('unconfirmed')
+      updateConnectionState('beat_paused')
+      return true
+    }
     const pending = typeof snapshot.pending_command_id === 'string' ? snapshot.pending_command_id : ''
     const last = typeof snapshot.command_id === 'string' ? snapshot.command_id : ''
     const target = pending || last
@@ -778,6 +829,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     }
     return true
   }, [probeStorySnapshot, recoverTurn, setNotice, updateConnectionState])
+
 
   /** Immediate probe after an uncertain send; if the probe itself fails,
    * fall back to the bounded retry loop so the UI never hangs in 'streaming'. */
@@ -1277,17 +1329,28 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
 
     if (action === 'stop') {
       // The visible generation stops NOW — the player asked for it. Any
-      // recovery that is already awaiting /state is invalidated here, so a
-      // late answer can never reopen a stream the player just stopped.
+      // recovery already in flight (probe or resend) is aborted and
+      // invalidated here, so nothing late can reopen a stream or commit after
+      // the player stopped.
+      window.clearTimeout(actionDeadline)
       recoveryEpochRef.current += 1
       activeRecoveryCommandRef.current = null
+      abortActiveRecovery()
       closeEventSource()
       clearTurnRetry()
       const outcome = await requestStop(sid, controller.signal)
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null
       }
-      if (outcome === 'aborted') return false
+      if (outcome === 'aborted') {
+        // Aborted because our own deadline fired: the server never answered,
+        // so tell the player instead of failing silently.
+        if (actionTimedOut) {
+          setNotice('stopFailed')
+          updateConnectionState('beat_paused')
+        }
+        return false
+      }
       if (outcome === 'unconfirmed') {
         // The server never confirmed: keep the session key so the player can
         // ask again instead of permanently orphaning a run that may still be
@@ -1331,7 +1394,9 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     pendingCommandRef.current = { signature, body, ack: 'unconfirmed' }
     const commandId = typeof body.command_id === 'string' ? body.command_id : null
     // Starting a new command cancels the previous one's recovery: its timers
-    // are dropped and any /state response still in flight becomes stale.
+    // and in-flight requests are dropped, and anything that answers later is
+    // stale.
+    abortActiveRecovery()
     clearTurnRetry()
     if (commandId) activeRecoveryCommandRef.current = commandId
     const optimisticEventId = action === 'act'
@@ -1489,8 +1554,8 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
         abortControllerRef.current = null
       }
     }
-  }, [adoptServerCommand, appendEvent, clearStorySessionState, clearTurnRetry, closeEventSource,
-      connectStream, recoverTurn, recoverWithFallback, requestStop, setNotice,
+  }, [abortActiveRecovery, adoptServerCommand, appendEvent, clearStorySessionState, clearTurnRetry,
+      closeEventSource, connectStream, recoverTurn, recoverWithFallback, requestStop, setNotice,
       updateConnectionState])
 
   const redrawBeat = useCallback(async (beatId: string, characterId?: string) => {
@@ -1584,6 +1649,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     return () => {
       recoveryEpochRef.current += 1
       activeRecoveryCommandRef.current = null
+      abortActiveRecovery()
       closeEventSource()
       clearTurnRetry()
       if (abortControllerRef.current) {
@@ -1591,7 +1657,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
         abortControllerRef.current = null
       }
     }
-  }, [clearTurnRetry, closeEventSource])
+  }, [abortActiveRecovery, clearTurnRetry, closeEventSource])
 
   const dismissResumeToast = useCallback(() => setResumeToast(null), [])
 
