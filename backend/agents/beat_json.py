@@ -106,6 +106,59 @@ def _extract_contract_raw(payload: Any) -> dict[str, Any] | None:
     return None
 
 
+def _salvage_events(text: str) -> list[dict[str, Any]]:
+    """Recover event objects from a structurally broken plan (2026-09-18).
+
+    Observed MiniMax-M3 failure: an ``agent_speak`` event closes one brace
+    early and leaves ``"recommended_model"`` dangling inside the events array —
+
+        {"type":"agent_speak","data":{...,"content":"…"},
+         "emotion_state":"tense","gif_search_query":"…"},
+        "recommended_model":"minimax/MiniMax-M3"}
+
+    The array is invalid JSON, but every event object still balance-scans as a
+    well-formed object. Collect those objects individually instead of losing
+    the whole beat to a re-parse that reproduces the same shape. Truncated
+    output keeps the events that were already complete.
+    """
+    start = text.find('"events"')
+    arr_start = text.find("[", start) if start >= 0 else text.find("[")
+    if arr_start < 0:
+        return []
+    pos = arr_start + 1
+    events: list[dict[str, Any]] = []
+    while pos < len(text):
+        brace = text.find("{", pos)
+        if brace < 0:
+            break
+        close = text.find("]", pos)
+        if 0 <= close < brace:
+            break
+        obj_text = _balanced_slice(text[brace:], "{", "}")
+        if not obj_text:
+            break
+        payload = _loads_lenient(obj_text)
+        if isinstance(payload, dict) and payload.get("type"):
+            events.append(payload)
+        pos = brace + len(obj_text)
+    return events
+
+
+def _salvage_contract(text: str) -> dict[str, Any] | None:
+    """Best-effort Beat Contract from the same broken plan text."""
+    start = text.find('"contract"')
+    if start < 0:
+        return None
+    brace = text.find("{", start)
+    if brace < 0:
+        return None
+    obj_text = _balanced_slice(text[brace:], "{", "}")
+    if not obj_text:
+        return None
+    payload = _loads_lenient(obj_text)
+    return payload if isinstance(payload, dict) and payload else None
+
+
 def _iter_payload_candidates(text: str) -> list[Any]:
     cleaned = _strip_noise(text)
     if not cleaned:
@@ -188,10 +241,22 @@ def parse_beat_plan(text: str | None) -> tuple[list[dict[str, Any]], dict[str, A
         return best_events, best_contract
 
     cleaned = _strip_noise(text or "")
+    salvaged = _salvage_events(cleaned)
+    if salvaged:
+        logger.warning(
+            "beat_json: recovered %d event(s) from malformed plan (len=%d)",
+            len(salvaged),
+            len(cleaned),
+        )
+        return salvaged, best_contract or _salvage_contract(cleaned)
+
     logger.warning(
-        "beat_json: parse failed len=%d preview=%r",
+        "beat_json: parse failed len=%d balanced_obj=%s balanced_arr=%s preview=%r tail=%r",
         len(cleaned),
+        _balanced_slice(cleaned, "{", "}") is not None,
+        _balanced_slice(cleaned, "[", "]") is not None,
         cleaned[:400].replace("\n", "\\n"),
+        cleaned[-200:].replace("\n", "\\n"),
     )
     return [], best_contract
 

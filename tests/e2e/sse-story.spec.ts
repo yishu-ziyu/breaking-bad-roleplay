@@ -73,6 +73,9 @@ async function seedStorage(page: Page, values: Record<string, unknown>) {
     window.localStorage.setItem('abq_enteredWorld', 'true')
     window.localStorage.setItem('abq_productSurface', JSON.stringify('v3-mode-door'))
     window.localStorage.setItem('abq_knowledgeTrack', JSON.stringify('fan'))
+    // T10: Story is closed to visitors, so a stored Story surface is reclaimed
+    // on load. This spec drives the Story board itself → opt in as an author.
+    window.localStorage.setItem('yishu_authoring_mode', '1')
     for (const [key, raw] of Object.entries(data)) {
       let value: unknown = raw
       if (typeof raw === 'string' && (raw.startsWith('{') || raw.startsWith('['))) {
@@ -510,10 +513,10 @@ test('TC-SSE-4c: Different Branch submits a branch command from the committed be
 })
 
 /* ------------------------------------------------------------------ */
-/*  TC-SSE-5: error — error event sets error state and shows message   */
+/*  TC-SSE-5: error — error event sets error state, plain notice, retry */
 /* ------------------------------------------------------------------ */
 
-test('TC-SSE-5: error event transitions to error state and shows error message', async ({
+test('TC-SSE-5: error event transitions to error state and shows a plain notice with retry', async ({
   page,
 }) => {
   await driveToBeatPaused(page)
@@ -521,17 +524,19 @@ test('TC-SSE-5: error event transitions to error state and shows error message',
   // Emit error event
   await emitSSE(page, 'error', { data: { message: 'boom' } })
 
-  // story-error UI visible with the error message
-  await expect(page.locator('.story-error')).toBeVisible()
-  await expect(page.locator('.story-error p')).toContainText('boom')
+  // Story-level notice visible, in plain words — the raw server string stays
+  // out of the player-facing line (T2).
+  const notice = page.locator('.story-failure')
+  await expect(notice).toBeVisible()
+  await expect(notice).toContainText('This beat could not go on')
+  await expect(notice).not.toContainText('boom')
 
   // BeatControls should no longer be visible (state left beat_paused)
   await expect(page.locator('.beat-controls')).toHaveCount(0)
 
-  // Reconnect button present (sessionId was set before error)
-  await expect(
-    page.locator('.story-error button', { hasText: /Reconnect/ }),
-  ).toBeVisible()
+  // Retry present (sessionId was set before error) and it reopens the stream.
+  await page.locator('.story-failure__retry').click()
+  await expect(page.locator('.story-failure')).toHaveCount(0)
 })
 
 /* ------------------------------------------------------------------ */

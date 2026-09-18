@@ -10,6 +10,8 @@ async function setup(page: Page, extra: Record<string, unknown> = {}) {
       enteredWorld: true, productSurface: 'v3-mode-door', surface: 'direct',
       character: 'walter', language: 'en', ...values,
     })) localStorage.setItem(`abq_${key}`, JSON.stringify(value))
+    // T10: Story is closed to visitors; the 剧情 switch below is the author flow.
+    localStorage.setItem('yishu_authoring_mode', '1')
     sessionStorage.setItem('mode-boundary-seeded', '1')
   }, extra)
 }

@@ -49,6 +49,9 @@ async function seedStory(page: Page) {
       enteredWorld: true, productSurface: 'v3-mode-door', knowledgeTrack: 'fan',
       character: 'walter', language: 'zh', surface: 'story',
     })) localStorage.setItem(`abq_${key}`, JSON.stringify(value))
+    // T10: a stored Story surface is reclaimed for visitors on load. Every test
+    // in this spec drives the Story board → opt in as an author.
+    localStorage.setItem('yishu_authoring_mode', '1')
     sessionStorage.setItem('net-seeded', 'yes')
   })
 }
@@ -605,6 +608,8 @@ test('reopening a stopped session lands on idle instead of the beat controls', a
     })) localStorage.setItem(`abq_${key}`, JSON.stringify(value))
     localStorage.setItem('abq_story_session_id', 'net-story')
     localStorage.setItem('abq_story_session_key', 'net-key')
+    // T10: author opt-in, or the stored Story surface is reclaimed pre-paint.
+    localStorage.setItem('yishu_authoring_mode', '1')
   })
   const api = installRecoveryApi(page)
   await api.install

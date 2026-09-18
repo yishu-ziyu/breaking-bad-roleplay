@@ -143,6 +143,9 @@ test('FC-3: Story Stop sends stop action, clears saved session, and returns to i
   await seedRawStorage(page, {
     abq_view: JSON.stringify('story'),
     abq_language: JSON.stringify('en'),
+    // T10: this seed lands on the Story surface (via the legacy `view` key),
+    // which is reclaimed for visitors pre-paint → opt in as an author.
+    yishu_authoring_mode: '1',
   })
   await page.locator('.story-setup textarea').fill('Stop after the first beat.')
   await page.locator('.story-setup button').click()
@@ -210,6 +213,9 @@ test('FC-4: resumed Story history can Continue by opening a fresh SSE connection
     abq_story_session_id: 'resume-sid',
     abq_surface: JSON.stringify('story'),
     abq_language: JSON.stringify('en'),
+    // T10: the stored Story surface is reclaimed for visitors pre-paint → opt
+    // in as an author so the resume path under test still runs.
+    yishu_authoring_mode: '1',
   })
   await expect.poll(() => messagesRouteHits).toBeGreaterThanOrEqual(2)
   await expect(page.locator('.story-manuscript__dialogue', { hasText: 'Restored line.' })).toBeVisible()

@@ -15,6 +15,7 @@ from agents.characters import (
     MikeEhrmantraut,
     GusFring,
     HankSchrader,
+    MarieSchrader,
 )
 from agents import mckee_story
 from agents.beat_json import (
@@ -51,10 +52,47 @@ from scenes.world_mode import parse_world_mode
 from models.schemas import AgentEvent
 from agents.memory import failed_delta_count, update_dossiers
 from sqlalchemy import select
+import httpx
+
+try:  # httpx maps most httpcore errors, but a body read can still surface raw
+    import httpcore
+except ImportError:  # pragma: no cover - httpx ships httpcore today
+    httpcore = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 DEFAULT_DIRECTOR_MODEL_ROUTE = "stepfun/step-3.7-flash"
 MAX_AGENT_SPEAK_PER_BEAT = 2
+
+# A single network blip must not discard a whole beat (2026-09-18 incident:
+# one httpcore.ReadError ~6s into a 200 response body read killed the beat).
+# Only transient transport failures get a retry, and only inside the same beat
+# generation, so quota/billing and the outbox are untouched.
+BEAT_TRANSIENT_RETRY_ATTEMPTS = 2  # first attempt + one bounded retry
+BEAT_TRANSIENT_RETRY_BACKOFF_SECONDS = 0.5
+
+# A beat plan with no character line cannot be published as a story turn.
+# Re-plan once (2026-09-18 "no_accepted_character_turn" incident) — bounded,
+# inside the same beat/command, so quota and the outbox see one turn.
+BEAT_SPEAK_REGEN_ATTEMPTS = 2  # first plan + one bounded regeneration
+
+_TRANSIENT_LLM_ERRORS: tuple[type[BaseException], ...] = (
+    httpx.ReadError,
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.ConnectTimeout,
+    httpx.RemoteProtocolError,
+    *(
+        (
+            httpcore.ReadError,
+            httpcore.ConnectError,
+            httpcore.ReadTimeout,
+            httpcore.ConnectTimeout,
+            httpcore.RemoteProtocolError,
+        )
+        if httpcore is not None
+        else ()
+    ),
+)
 LANG_DIRECTIVE = {
     "en": (
         "RESPONSE LANGUAGE: English only.\n"
@@ -105,6 +143,7 @@ STATUS_I18N = {
         "outline_failed": "Outline generation failed — could not reach the model.",
         "no_beats": "The generated outline contained no playable beats.",
         "beat_llm_failed": "Beat {n} — LLM call failed. Please check LLM service (current: {route}).",
+        "beat_llm_retry_exhausted": "Beat {n} — LLM call failed twice (network hiccup). Retry this beat (current: {route}).",
         "beat_parse_failed": "Story generation failed. The model returned unparseable content. Retry or switch models (current: {route}).",
         "turn_rejected": "A character turn could not be published. Retry this beat.",
     },
@@ -116,6 +155,7 @@ STATUS_I18N = {
         "outline_failed": "大纲生成失败 — 无法连接模型。",
         "no_beats": "生成的大纲没有可玩的剧情节点。",
         "beat_llm_failed": "第 {n} 拍生成失败。请检查模型服务（当前: {route}）。",
+        "beat_llm_retry_exhausted": "第 {n} 拍生成失败：网络中断，重试后仍未成功。请重试这一拍（当前: {route}）。",
         "beat_parse_failed": "剧情生成异常。AI 返回了无法解析的内容，请重试或切换模型（当前: {route}）。",
         "turn_rejected": "有一句角色台词未能发布。请重试这一拍。",
     },
@@ -197,6 +237,58 @@ def _status_message(key: str, lang: str = "en", **kwargs) -> str:
         key, STATUS_I18N["en"].get(key, "")
     )
     return template.format(**kwargs)
+
+
+def is_transient_llm_error(exc: BaseException) -> bool:
+    """True for transport failures a second attempt can reasonably survive.
+
+    Auth errors, HTTP status errors, bad routes and validation failures are
+    deliberately excluded: they fail on the first attempt as before.
+    """
+    return isinstance(exc, _TRANSIENT_LLM_ERRORS)
+
+
+async def call_with_transient_retry(operation, *args, **kwargs):
+    """Run one model-call operation with a single bounded transient retry.
+
+    Covers every LLM call inside a story beat — the beat plan and the
+    character sub-agent turn (2026-09-18: a ``ReadError`` during the Jesse
+    call dropped the only speaker and the whole beat failed). Runs inside the
+    caller's beat generation: no new command, no new quota charge, no second
+    outbox record. Cancellation always propagates.
+    """
+    for attempt in range(1, BEAT_TRANSIENT_RETRY_ATTEMPTS + 1):
+        try:
+            return await operation(*args, **kwargs)
+        except Exception as exc:
+            if attempt >= BEAT_TRANSIENT_RETRY_ATTEMPTS or not is_transient_llm_error(exc):
+                raise
+            logger.warning(
+                "Transient LLM transport error (attempt %d/%d), retrying: %r",
+                attempt,
+                BEAT_TRANSIENT_RETRY_ATTEMPTS,
+                exc,
+            )
+            await asyncio.sleep(BEAT_TRANSIENT_RETRY_BACKOFF_SECONDS)
+    raise RuntimeError("unreachable")  # pragma: no cover
+
+
+async def call_model_with_transient_retry(
+    provider,
+    messages: list[dict],
+    model_route: str,
+    *,
+    max_tokens: int | None = None,
+) -> str:
+    """``provider.call_model`` with one bounded retry for transient errors.
+
+    ``max_tokens`` is omitted from the underlying call when ``None`` so the
+    provider default is untouched.
+    """
+    extra = {} if max_tokens is None else {"max_tokens": max_tokens}
+    return await call_with_transient_retry(
+        provider.call_model, messages, model_route, **extra
+    )
 
 
 def _latin_letter_ratio(text: str) -> float:
@@ -329,6 +421,7 @@ FRONTEND_TO_BACKEND_ID: dict[str, str] = {
     "mike": "Mike Ehrmantraut",
     "gus": "Gus Fring",
     "hank": "Hank Schrader",
+    "marie": "Marie Schrader",
 }
 BACKEND_TO_FRONTEND_ID: dict[str, str] = {v: k for k, v in FRONTEND_TO_BACKEND_ID.items()}
 # Also accept display names as keys (switch_perspective / DB resume).
@@ -361,6 +454,109 @@ def resolve_backend_character_id(raw: str | None) -> str | None:
         return FRONTEND_TO_BACKEND_ID[token]
     logger.warning("resolve_backend_character_id: unknown id %r", raw)
     return s
+
+
+class UnknownCharacterError(ValueError):
+    """A character id that maps to no playable character.
+
+    Chat entry points raise this instead of silently answering as Walter
+    White. ``code`` is the machine-readable client contract.
+    """
+
+    code = "unknown_character"
+
+    def __init__(self, character_id: str | None):
+        self.character_id = str(character_id or "")
+        super().__init__(f"Unknown character id: {self.character_id!r}")
+
+
+def canonical_playable_character_id(raw: str | None) -> str | None:
+    """Non-raising form of ``resolve_playable_character_id``.
+
+    Maps a frontend short id / display name / backend name to the canonical
+    backend name, or ``None`` when the id is outside the playable cast. Beat
+    plans, Direct and Crew all resolve through this same map — there is no
+    second character-id table.
+
+    2026-09-18 (T14): the beat planner sometimes names a speaker by short id
+    ("jesse"). ``CHARACTER_AGENTS`` is keyed by canonical names, so the lookup
+    missed, the Character Policy block was skipped and the planner's draft
+    line published unvalidated. Plan speakers must be canonicalized through
+    this helper *before* the character pipeline runs.
+    """
+    resolved = resolve_backend_character_id(raw)
+    if resolved and resolved in CHARACTER_AGENTS:
+        return resolved
+    return None
+
+
+def resolve_playable_character_id(raw: str | None) -> str:
+    """Strictly map frontend id / display name / backend name → canonical name.
+
+    Unlike ``resolve_backend_character_id`` (lenient, used for resume paths),
+    this raises ``UnknownCharacterError`` for anything outside the playable
+    cast so a typo can never become Walter White's voice.
+    """
+    resolved = canonical_playable_character_id(raw)
+    if resolved is None:
+        logger.error(
+            "Unknown character id %r rejected at chat entry (known: %s)",
+            raw,
+            ", ".join(sorted(FRONTEND_TO_BACKEND_ID)),
+        )
+        raise UnknownCharacterError(raw)
+    return resolved
+
+
+def canonicalize_plan_speakers(
+    events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Rewrite beat-plan speaker ids to canonical names; drop unresolved ones.
+
+    Returns ``(events, dropped)``. Each dropped entry carries the event type,
+    the raw id and a machine-readable ``reason`` / ``code`` / ``retryable``
+    (same shape as the T12 turn-rejection log) so a skipped draft speaker is
+    distinguishable from a present-speaker drop.
+
+    2026-09-18 (T14): the planner sometimes wrote short ids ("jesse"). Those
+    missed ``CHARACTER_AGENTS`` (keyed by canonical names), so the Character
+    Policy block was skipped and the planner's draft line published as-is.
+    Only dialogue-bearing ``agent_speak`` / ``agent_think`` events are
+    removed here — a line for a speaker with no Character Policy must never
+    reach the player; other event types keep their id for bookkeeping.
+    """
+    canonical: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            canonical.append(event)
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict):
+            canonical.append(event)
+            continue
+        raw_id = data.get("character_id")
+        resolved = canonical_playable_character_id(
+            str(raw_id) if raw_id is not None else None
+        )
+        evt_type = str(event.get("type") or "")
+        if resolved is None:
+            if evt_type in ("agent_speak", "agent_think"):
+                dropped.append({
+                    "type": evt_type,
+                    "character_id": str(raw_id or ""),
+                    "reason": "unresolved_speaker",
+                    "code": "unresolved_speaker",
+                    "retryable": True,
+                })
+                continue
+            canonical.append(event)
+            continue
+        if str(raw_id or "") != resolved:
+            canonical.append({**event, "data": {**data, "character_id": resolved}})
+        else:
+            canonical.append(event)
+    return canonical, dropped
 
 
 def apply_character_thinking(
@@ -427,7 +623,7 @@ responding to a user message.
 EMIT A SINGLE JSON ARRAY — one object per character turn in order:
 [
   {
-    "character_id": "Walter White" | "Jesse Pinkman" | "Skyler White" | "Saul Goodman" | "Mike Ehrmantraut" | "Gus Fring" | "Hank Schrader",
+    "character_id": "Walter White" | "Jesse Pinkman" | "Skyler White" | "Saul Goodman" | "Mike Ehrmantraut" | "Gus Fring" | "Hank Schrader" | "Marie Schrader",
     "content": "<spoken dialogue only — in character, 2-6 sentences>",
     "emotion_state": "<calm|tense|angry|fearful|manipulative|guilty|resigned|desperate>",
     "gif_search_query": "<English visual emotion search phrase>",
@@ -452,7 +648,7 @@ RULES:
 DIRECTOR_SYSTEM_PROMPT = """\
 You are the **Director** of a Breaking Bad interactive roleplay.
 Known characters: Walter White, Jesse Pinkman, Skyler White, Saul Goodman,
-Mike Ehrmantraut, Gus Fring, Hank Schrader.
+Mike Ehrmantraut, Gus Fring, Hank Schrader, Marie Schrader.
 Your job is NOT to write prose.  Your job is to orchestrate character agents
 and emit structured events for the client.  For every narrative beat you must:
 BEAT PLANNING
@@ -508,7 +704,8 @@ RULES:
 - scene_change is only emitted when the narrative location actually shifts.
 - world_state_delta must always appear as the last event in a beat.
 - character_id must be exactly "Walter White", "Jesse Pinkman", "Skyler White",
-  "Saul Goodman", "Mike Ehrmantraut", "Gus Fring", or "Hank Schrader" — no variations.
+  "Saul Goodman", "Mike Ehrmantraut", "Gus Fring", "Hank Schrader", or
+  "Marie Schrader" — no variations.
 - recommended_model must be "stepfun/step-3.7-flash" on every event.
 - NEVER put stage notes inside agent_speak.content parentheses. Use agent_act.
 """ + mckee_story.mckee_system_addon()
@@ -523,6 +720,7 @@ CHARACTER_AGENTS: dict[str, Any] = {
     "Mike Ehrmantraut": MikeEhrmantraut,
     "Gus Fring": GusFring,
     "Hank Schrader": HankSchrader,
+    "Marie Schrader": MarieSchrader,
 }
 
 # Crew mention → cast (word boundaries; no bare "dea").
@@ -534,6 +732,7 @@ _CREW_MENTION_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bjesse\b", "Jesse Pinkman"),
     (r"\bhank\b", "Hank Schrader"),
     (r"\bschrader\b", "Hank Schrader"),
+    (r"\bmarie\b", "Marie Schrader"),
 )
 
 # CJK names have no word boundary; match as substrings on the original text.
@@ -545,6 +744,7 @@ _CREW_CJK_ALIASES: tuple[tuple[str, str], ...] = (
     ("索尔", "Saul Goodman"),
     ("斯凯勒", "Skyler White"),
     ("汉克", "Hank Schrader"),
+    ("玛丽", "Marie Schrader"),
 )
 
 _GUN_GIF_RE = re.compile(r"gun|pistol|rifle|weapon|firearm|举枪|手枪", re.IGNORECASE)
@@ -563,8 +763,12 @@ def sanitize_direct_gif_query(query: str | None) -> str | None:
 
 
 def crew_participants_from_message(character_id: str, user_message: str, *, cap: int = 3) -> list[str]:
-    """Return backend character names for a crew turn (primary first, max cap)."""
-    backend_primary = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
+    """Return backend character names for a crew turn (primary first, max cap).
+
+    Raises ``UnknownCharacterError`` when the primary id is not playable —
+    crew must never quietly answer as Walter White.
+    """
+    backend_primary = resolve_playable_character_id(character_id)
     participants: list[str] = [backend_primary]
     raw = user_message or ""
     text_lower = raw.lower()
@@ -1382,6 +1586,32 @@ class DirectorAgent:
             f"{voice_example}"
         )
 
+    @staticmethod
+    def _character_speak_requirement(
+        player_actor: str, allowed_actors: list[str] | None
+    ) -> str:
+        """Corrective note for the bounded re-plan (2026-09-18).
+
+        The planner sometimes answers a beat with narration/acts only, or
+        writes the player's own line; both get dropped and the beat has no
+        publishable character turn. Name the cast that is actually allowed to
+        speak so the regeneration has something concrete to obey.
+        """
+        cast = [
+            str(actor)
+            for actor in (allowed_actors or [])
+            if actor and str(actor) != player_actor
+        ]
+        cast_text = ", ".join(cast) if cast else "a present non-player character"
+        player_text = player_actor or "the player"
+        return (
+            "The previous plan for this beat was rejected because it contained "
+            "no agent_speak from a character who may speak here. Regenerate the "
+            f"beat and include one agent_speak whose character_id is exactly one "
+            f"of: {cast_text}. Never write dialogue, thoughts or decisions for "
+            f"the player ({player_text})."
+        )
+
     async def _plan_beat_events(
         self,
         *,
@@ -1396,8 +1626,14 @@ class DirectorAgent:
         language: str,
         zh_guard: bool,
         previous_scene_desc: str | None = None,
+        correction: str | None = None,
     ) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None, list[AgentEvent]]:
-        """LLM plan + JSON repair. On failure return (None, None, error events)."""
+        """LLM plan + JSON repair. On failure return (None, None, error events).
+
+        ``correction`` is a bounded regeneration note (2026-09-18): when the
+        first plan contains no usable character ``agent_speak``, the caller
+        re-plans once with this instruction instead of failing the whole beat.
+        """
         lang_directive = _language_directive(language, zh_guard)
         beat_prompt = (
             f"{lang_directive}\n\n"
@@ -1405,6 +1641,8 @@ class DirectorAgent:
             f"Outline:\n{outline}\n\n"
             f"Current scene (beat {beat_index + 1}/{total_beats}): {scene_desc}\n\n"
         )
+        if correction:
+            beat_prompt += f"CORRECTION REQUIRED: {correction}\n\n"
         if active_character_id:
             beat_prompt += (
                 f"Active perspective character: {active_character_id}\n"
@@ -1464,19 +1702,26 @@ class DirectorAgent:
             {"role": "user", "content": beat_prompt},
         ]
         try:
-            llm_response = await self.provider.call_model(messages, self.active_route)
-        except Exception:
+            llm_response = await call_model_with_transient_retry(
+                self.provider, messages, self.active_route
+            )
+        except Exception as exc:
             logger.exception("Beat %d LLM call failed", beat_index + 1)
+            retry_exhausted = is_transient_llm_error(exc)
             return None, None, [
                 AgentEvent(
                     type="error",
                     data={
                         "message": _status_message(
-                            "beat_llm_failed",
+                            "beat_llm_retry_exhausted" if retry_exhausted else "beat_llm_failed",
                             language,
                             n=beat_index + 1,
                             route=self.active_route,
-                        )
+                        ),
+                        "code": (
+                            "beat_llm_retry_exhausted" if retry_exhausted else "beat_llm_failed"
+                        ),
+                        "retryable": retry_exhausted,
                     },
                 ),
                 self._beat_ready_event(beat_index, f"Beat {beat_index + 1} failed."),
@@ -1516,8 +1761,8 @@ class DirectorAgent:
                 },
             ]
             try:
-                repaired = await self.provider.call_model(
-                    repair_messages, self.active_route, max_tokens=4096
+                repaired = await call_model_with_transient_retry(
+                    self.provider, repair_messages, self.active_route, max_tokens=4096
                 )
                 events, repair_contract = parse_beat_plan(repaired)
                 if repair_contract and not contract_raw:
@@ -1533,6 +1778,8 @@ class DirectorAgent:
                         "message": _status_message(
                             "beat_parse_failed", language, route=self.active_route
                         ),
+                        "code": "beat_parse_failed",
+                        "retryable": False,
                         "route": self.active_route,
                         "preview": parse_preview(llm_response),
                     },
@@ -1555,6 +1802,7 @@ class DirectorAgent:
         voice_example: str | None = None,
         language: str = "en",
         zh_guard: bool = True,
+        require_character_speak: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         """
         Generate a single narrative beat with fine-grained events.
@@ -1570,6 +1818,10 @@ class DirectorAgent:
         Callers that already hold the parsed outline (e.g. ``process()``)
         should pass it to avoid re-parsing the outline per beat (O(n²) → O(n)).
         Falls back to parsing ``outline`` only if not supplied.
+
+        ``require_character_speak`` (runtime v1 only): a beat that will be
+        published as a story turn must contain at least one character line.
+        When set, a plan without one is regenerated once in the same beat.
         """
         if scene_desc is None:
             scene_desc = self._parse_outline(outline)[beat_index]
@@ -1598,40 +1850,159 @@ class DirectorAgent:
                     "mckee_role": mckee_role,
                 },
             )
-        events, contract_raw, plan_errors = await self._plan_beat_events(
-            task=task,
-            outline=outline,
-            beat_index=beat_index,
-            total_beats=total_beats,
-            scene_desc=scene_desc,
-            mckee_role=mckee_role,
-            active_character_id=active_character_id,
-            voice_example=voice_example,
-            language=language,
-            zh_guard=zh_guard,
-            previous_scene_desc=context.get("previous_scene_desc") or None,
-        )
-        if plan_errors:
-            for ev in plan_errors:
-                yield ev
-            return
-        assert events is not None
+        from agents.continuity_board import normalize_character_id
 
         player_actor = str(context.get("player_actor_id") or "")
         allowed_actors = context.get("allowed_actor_ids")
-        if player_actor or allowed_actors is not None:
-            from agents.continuity_board import normalize_character_id
-            filtered = []
-            for candidate in events:
-                data = candidate.get("data")
-                actor = normalize_character_id(str(data.get("character_id") or "")) if isinstance(data, dict) else ""
-                if actor and (actor == player_actor or (allowed_actors is not None and actor not in allowed_actors)):
+        # A plan with no publishable character line cannot become a story beat
+        # (2026-09-18 incident: the planner sometimes emitted only narration /
+        # acts, or spoke for the player, and the whole beat failed downstream
+        # with "no_accepted_character_turn"). Re-plan once, inside the same
+        # beat and the same billing, instead of losing the turn.
+        correction: str | None = None
+        events: list[dict[str, Any]] = []
+        contract_raw: dict[str, Any] | None = None
+        max_plan_attempts = BEAT_SPEAK_REGEN_ATTEMPTS if require_character_speak else 1
+        for plan_attempt in range(max_plan_attempts):
+            planned, contract_raw, plan_errors = await self._plan_beat_events(
+                task=task,
+                outline=outline,
+                beat_index=beat_index,
+                total_beats=total_beats,
+                scene_desc=scene_desc,
+                mckee_role=mckee_role,
+                active_character_id=active_character_id,
+                voice_example=voice_example,
+                language=language,
+                zh_guard=zh_guard,
+                previous_scene_desc=context.get("previous_scene_desc") or None,
+                correction=correction,
+            )
+            if plan_errors:
+                retryable_error = any(
+                    ev.type == "error" and bool((ev.data or {}).get("retryable"))
+                    for ev in plan_errors
+                )
+                if (
+                    require_character_speak
+                    and retryable_error
+                    and plan_attempt + 1 < max_plan_attempts
+                ):
+                    # The in-beat transient retry was exhausted. A beat that
+                    # must publish a character line gets one more plan attempt
+                    # (same command/billing) instead of failing the turn.
+                    correction = (
+                        "The previous plan attempt failed at the transport level. "
+                        "Regenerate the beat JSON now."
+                    )
+                    logger.warning(
+                        "Beat %d: plan attempt %d exhausted its transient retry; "
+                        "regenerating once",
+                        beat_index + 1,
+                        plan_attempt + 1,
+                    )
                     continue
-                filtered.append(candidate)
-            events = filtered
+                for ev in plan_errors:
+                    yield ev
+                return
+            assert planned is not None
 
-        events = hoist_perspective_speak(events, active_character_id)
-        events = self._prepare_beat_events(events)
+            # T14: plan speakers must enter the Character Policy pipeline
+            # under canonical names. Short ids ("jesse") used to miss
+            # CHARACTER_AGENTS, skip policy/validation and publish the
+            # planner draft unvalidated; unresolved speakers are dropped here
+            # with a reason (never published as drafts). Dropping them also
+            # lets the existing no-speak regeneration below run when nothing
+            # publishable is left.
+            planned, unresolved_speakers = canonicalize_plan_speakers(planned)
+            if unresolved_speakers:
+                unresolved_sink = context.setdefault("turn_rejection_log", [])
+                if isinstance(unresolved_sink, list):
+                    unresolved_sink.extend(unresolved_speakers)
+                logger.warning(
+                    "Beat %d (plan attempt %d): dropped %d planned event(s) with "
+                    "unresolved speaker(s): %s",
+                    beat_index + 1,
+                    plan_attempt + 1,
+                    len(unresolved_speakers),
+                    unresolved_speakers,
+                )
+
+            if player_actor or allowed_actors is not None:
+                filtered = []
+                rejected: list[dict[str, str]] = []
+                for candidate in planned:
+                    data = candidate.get("data")
+                    actor = normalize_character_id(str(data.get("character_id") or "")) if isinstance(data, dict) else ""
+                    if actor and (actor == player_actor or (allowed_actors is not None and actor not in allowed_actors)):
+                        reason = (
+                            "speaker_is_player"
+                            if actor == player_actor
+                            else "speaker_not_present"
+                        )
+                        rejected.append({
+                            "type": str(candidate.get("type") or ""),
+                            "character_id": actor,
+                            "reason": reason,
+                        })
+                        continue
+                    filtered.append(candidate)
+                if rejected:
+                    logger.warning(
+                        "Beat %d (plan attempt %d): dropped %d planned event(s) for off-limits actors: %s",
+                        beat_index + 1,
+                        plan_attempt + 1,
+                        len(rejected),
+                        rejected,
+                    )
+                planned = filtered
+
+            planned = hoist_perspective_speak(planned, active_character_id)
+            planned = self._prepare_beat_events(planned)
+            logger.info(
+                "Beat %d (plan attempt %d) planned events: %s",
+                beat_index + 1,
+                plan_attempt + 1,
+                [
+                    {
+                        "type": str(candidate.get("type") or ""),
+                        "character_id": normalize_character_id(
+                            str((candidate.get("data") or {}).get("character_id") or "")
+                        ),
+                    }
+                    for candidate in planned
+                ],
+            )
+            events = planned
+            if not require_character_speak:
+                break
+            if any(event.get("type") == "agent_speak" for event in events):
+                break
+            if plan_attempt + 1 >= max_plan_attempts:
+                break
+            correction = self._character_speak_requirement(
+                player_actor, allowed_actors
+            )
+            logger.warning(
+                "Beat %d: plan attempt %d has no character agent_speak; "
+                "regenerating once with correction (player=%s cast=%s)",
+                beat_index + 1,
+                plan_attempt + 1,
+                player_actor or "(none)",
+                [
+                    actor
+                    for actor in (allowed_actors or [])
+                    if actor and actor != player_actor
+                ],
+            )
+        if require_character_speak and not any(
+            event.get("type") == "agent_speak" for event in events
+        ):
+            logger.warning(
+                "Beat %d: regeneration still produced no character agent_speak; "
+                "continuing so the renderer can report the rejection",
+                beat_index + 1,
+            )
         # If language is zh but the planner still emitted English narrative,
         # rewrite those fields before character polish / yield.
         events = await self._rewrite_english_fields_to_zh(
@@ -1870,9 +2241,13 @@ class DirectorAgent:
                         draft_note = ""
                         scene_input = (
                             "Public scene: " + str(context.get("public_scene") or continuity_board.get("location") or "")
-                            + "\nReact only to your permitted facts and earlier public lines.\n"
+                            + "\nYour action.verb MUST be one of: look_at, turn_to, gesture, "
+                            "sit, stand, idle, idle_tense — world rules own physical changes "
+                            "(open/close/walk/enter/exit/hand over) and will refuse them.\n"
+                            + "React only to your permitted facts and earlier public lines.\n"
                         )
-                    sub_result = await character_agent.respond_structured(
+                    sub_result = await call_with_transient_retry(
+                        character_agent.respond_structured,
                         context=peer_context,
                         user_message=(
                             f"{_language_directive(language, zh_guard)}\n\n"
@@ -2002,13 +2377,30 @@ class DirectorAgent:
                     )
                     v_ok = should_publish_turn(basic, world)
                     if not v_ok:
+                        issues = [
+                            iss.model_dump() for iss in (basic.issues + world.issues)
+                        ]
                         logger.warning(
                             "Beat %d world/turn validation failed for %s mode=%s: %s",
                             beat_index + 1,
                             character_id,
                             world_mode,
-                            [iss.model_dump() for iss in (basic.issues + world.issues)],
+                            issues,
                         )
+                        rejection_sink = context.get("turn_rejection_log")
+                        if isinstance(rejection_sink, list):
+                            rejection_sink.append({
+                                "character_id": character_id,
+                                "reason": "turn_validation_failed",
+                                "issues": [
+                                    {
+                                        "code": issue.get("code"),
+                                        "severity": issue.get("severity"),
+                                        "message": issue.get("message"),
+                                    }
+                                    for issue in issues
+                                ],
+                            })
                         events, i = drop_character_group(
                             events,
                             backend_character_id=character_id,
@@ -2054,11 +2446,21 @@ class DirectorAgent:
                                 character_id,
                                 beat_index + 1,
                             )
-                except Exception:
+                except Exception as exc:
                     logger.warning(
-                        "Character sub-agent call failed for %s; dropping unpublished draft",
+                        "Character sub-agent call failed for %s; dropping unpublished "
+                        "draft (%s: %s)",
                         character_id,
+                        type(exc).__name__,
+                        exc,
                     )
+                    rejection_sink = context.get("turn_rejection_log")
+                    if isinstance(rejection_sink, list):
+                        rejection_sink.append({
+                            "character_id": character_id,
+                            "reason": "character_call_failed",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        })
                     character_failures.append(character_id)
                     events, i = drop_character_group(
                         events,
@@ -2067,6 +2469,32 @@ class DirectorAgent:
                     )
                     char_thinking = None
                     continue
+            else:
+                # Invariant (T14): canonicalization above removed unresolved
+                # speakers from the plan. If one still reaches this loop, the
+                # draft must not publish — drop it and record the reason
+                # instead of falling through to the "purify and publish" path.
+                logger.warning(
+                    "Beat %d: dropping agent_speak with unresolved speaker %r; "
+                    "draft lines must not publish without Character Policy",
+                    beat_index + 1,
+                    character_id,
+                )
+                unresolved_sink = context.get("turn_rejection_log")
+                if isinstance(unresolved_sink, list):
+                    unresolved_sink.append({
+                        "character_id": character_id,
+                        "reason": "unresolved_speaker",
+                        "code": "unresolved_speaker",
+                        "retryable": True,
+                    })
+                events, i = drop_character_group(
+                    events,
+                    backend_character_id=character_id,
+                    speak_index=i,
+                )
+                char_thinking = None
+                continue
 
             # Always purify speak content (accepted turns only reach here).
             cleaned = sanitize_speak_content(str(evt_data.get("content") or ""))
@@ -2121,6 +2549,7 @@ class DirectorAgent:
                 type="error",
                 data={
                     "message": _status_message("turn_rejected", language),
+                    "code": "character_subagent_failed",
                     "failed_characters": character_failures,
                     "retryable": True,
                 },
@@ -2568,10 +2997,15 @@ class DirectorAgent:
                 tool_executed, tool_log, updated_relationship_state }
             For crew mode:
               { participants, scene_goal, tension_note, debate_logs }
+        Raises:
+            UnknownCharacterError: the id is not in the playable cast.
         """
         mode = context.get("mode", "direct")
         if mode not in {"direct", "crew"}:
             raise ValueError("Independent chat mode must be direct or crew")
+        # Fail loudly on any id outside the playable cast. A typo must never
+        # silently become Walter White's voice (see CONTEXT.md "Marie").
+        resolve_playable_character_id(character_id)
         # Shared character code must not implicitly attach a Story save. The
         # Story renderer has its own explicit world/ActorView entry point.
         allowed = {
@@ -2593,10 +3027,8 @@ class DirectorAgent:
         session_factory: Any = None,
     ) -> dict[str, Any]:
         """Direct-mode: lean chat stack (not the Story performance pipeline)."""
-        backend_id = FRONTEND_TO_BACKEND_ID.get(character_id, "Walter White")
-        character_cls = CHARACTER_AGENTS.get(backend_id)
-        if character_cls is None:
-            character_cls = CHARACTER_AGENTS["Walter White"]
+        backend_id = resolve_playable_character_id(character_id)
+        character_cls = CHARACTER_AGENTS[backend_id]
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
         llm_provider: str = context.get("llmProvider", "stepfun")

@@ -209,6 +209,7 @@ _BACKEND_NAME = {
     "mike": "Mike Ehrmantraut",
     "gus": "Gus Fring",
     "hank": "Hank Schrader",
+    "marie": "Marie Schrader",
 }
 
 

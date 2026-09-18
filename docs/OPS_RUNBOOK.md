@@ -288,6 +288,12 @@ The restored legacy backend tables had no RLS. `supabase/migrations/202609090330
 **VM expiry warning (2026-09-09, owner-confirmed console):** the VM (阿里云 华北6, `Docker-iirl`, 2C4G/50G, IP 121.89.90.68) **expires 2026-10-06 23:59:59**. It now hosts the canonical DB — if it lapses, prod dies AND `bb-postgres` data is lost. Renew before expiry, or migrate (dump → new host → repoint DNS).
 **DB backups:** nightly `/usr/local/bin/bb-backup.sh` on the VM (cron 15 19 * * * UTC = 北京 03:15) dumps `bb-postgres` to `/opt/backups/bb-YYYY-MM-DD.sql.gz`, 7-day retention, log `/var/log/bb-backup.log`. These live on the SAME disk as the DB — for real durability copy one off-box (e.g. `scp root@121.89.90.68:/opt/backups/bb-*.sql.gz .`) before any risky change.
 
+### DB schema guard & venv console scripts（2026-09-18）
+
+- 后端启动会校验 DB 的 alembic revision 是否等于迁移脚本 head（`backend/db/schema_check.py`，lifespan 里 `main._enforce_schema_current`）。落后时日志打印完整修复命令（含 `uv run python -m alembic upgrade head`）并以非 0 退出（uvicorn 报 `Application startup failed. Exiting.`，exit code 3）。APP_ENV=test / pytest 进程 / 非 PostgreSQL URL / 连不上 / 无 psycopg2 时安静跳过。
+- **本地 venv console script 的 shebang 是绝对路径**：目录含空格（`AI 产品`）或在 `uv sync` 之后改过目录名，`.venv/bin/alembic`、`.venv/bin/uvicorn` 的 shebang 就指向不存在的解释器。症状一：`uv run alembic ...` → `Failed to spawn: alembic`；症状二（更隐蔽）：`uv run uvicorn main:app` 静默回退到 Homebrew 的 uvicorn（另一个解释器），它没有 alembic 库。用 `head -1 backend/.venv/bin/alembic` 确认指向；处理：用 `uv run python -m alembic ...` / `uv run python -m uvicorn ...`（完全绕开 console script），或 `uv sync` 重装 venv 让 shebang 重写。
+- 生产 Dockerfile 的 CMD 本来就是 `alembic upgrade head && python3 start.py`，所以这条主要保本地和其他直起 uvicorn 的环境。
+
 ### Commits
 
 - English conventional commits.

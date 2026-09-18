@@ -193,3 +193,73 @@ describe('pending player text (P0 unconfirmed acknowledgement)', () => {
     assert.equal(blocks[1].pending, undefined)
   })
 })
+
+describe('player-facing stage directions (no engine tokens)', () => {
+  it('renders character_policy verbs as prose in the UI language', () => {
+    const events: StoryEvent[] = [
+      {
+        type: 'agent_act',
+        data: {
+          character_id: 'Skyler White',
+          action: 'look_at → walter',
+          target: 'walter',
+          source: 'character_policy',
+        },
+      },
+    ]
+    const zh = buildReadingBlocks(events, 'zh')
+    const en = buildReadingBlocks(events, 'en')
+    assert.equal(zh.length, 1)
+    assert.match(zh[0].text, /斯凯勒/)
+    assert.match(zh[0].text, /沃尔特/)
+    assert.doesNotMatch(zh[0].text, /look_at|→|walter/)
+    assert.match(en[0].text, /Skyler looks at Walter/)
+    assert.doesNotMatch(en[0].text, /look_at|→/)
+  })
+
+  it('drops unknown machine verbs instead of printing them', () => {
+    const blocks = buildReadingBlocks([
+      {
+        type: 'agent_act',
+        data: {
+          character_id: 'Mike Ehrmantraut',
+          action: 'phase_through_wall → hank',
+          target: 'hank',
+          source: 'character_policy',
+        },
+      },
+    ], 'zh')
+    assert.equal(blocks.length, 0)
+  })
+
+  it('keeps legacy prose actions', () => {
+    const blocks = buildReadingBlocks([act('Walter White', 'wipes the condenser')], 'en')
+    assert.equal(blocks.length, 1)
+    assert.match(blocks[0].text, /wipes the condenser/)
+  })
+})
+
+describe('location labels', () => {
+  it('never puts raw internal location tokens in the HUD or lore panel', () => {
+    const zh = extractOnStageLore([
+      {
+        type: 'scene_change',
+        data: { to_scene: 'scene', description: '故事在此刻展开。' },
+      },
+    ], 'zh')
+    assert.equal(zh.location, '现场')
+
+    const en = extractOnStageLore([
+      { type: 'scene_change', data: { to_scene: 'rv', description: 'x' } },
+    ], 'en')
+    assert.equal(en.location, 'the RV')
+
+    const legacy = extractOnStageLore([
+      {
+        type: 'scene_change',
+        data: { to_scene: 'Los Pollos Hermanos office', description: 'x' },
+      },
+    ], 'en')
+    assert.equal(legacy.location, 'Los Pollos Hermanos office')
+  })
+})

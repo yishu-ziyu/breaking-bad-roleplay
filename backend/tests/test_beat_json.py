@@ -96,3 +96,50 @@ def test_dec0005_contract_envelope():
     assert contract is not None
     assert contract["beat_id"] == "beat_01"
     assert contract["present_characters"] == ["walter", "skyler"]
+
+
+# ---------------------------------------------------------------------------
+# Salvage: an agent_speak that closes its brace before "recommended_model"
+# leaves a dangling key inside the events array. Observed twice on
+# 2026-09-18 (MiniMax-M3) and both times it lost the whole beat.
+# ---------------------------------------------------------------------------
+
+_MALFORMED_SPEAK_PLAN = (
+    '{"contract":{"beat_id":"beat_01","dramatic_role":"setup",'
+    '"present_characters":["walter","jesse"]},'
+    '"events":['
+    '{"type":"agent_act","data":{"character_id":"Jesse Pinkman","action":"look_at"},'
+    '"recommended_model":"minimax/MiniMax-M3"},'
+    '{"type":"agent_speak","data":{"character_id":"Jesse Pinkman",'
+    '"content":"Kill the lights."},"emotion_state":"tense",'
+    '"gif_search_query":"jesse tense"},"recommended_model":"minimax/MiniMax-M3"},'
+    '{"type":"world_state_delta","data":{"deltas":[{"target":"Jesse Pinkman",'
+    '"field":"fear","old_value":"low","new_value":"high"}]},'
+    '"recommended_model":"minimax/MiniMax-M3"}]}'
+)
+
+
+def test_malformed_speak_close_is_salvaged_with_dialogue():
+    events, contract = parse_beat_plan(_MALFORMED_SPEAK_PLAN)
+
+    types = [e["type"] for e in events]
+    assert types == ["agent_act", "agent_speak", "world_state_delta"]
+    assert events[1]["data"]["content"] == "Kill the lights."
+    assert contract is not None and contract["beat_id"] == "beat_01"
+
+
+def test_truncated_plan_keeps_completed_events():
+    truncated = _MALFORMED_SPEAK_PLAN[: _MALFORMED_SPEAK_PLAN.index("world_state_delta")]
+
+    events, _contract = parse_beat_plan(truncated)
+
+    assert [e["type"] for e in events] == ["agent_act", "agent_speak"]
+
+
+def test_salvage_ignores_objects_without_type():
+    raw = (
+        '{"events":[{"reason":"no type here"},'
+        '{"type":"agent_think","data":{"character_id":"Jesse Pinkman",'
+        '"thought_content":"hmm"},"recommended_model":"x"}]}'
+    )
+    assert [e["type"] for e in parse_beat_events(raw)] == ["agent_think"]

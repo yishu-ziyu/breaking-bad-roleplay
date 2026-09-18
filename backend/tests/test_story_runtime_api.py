@@ -183,3 +183,54 @@ async def test_plot_graph_excludes_messages_from_an_abandoned_branch(story_api):
     assert graph.status_code == 200, graph.text
     # Opening + replacement branch. The abandoned future line must not count.
     assert graph.json()["summary"]["spoken_lines"] == 2
+
+
+def _sse_events(body: str) -> list[dict]:
+    return [
+        json.loads(line[len("data: "):])
+        for line in body.splitlines()
+        if line.startswith("data: ")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("language", "forbidden", "expected"),
+    [
+        ("zh", ("scene", "walter"), ("沃尔特", "现场")),
+        ("en", ("at scene", "walter"), ("Walter", "Story scene")),
+    ],
+)
+async def test_fresh_conversation_opening_has_no_internal_ids(
+    story_api, language, forbidden, expected,
+):
+    client, _charge = story_api
+    created = await client.post("/api/session/create", json={
+        "title": "Test",
+        "task_prompt": "Original premise",
+        "active_character_id": "walter",
+        "scenario_id": "conversation",
+        "language": language,
+    })
+    data = created.json()
+    headers = {"X-Session-Key": data["session_key"]}
+    streamed = await client.get(
+        f"/api/session/{data['session_id']}/stream?language={language}",
+        headers=headers,
+    )
+    assert streamed.status_code == 200, streamed.text
+
+    change = next(
+        event for event in _sse_events(streamed.text)
+        if event["type"] == "scene_change"
+    )
+    payload = change["data"]
+    description = payload["description"]
+
+    for token in forbidden:
+        assert token not in description
+    for name in expected:
+        assert name in description or name in payload["to_scene"]
+    assert payload["to_scene"] != "scene"
+    assert payload["from_scene"] != "scene"
+    assert "walter" not in payload["to_scene"].lower()

@@ -88,10 +88,30 @@ The frontend runs on `http://localhost:5176`.
 ```bash
 cd backend
 uv sync
-uvicorn main:app --reload --port 8001
+uv run python -m uvicorn main:app --reload --port 8001
 ```
 
 The FastAPI backend runs on `http://localhost:8001`.
+
+Schema is owned by Alembic — the app never creates tables at startup. Apply
+migrations before the first start (and after every pull that adds one):
+
+```bash
+cd backend
+uv run python -m alembic upgrade head
+```
+
+The backend checks the database revision at startup: when the database is
+behind the migration head it logs the exact upgrade command and exits with a
+non-zero status instead of serving `UndefinedColumnError` 500s later.
+
+> **Path caveat:** `uv run alembic ...` and `uv run uvicorn ...` execute the
+> venv console scripts, whose shebang is an absolute path baked in at install
+> time. If the repository path contains a space (or the folder was renamed
+> after `uv sync`), that shebang is broken, and `uv run` either fails with
+> `Failed to spawn: alembic` or silently falls back to another interpreter's
+> uvicorn. `uv run python -m alembic ...` / `uv run python -m uvicorn ...`
+> bypass the console scripts entirely.
 
 Make sure `.env` is configured in `backend/` with the required API keys (`MINIMAX_API_KEY`, `STEPFUN_API_KEY`, `DATABASE_URL`).
 

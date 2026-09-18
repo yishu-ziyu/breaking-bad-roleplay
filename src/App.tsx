@@ -19,12 +19,14 @@ import { GifCard } from './components/GifCard'
 import { PlotGraphPanel } from './components/PlotGraphPanel'
 import { AgentHarnessPanel } from './components/AgentHarnessPanel'
 import { ColdOpenLanding, type ColdOpenStartPayload, type KnowledgeTrack } from './components/ColdOpenLanding'
+import { StoryComingSoonNotice } from './components/StoryComingSoonNotice'
 import {
   DramaDecisionBar,
   dramaSuggestionsForBeat,
   type DramaSuggestion,
 } from './components/DramaDecisionBar'
 import { StorySceneBillboard } from './components/StorySceneBillboard'
+import { StoryFailureNotice } from './components/StoryFailureNotice'
 import { StoryReadingSurface } from './components/StoryReadingSurface'
 import { VoicePlayer } from './components/VoicePlayer'
 import { ConnectionChip, ConnectionSheet } from './components/ConnectionSheet'
@@ -34,6 +36,7 @@ import { authHeaders } from './lib/authHeaders'
 import { pickSceneUrl } from './lib/sceneBackgrounds'
 import { ElementSquare } from './lib/ElementSquare'
 import { applyPlaySurfaceToStorage } from './lib/playEntry'
+import { canEnterStory, playModeBlocked, reclaimVisitorStorySurface, resolveAuthoringMode } from './lib/storyAvailability'
 import { toDirectChatMemoryWire } from './lib/directChatMemory'
 import { getDirectWayfinders, isInspectableThinking } from './lib/directWayfinders'
 import { bubbleFromDirectPayload, bubblesFromCrewPayload } from './lib/directChatReply'
@@ -731,6 +734,28 @@ function migrateSurfaceBeforePaint(): void {
   writeLs('surface', next)
 }
 
+/**
+ * T10 follow-up: close the last way back into Story for visitors.
+ *
+ * The gate only refuses *clicks*, so a visitor who played before Story closed
+ * still has the board stored (`abq_enteredWorld=true` + Story surface) and a
+ * reload used to resume it. Reset that before `usePersistedState` hydrates
+ * `enteredWorld`, so the first frame is already the cold-open door — no story
+ * frame that flashes and then jumps away. Authors (`?authoring=1` / stored
+ * switch) keep their board. Decision + storage shape live in
+ * `reclaimVisitorStorySurface` (`src/lib/storyAvailability.ts`).
+ */
+function reclaimVisitorStorySurfaceBeforePaint(storyOpen: boolean): void {
+  reclaimVisitorStorySurface({
+    storyOpen,
+    store: {
+      readSurface: () => readLs<string | null>('surface', null),
+      readEnteredWorld: () => readLs<boolean>('enteredWorld', false),
+      writeEnteredWorld: (value) => writeLs('enteredWorld', value),
+    },
+  })
+}
+
 /* ------------------------------------------------------------------ */
 /*  App                                                               */
 /* ------------------------------------------------------------------ */
@@ -754,6 +779,22 @@ function App() {
   const language: Language = storedLanguage ?? defaultLanguage
   const t = uiText[language]
 
+  /* T10 (product decision 2026-09-18): Story stays closed to visitors — the
+   * STORY card and the 剧情 button show "剧情正在开发中" instead of entering the
+   * board. Authors keep it for local development: `?authoring=1` (persisted in
+   * localStorage `yishu_authoring_mode`) or `?authoring=0` to close it again.
+   * Resolved once per load, at runtime, so dev and the deployed build behave
+   * the same. Gate + copy live in `src/lib/storyAvailability.ts`. */
+  const [authoringMode] = useState(() => resolveAuthoringMode())
+  const storyOpen = canEnterStory(authoringMode)
+  /** Visitor pressed a blocked 剧情 entry in the settings drawer. */
+  const [storyClosedNotice, setStoryClosedNotice] = useState(false)
+
+  /* T10 follow-up: a pre-closure visitor may still have the Story board stored.
+   * Reclaim it before `usePersistedState` hydrates `enteredWorld` below, so the
+   * first paint is the cold-open door instead of the story frame. */
+  reclaimVisitorStorySurfaceBeforePaint(storyOpen)
+
   const [surface, setSurface] = usePersistedState<Surface>('surface', 'story', 0)
   const view: View = surface === 'story' ? 'story' : 'chat'
   const mode: ChatMode = surface === 'crew' ? 'crew' : 'direct'
@@ -765,7 +806,8 @@ function App() {
   const selectedChar = characters.find(c => c.id === selectedCharId) ?? characters[0]
   const threadKey = chatThreadKey(mode, selectedCharId)
 
-  // After migrateProductSurfaceBeforePaint, pre-v2 LS already has enteredWorld=false.
+  // Pre-v2 LS was reset by migrateProductSurfaceBeforePaint; a visitor's stored
+  // Story board by reclaimVisitorStorySurfaceBeforePaint (both run above).
   const [hasEnteredWorld, setHasEnteredWorld] = usePersistedState<boolean>('enteredWorld', false)
   /* Playbook F1/C1: knowledge track doubles as the onboarding-done flag (one tap);
      drama coach mark is one-shot. */
@@ -995,7 +1037,11 @@ function App() {
   }, [auth.user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Story state
-  const story = useStoryStream({ autoResume: hasEnteredWorld && surface === 'story' })
+  const story = useStoryStream({
+    autoResume: hasEnteredWorld && surface === 'story',
+    // Resume toasts / failure copy follow the live UI language.
+    language,
+  })
 
   useEffect(() => {
     const actor = story.playerActorId
@@ -1280,7 +1326,7 @@ function App() {
         return
       }
       story.setConnectionSessionId(bindId)
-      await story.startStory(
+      const started = await story.startStory(
         seed,
         selectedCharId,
         null,
@@ -1288,7 +1334,8 @@ function App() {
         bindId,
         scenarioId,
       )
-      setStoryTask('')
+      // A failed start keeps the opening so the retry entry can run it again.
+      if (started) setStoryTask('')
     } catch (e) {
       setCurtainRaised(false)
       setError(e instanceof Error ? e.message : String(e))
@@ -1302,6 +1349,27 @@ function App() {
   const handleRaiseCurtain = useCallback(async () => {
     await beginStoryStream(pendingStoryPrompt || storyTask, pendingStoryPrompt ? 'desert_crisis' : 'conversation')
   }, [beginStoryStream, pendingStoryPrompt, storyTask])
+
+  /* Retry entry for a story-level failure (nothing started / a beat refused).
+   * A failed start runs the SAME opening again — the cold-open prompt, or the
+   * text the player typed — so retry never asks for the setup twice. */
+  const handleRetryStoryStart = useCallback(() => {
+    const failure = story.sessionFailure
+    if (failure?.kind === 'beat_rejected' && story.sessionId) {
+      story.reconnect()
+      return
+    }
+    if (failure?.kind === 'resume_failed') {
+      // Re-open the saved story; never start a different one from here.
+      void story.retryResume()
+      return
+    }
+    if ((pendingStoryPrompt || storyTask).trim()) {
+      void handleRaiseCurtain()
+      return
+    }
+    story.reset()
+  }, [story, pendingStoryPrompt, storyTask, handleRaiseCurtain])
 
   /* ---- Cold open → cast → Story (default product surface) ----
    * Always seed storyTask first so free/prescribed choices share one path:
@@ -1317,6 +1385,9 @@ function App() {
   const [coldOpenError, setColdOpenError] = useState<string | null>(null)
 
   const handleColdOpenStart = useCallback(async (payload: ColdOpenStartPayload) => {
+    // T10 defense in depth: the closed STORY card never calls onStart, and if a
+    // future caller does, Story still must not open for visitors.
+    if (!storyOpen) return
     if (coldOpenStartingRef.current) return
     if (story.connectionState === 'connecting' || story.connectionState === 'streaming') return
     coldOpenStartingRef.current = true
@@ -1340,7 +1411,18 @@ function App() {
       coldOpenStartingRef.current = false
       setColdOpenStarting(false)
     }
-  }, [setHasEnteredWorld, setStoryCharacterId, setSurface, story.connectionState, setError])
+  }, [setHasEnteredWorld, setStoryCharacterId, setSurface, story.connectionState, setError, storyOpen])
+
+  /* T10: the settings drawer's view switch is a second way into Story. Route it
+   * through the same gate as the cold-open card and the play-mode bar. */
+  const requestSurface = useCallback((next: PlayMode) => {
+    if (playModeBlocked(next, storyOpen)) {
+      setStoryClosedNotice(true)
+      return
+    }
+    setStoryClosedNotice(false)
+    setSurface(next)
+  }, [storyOpen, setSurface, setStoryClosedNotice])
 
   /* ---- Chat send ---- */
   const updateMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -1767,6 +1849,7 @@ function App() {
             setColdOpenError(null)
             connection.setSheetOpen(true)
           }}
+          storyOpen={storyOpen}
           onLanguageChange={(lang) => setLanguage(lang)}
           starting={coldOpenStarting}
           error={coldOpenError}
@@ -1890,10 +1973,11 @@ function App() {
           <section>
             <span className="field-label">{t.view}</span>
             <div className="seg-control">
-              <button className={surface === 'story' ? 'active' : ''} onClick={() => setSurface('story')} aria-pressed={surface === 'story'}>{t.story}</button>
-              <button className={surface === 'direct' ? 'active' : ''} onClick={() => setSurface('direct')} aria-pressed={surface === 'direct'}>{t.direct}</button>
-              <button className={surface === 'crew' ? 'active' : ''} onClick={() => setSurface('crew')} aria-pressed={surface === 'crew'}>{t.crew}</button>
+              <button className={surface === 'story' ? 'active' : ''} onClick={() => requestSurface('story')} aria-pressed={surface === 'story'} aria-disabled={!storyOpen || undefined}>{t.story}</button>
+              <button className={surface === 'direct' ? 'active' : ''} onClick={() => requestSurface('direct')} aria-pressed={surface === 'direct'}>{t.direct}</button>
+              <button className={surface === 'crew' ? 'active' : ''} onClick={() => requestSurface('crew')} aria-pressed={surface === 'crew'}>{t.crew}</button>
             </div>
+            {storyClosedNotice && !storyOpen && <StoryComingSoonNotice language={language} />}
           </section>
 
           <section className="connection-sidebar-block">
@@ -1946,6 +2030,7 @@ function App() {
             <PlayModeBar
               value={surface as PlayMode}
               language={language}
+              storyOpen={storyOpen}
               onChange={(mode) => {
                 setSurface(mode)
                 setSidebarCollapsed(mode === 'story')
@@ -2031,7 +2116,17 @@ function App() {
             </div>
           )}
 
-          {story.connectionState === 'error' && (
+          {story.connectionState === 'error' && story.sessionFailure && (
+            <StoryFailureNotice
+              failure={story.sessionFailure}
+              language={language}
+              onRetry={handleRetryStoryStart}
+              onReset={story.reset}
+              resetLabel={t.restart}
+            />
+          )}
+
+          {story.connectionState === 'error' && !story.sessionFailure && (
             <div className="story-error">
               <p>
                 ⚠{' '}
@@ -2237,6 +2332,7 @@ function App() {
             <PlayModeBar
               value={surface as PlayMode}
               language={language}
+              storyOpen={storyOpen}
               onChange={(next) => {
                 setSurface(next)
                 setSidebarCollapsed(next === 'story')

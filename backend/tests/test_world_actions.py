@@ -4,7 +4,17 @@ from copy import deepcopy
 
 import pytest
 
-from scenes.world_state import ActionIntent, Item, WorldState, resolve_action
+from scenes.world_state import (
+    ActionIntent,
+    Item,
+    WorldState,
+    actor_label,
+    location_label,
+    opening_scene_text,
+    resolve_action,
+    resolution_text,
+    seed_world,
+)
 
 
 @pytest.fixture
@@ -191,3 +201,83 @@ def test_unresolved_promises_have_an_explicit_capacity_instead_of_unbounded_grow
     )
     assert not rejected.accepted
     assert rejected.reason == "too_many_open_promises"
+
+
+# ---------------------------------------------------------------------------
+# Player-facing presentation: internal ids never reach the manuscript.
+# world.location / world.present stay canonical machine values.
+# ---------------------------------------------------------------------------
+
+
+def test_fresh_conversation_opening_text_has_no_internal_ids():
+    world = seed_world(player_id="walter", scenario_id="conversation")
+
+    zh = opening_scene_text(world, "zh")
+    en = opening_scene_text(world, "en")
+
+    assert world.location == "scene"
+    assert "scene" not in zh
+    assert "walter" not in zh
+    assert "沃尔特" in zh
+    assert "at scene" not in en
+    assert "walter" not in en
+    assert "Walter" in en
+    # Location label is real prose, not the raw token.
+    assert location_label("scene", "zh") not in {"scene", ""}
+    assert location_label("scene", "en").lower() != "scene"
+
+
+def test_opening_cast_is_localized_for_each_language():
+    world = WorldState(
+        player_id="walter", location="rv", locations=["rv"],
+        present=["walter", "jesse"],
+    )
+
+    zh = opening_scene_text(world, "zh")
+    en = opening_scene_text(world, "en")
+
+    assert "沃尔特" in zh and "杰西" in zh
+    assert "walter" not in zh and "jesse" not in zh
+    assert "Walter" in en and "Jesse" in en
+    assert "rv" not in en.replace("RV", "")
+    assert "房车" in zh
+
+
+def test_actor_and_location_labels_have_readable_fallbacks():
+    assert actor_label("Walter White", "zh") == "沃尔特"
+    assert actor_label("mike", "zh") == "迈克"
+    assert actor_label("unknown_actor", "en") == "Unknown Actor"
+    assert location_label("desert", "zh") == "荒漠"
+    assert location_label("rv", "en") == "the RV"
+    assert location_label("custom_place", "en") == "Custom Place"
+
+
+def test_move_and_transfer_resolution_text_never_leaks_ids(world):
+    moved = resolve_action(world, ActionIntent(verb="move", destination="rv"))
+    assert moved.accepted
+    zh_move = resolution_text(moved, "zh")
+    en_move = resolution_text(moved, "en")
+    assert "房车" in zh_move
+    assert "rv" not in zh_move
+    assert "the RV" in en_move
+
+    transferred = resolve_action(
+        world, ActionIntent(verb="give", item_id="note", target_id="jesse"),
+    )
+    assert transferred.accepted
+    zh_transfer = resolution_text(transferred, "zh")
+    en_transfer = resolution_text(transferred, "en")
+    assert "便条" in zh_transfer
+    assert "杰西" in zh_transfer
+    assert "jesse" not in en_transfer
+    assert "Jesse" in en_transfer
+    assert "note" not in en_transfer
+
+
+def test_rejection_copy_is_localized_and_id_free(world):
+    rejected = resolve_action(world, ActionIntent(verb="give", item_id="cash", target_id="jesse"))
+    assert not rejected.accepted
+    zh = resolution_text(rejected, "zh")
+    en = resolution_text(rejected, "en")
+    assert "not_held" not in zh and "not_held" not in en
+    assert zh != en

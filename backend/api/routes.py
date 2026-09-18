@@ -21,7 +21,11 @@ from db.models import (
 )
 from agents.provider import ProviderFacade, MINIMAX_HOST_CN, MINIMAX_HOST_GLOBAL
 from agents.byok_presets import PROVIDER_PRESETS, preset_by_id, known_provider_ids
-from agents.director import DirectorAgent
+from agents.director import (
+    DirectorAgent,
+    UnknownCharacterError,
+    resolve_playable_character_id,
+)
 from agents.tts import TTSError, synthesize_character_speech
 from agents.voice_casting import CLONE_VOICE_IDS
 from agents.credential_context import (
@@ -95,6 +99,21 @@ async def _refund_failed_request(snapshot, *, operation: str) -> None:
         await refund_platform_quota(snapshot)
     except Exception:
         logger.exception("Quota refund failed after %s", operation)
+
+
+def _unknown_character_http_exception(
+    exc: UnknownCharacterError, *, context: str = "Chat"
+) -> HTTPException:
+    """Map an unknown character id to a typed 400 (no silent Walter)."""
+    logger.warning("%s rejected unknown character id %r", context, exc.character_id)
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": exc.code,
+            "message": f"Unknown character id {exc.character_id!r}. Pick a playable character.",
+            "characterId": exc.character_id,
+        },
+    )
 
 
 def _quota_http_exception(decision) -> HTTPException:
@@ -752,6 +771,19 @@ async def session_action(
 
     action = payload.action
 
+    # T9: an unknown switch_perspective target must fail loudly on every
+    # story path (legacy save and runtime v1), with the same contract as
+    # /api/chat (T4): 400 {code, message, characterId} + server log. Known
+    # characters keep their previous behavior; any following branch may still
+    # decide a known-but-absent character is not in the scene.
+    if action == "switch_perspective" and payload.target_character:
+        try:
+            resolve_playable_character_id(payload.target_character)
+        except UnknownCharacterError as exc:
+            raise _unknown_character_http_exception(
+                exc, context=f"Session {session_id} switch_perspective"
+            ) from exc
+
     if isinstance(getattr(session, "world_state", None), str) and action == "stop":
         from story.service import stop_turn
 
@@ -825,21 +857,12 @@ async def session_action(
                 status_code=400,
                 detail="target_character is required for switch_perspective action",
             )
-        # Persist canonical frontend short id when possible (walter/jesse/…).
-        from agents.director import (
-            BACKEND_TO_FRONTEND_ID,
-            FRONTEND_TO_BACKEND_ID,
-            resolve_backend_character_id,
-        )
+        # Unknown ids were rejected above (T9); persist the canonical
+        # frontend short id (walter/jesse/…), never the raw string.
+        from agents.director import BACKEND_TO_FRONTEND_ID
 
-        raw_target = payload.target_character.strip()
-        backend_name = resolve_backend_character_id(raw_target)
-        if backend_name and backend_name in BACKEND_TO_FRONTEND_ID:
-            session.active_character_id = BACKEND_TO_FRONTEND_ID[backend_name]
-        elif raw_target.lower() in FRONTEND_TO_BACKEND_ID:
-            session.active_character_id = raw_target.lower()
-        else:
-            session.active_character_id = raw_target
+        backend_name = resolve_playable_character_id(payload.target_character)
+        session.active_character_id = BACKEND_TO_FRONTEND_ID[backend_name]
         session.status = "active"
 
     elif action == "continue_chapter":
@@ -1043,7 +1066,7 @@ async def stream_session(
         return f"{pid}/{model}"
 
     if durable_story:
-        from story.renderer import render_turn
+        from story.renderer import StoryTurnRejected, render_turn
         from story.service import StoryConflict, claim_turn, release_turn, renew_claim
         try:
             claim = await claim_turn(
@@ -1080,6 +1103,21 @@ async def stream_session(
                                f"data: {event.model_dump_json()}\n\n").encode("utf-8")
             except asyncio.CancelledError:
                 return
+            except StoryTurnRejected as exc:
+                # 2026-09-18: a refused turn keeps its reason on the wire
+                # (code + retryable + detail), so the client and logs can tell
+                # "no character turn was accepted" from a transport failure.
+                logger.warning(
+                    "Story turn rejected for session %s: code=%s retryable=%s detail=%s",
+                    resolved_session_id, exc.code, exc.retryable, exc.detail,
+                )
+                event = AgentEvent(type="error", data={
+                    "message": "This turn could not be completed. Your committed progress is unchanged.",
+                    "code": exc.code,
+                    "retryable": exc.retryable,
+                    "detail": exc.detail,
+                })
+                yield f"event: error\ndata: {event.model_dump_json()}\n\n".encode("utf-8")
             except Exception:
                 logger.exception("Committed Story generation failed for session %s", resolved_session_id)
                 event = AgentEvent(type="error", data={
@@ -1530,6 +1568,13 @@ async def chat(
             detail=f"Invalid mode '{payload.mode}'. Expected 'direct' or 'crew'.",
         )
 
+    # Unknown ids fail before quota and before any model call. This covers the
+    # harness path too; the director enforces the same contract internally.
+    try:
+        resolve_playable_character_id(payload.characterId)
+    except UnknownCharacterError as exc:
+        raise _unknown_character_http_exception(exc) from exc
+
     snap = await _require_platform_quota(
         request,
         action="chat",
@@ -1641,6 +1686,11 @@ async def chat(
     except HTTPException:
         await _refund_failed_request(snap, operation="chat HTTP failure")
         raise
+    except UnknownCharacterError as exc:
+        # Defense in depth: the pre-quota check above should have caught this,
+        # but a director-side rejection must still surface as a typed 400.
+        await _refund_failed_request(snap, operation="chat unknown character")
+        raise _unknown_character_http_exception(exc) from exc
     except Exception:
         # Sanitize: never leak raw exception detail to the client.
         # Full traceback is preserved in server logs.

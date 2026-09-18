@@ -286,23 +286,23 @@ def resolution_text(result: Resolution, language: str) -> str:
             if effect["kind"] == "item_transferred":
                 label = result.state.items[effect["item_id"]].label
                 recipient = effect["to"]
-                names = {"jesse": "杰西", "walter": "沃尔特", "saul": "索尔", "gus": "古斯",
-                         "skyler": "斯凯勒", "hank": "汉克", "mike": "迈克"}
-                return (f"{label}已经交到{names.get(recipient, recipient)}手里。" if zh else
-                        f"{effect['item_id']} is now held by {recipient}.")
+                return (f"{label}已经交到{actor_label(recipient, language)}手里。" if zh else
+                        f"{label} is now held by {actor_label(recipient, language)}.")
             if effect["kind"] == "claim_made":
                 return f"你说：“{effect['text']}”" if zh else f"You said: “{effect['text']}”"
             if effect["kind"] == "promise_offered":
                 return ("你提出了承诺。对方尚未接受；说过的话已经留下记录。" if zh else
                         "You offered a promise. It is recorded, not yet a mutual agreement.")
             if effect["kind"] == "player_moved":
-                label = {"desert": "荒漠", "rv": "房车", "scene": "现场"}.get(effect["to"], effect["to"])
-                return f"你到了{label}。没有人自动跟来。" if zh else f"You moved to {effect['to']}. Nobody followed automatically."
+                label = location_label(effect["to"], language)
+                return f"你到了{label}。没有人自动跟来。" if zh else f"You moved to {label}. Nobody followed automatically."
             if effect["kind"] == "observed":
                 item = result.state.items.get(effect.get("item_id"))
                 if item:
-                    condition = {"intact": "完好", "damaged": "受损", "destroyed": "损毁"}[item.condition]
-                    return f"{item.label}：{condition}，目前在 {item.holder} 处。" if zh else f"{effect['item_id']}: {item.condition}, held by {item.holder}."
+                    condition = ({"intact": "完好", "damaged": "受损", "destroyed": "损毁"}[item.condition]
+                                 if zh else item.condition)
+                    return (f"{item.label}：{condition}，目前在 {actor_label(item.holder, language)} 处。" if zh
+                            else f"{item.label}: {condition}, held by {actor_label(item.holder, language)}.")
         return "你的行动已记录。眼前的局面等待下一步。" if zh else "Your action is recorded. The next move is yours."
     reasons = {
         "not_held": ("那件东西不在你手里。", "You are not holding that item."),
@@ -320,16 +320,91 @@ def resolution_text(result: Resolution, language: str) -> str:
     return pair[0 if zh else 1]
 
 
+# --- Player-facing presentation -------------------------------------------
+# The snapshot keeps canonical machine ids (location="scene",
+# present=["walter"]). Everything a player reads goes through these maps so
+# internal tokens never reach the manuscript, HUD or lore panel. Presentation
+# only: nothing here feeds resolve_action or the persisted snapshot.
+
+_LANG_EN = "en"
+_LANG_ZH = "zh"
+
+_ACTOR_LABELS: dict[str, dict[str, str]] = {
+    "walter": {_LANG_ZH: "沃尔特", _LANG_EN: "Walter"},
+    "jesse": {_LANG_ZH: "杰西", _LANG_EN: "Jesse"},
+    "skyler": {_LANG_ZH: "斯凯勒", _LANG_EN: "Skyler"},
+    "saul": {_LANG_ZH: "索尔", _LANG_EN: "Saul"},
+    "mike": {_LANG_ZH: "迈克", _LANG_EN: "Mike"},
+    "gus": {_LANG_ZH: "古斯", _LANG_EN: "Gus"},
+    "hank": {_LANG_ZH: "汉克", _LANG_EN: "Hank"},
+    "marie": {_LANG_ZH: "玛丽", _LANG_EN: "Marie"},
+}
+
+_LOCATION_LABELS: dict[str, dict[str, str]] = {
+    "scene": {_LANG_ZH: "现场", _LANG_EN: "Story scene"},
+    "desert": {_LANG_ZH: "荒漠", _LANG_EN: "the desert"},
+    "rv": {_LANG_ZH: "房车", _LANG_EN: "the RV"},
+}
+
+
+def _lang_key(language: str) -> str:
+    return _LANG_ZH if str(language or "").startswith("zh") else _LANG_EN
+
+
+def _humanize(value: str | None) -> str:
+    """Last-resort readable fallback: never echo an underscore machine token."""
+    return str(value or "").replace("_", " ").strip().title()
+
+
+def actor_label(value: str | None, language: str = "en") -> str:
+    """Player-facing name for an actor id."""
+    actor = normalize_actor_id(value)
+    labels = _ACTOR_LABELS.get(actor)
+    if labels:
+        return labels[_lang_key(language)]
+    return _humanize(actor or value)
+
+
+def location_label(value: str | None, language: str = "en") -> str:
+    """Player-facing name for a location id."""
+    raw = str(value or "").strip()
+    labels = _LOCATION_LABELS.get(raw.lower())
+    if labels:
+        return labels[_lang_key(language)]
+    return _humanize(raw)
+
+
+def _cast_line(world: WorldState, language: str) -> str:
+    """On-stage cast with the player marked as you; ids are never printed."""
+    zh = _lang_key(language) == _LANG_ZH
+    player = normalize_actor_id(world.player_id)
+    names: list[str] = []
+    for actor in world.present:
+        if normalize_actor_id(actor) == player:
+            labelled = actor_label(actor, language)
+            names.append(f"你（{labelled}）" if zh else f"you ({labelled})")
+        else:
+            names.append(actor_label(actor, language))
+    if not names:
+        names.append(actor_label(world.player_id, language))
+    return "、".join(names) if zh else ", ".join(names)
+
+
 def opening_scene_text(world: WorldState, language: str) -> str:
     """Player-facing opening prose derived only from committed world state."""
-    zh = language.startswith("zh")
+    zh = _lang_key(language) == _LANG_ZH
     if world.scenario_id == "desert_crisis":
         return (
             "新墨西哥荒漠，深夜。房车停在黑地里，杰西和你都在场；远处的车灯正在逼近。"
             if zh else
             "New Mexico desert, deep night. The RV sits in the dark with Jesse and you beside it; headlights are climbing closer."
         )
-    cast = "、".join(world.present) if zh else ", ".join(world.present)
-    if zh:
-        return f"场景从{world.location}开始。此刻在场：{cast or world.player_id}。"
-    return f"The scene opens at {world.location}. Present: {cast or world.player_id}."
+    cast = _cast_line(world, language)
+    if str(world.location).strip().lower() == "scene":
+        # "scene" is the placeholder for an un-authored custom story, not a
+        # place name: say the story opens here instead of naming the token.
+        return (f"故事在此刻展开。此刻在场：{cast}。" if zh else
+                f"The story opens here. On stage: {cast}.")
+    where = location_label(world.location, language)
+    return (f"故事从{where}开始。此刻在场：{cast}。" if zh else
+            f"The story opens at {where}. On stage: {cast}.")

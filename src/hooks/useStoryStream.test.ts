@@ -134,6 +134,49 @@ describe('story identity revision guard', () => {
   })
 })
 
+describe('useStoryStream resume notices follow the interface language', () => {
+  it('uses the shared zh/en copy instead of hard-coded English toasts', async () => {
+    const source = await (await import('node:fs/promises')).readFile(
+      new URL('./useStoryStream.ts', import.meta.url),
+      'utf8',
+    )
+    assert.doesNotMatch(source, /Your last session expired/)
+    assert.doesNotMatch(source, /Could not verify your last session/)
+    assert.match(source, /storyResumeNoticeCopy/)
+  })
+
+  it('takes the live UI language from the caller', async () => {
+    const source = await (await import('node:fs/promises')).readFile(
+      new URL('./useStoryStream.ts', import.meta.url),
+      'utf8',
+    )
+    assert.match(source, /language\?: string/, 'the hook must accept the UI language')
+    const app = await (await import('node:fs/promises')).readFile(
+      new URL('../App.tsx', import.meta.url),
+      'utf8',
+    )
+    assert.match(
+      app,
+      /useStoryStream\(\{\s*autoResume:[^}]*language\s*[,}]/,
+      'App must pass its live language into the hook',
+    )
+  })
+
+  it('classifies a failed resume as a story-level failure, not a raw error string', async () => {
+    const source = await (await import('node:fs/promises')).readFile(
+      new URL('./useStoryStream.ts', import.meta.url),
+      'utf8',
+    )
+    assert.match(source, /kind:\s*'resume_failed'/)
+    assert.match(source, /retryResume/)
+    assert.doesNotMatch(
+      source,
+      /setSessionError\(e instanceof Error \? e\.message : 'Failed to resume session'\)/,
+      'the raw English resume error must not be the only player-facing line',
+    )
+  })
+})
+
 describe('useStoryStream streamFailure contract (QA P0#1/#2)', () => {
   it('exposes a classified streamFailure shape on the hook API', async () => {
     // The hook module must export the failure taxonomy used by the error UI:

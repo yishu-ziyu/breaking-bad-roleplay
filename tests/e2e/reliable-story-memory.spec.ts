@@ -10,6 +10,10 @@ async function seed(page: Page, surface: 'story' | 'direct') {
       enteredWorld: true, productSurface: 'v3-mode-door', knowledgeTrack: 'fan',
       character: 'walter', language: 'zh', surface: mode,
     })) localStorage.setItem(`abq_${key}`, JSON.stringify(value))
+    // T10: a stored Story surface is reclaimed for visitors on load, so the
+    // story cases below opt in as authors. The Direct case keeps its surface
+    // as a visitor.
+    if (mode === 'story') localStorage.setItem('yishu_authoring_mode', '1')
     sessionStorage.setItem('p0-seeded', 'yes')
   }, surface)
 }
@@ -138,6 +142,8 @@ test('refresh resumes a pending committed command instead of asking the player t
     localStorage.setItem('abq_character', JSON.stringify('walter'))
     localStorage.setItem('abq_language', JSON.stringify('zh'))
     localStorage.setItem('abq_surface', JSON.stringify('story'))
+    // T10: author opt-in, or the stored Story surface is reclaimed pre-paint.
+    localStorage.setItem('yishu_authoring_mode', '1')
   })
   await installApi(page, { resumePending: true })
   await page.goto('/')

@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from api.routes import router as api_router
 from db.models import Base  # noqa: F401 — registers models with Base.metadata
+from db.schema_check import SchemaBehindError, ensure_schema_at_head
 import game.models  # noqa: F401 — game tables on the same Base
 
 # Configure logging before any application module uses a logger.
@@ -88,6 +89,25 @@ def _parse_allowed_origins(raw: str, app_env: str) -> list[str]:
     return []
 
 
+def _enforce_schema_current() -> None:
+    """Refuse to start when the database is behind the Alembic head.
+
+    Schema is owned by Alembic (see the lifespan comment). Without this guard
+    an old database only fails later, mid-request, with confusing errors such
+    as ``UndefinedColumnError: column "world_state" ... does not exist``. The
+    guard stays quiet for APP_ENV=test, pytest runs, non-PostgreSQL URLs and
+    unreachable databases — see db.schema_check.ensure_schema_at_head.
+    """
+    try:
+        ensure_schema_at_head(settings.database_url, app_env=settings.app_env)
+    except SchemaBehindError as exc:
+        # Log the full remediation (includes `uv run python -m alembic upgrade
+        # head`) before aborting. uvicorn turns a failed lifespan startup into
+        # a non-zero exit.
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # P3: fail fast on configurations that would silently corrupt billing
@@ -95,14 +115,13 @@ async def lifespan(app: FastAPI):
     _enforce_runtime_invariants()
 
     # Schema management is handled exclusively by Alembic. The app does NOT
-    # create tables at startup — run `alembic upgrade head` before starting
-    # the server (dev and prod alike). create_all was removed because it
-    # only creates missing tables and never applies subsequent migrations,
-    # which caused schema drift versus the Alembic history.
-    logger.info(
-        "DB schema must be initialised via `alembic upgrade head` before "
-        "starting the app; startup no longer calls Base.metadata.create_all."
-    )
+    # create tables at startup — run `uv run python -m alembic upgrade head`
+    # before starting the server (dev and prod alike). create_all was removed
+    # because it only creates missing tables and never applies subsequent
+    # migrations, which caused schema drift versus the Alembic history. The
+    # check below is what makes that requirement explicit at startup instead
+    # of surfacing as an UndefinedColumnError 500 on the first session.
+    _enforce_schema_current()
 
     # Initialise singletons so they share a single httpx client.
     from agents.provider import ProviderFacade

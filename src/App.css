@@ -993,6 +993,7 @@ textarea {
 .story-outline,
 .story-status,
 .story-error,
+.story-failure,
 .beat-paused {
   padding: 18px 20px;
   border: 1px solid var(--dn-border);
@@ -1001,6 +1002,65 @@ textarea {
   color: var(--dn-fg);
   backdrop-filter: blur(14px) saturate(0.85);
   -webkit-backdrop-filter: blur(14px) saturate(0.85);
+}
+
+/* Story-level failure card (session never created / beat refused).
+   Headline first, then the plain explanation, then one hot retry. */
+.story-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.story-failure__headline {
+  margin: 0;
+  color: var(--color-surface-yellow-soft);
+  font: 800 15px/1.35 var(--font-sans);
+  letter-spacing: 0.01em;
+}
+
+.story-failure__body {
+  margin: 0;
+  color: rgba(255, 247, 208, 0.78);
+  font: 400 13px/1.6 var(--font-sans);
+}
+
+.story-failure__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.story-failure__retry {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-gold);
+  color: var(--dn-bg);
+  font: 900 13px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.story-failure__retry:hover {
+  filter: brightness(1.06);
+}
+
+.story-failure__reset {
+  padding: 11px 20px;
+  border: 1px solid color-mix(in oklch, var(--dn-border) 80%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 247, 208, 0.72);
+  font: 700 13px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.story-failure__reset:hover {
+  border-color: var(--accent-gold);
+  color: var(--color-surface-yellow-soft);
 }
 
 /* Outline strip: less chrome than status/error/paused cards. */
@@ -5869,6 +5929,52 @@ button.story-event {
   background: rgba(12, 10, 8, 0.35);
 }
 
+/* T10: wrapper keeps the notice out of the pill's clipped, nowrap layout. */
+.play-mode-bar__stack {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.play-mode-bar__soon {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.72;
+}
+
+.play-mode-bar__notice {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: min(300px, 72vw);
+  margin: 0;
+}
+
+/* Shared by every blocked-story surface; inherits the surface text colour and
+   supplies its own chip so it reads on both the dark stage and the paper chat. */
+.story-coming-soon {
+  margin: 8px 0 0;
+  padding: 6px 9px;
+  border: 1px solid rgba(242, 199, 125, 0.45);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-refresh .story-coming-soon,
+.chat-header .story-coming-soon,
+.archive-settings .story-coming-soon {
+  border-color: rgba(28, 25, 20, 0.16);
+  background: rgba(28, 25, 20, 0.06);
+}
+
 .play-mode-bar button {
   margin: 0;
   padding: 5px 11px;
@@ -7461,6 +7567,25 @@ button.story-event {
 .badge-story::before { background: #4fc3f7; box-shadow: 0 0 8px #4fc3f7; }
 .badge-direct::before { background: #f2c77d; box-shadow: 0 0 8px #f2c77d; }
 .badge-crew::before { background: #d4a359; box-shadow: 0 0 8px #d4a359; }
+
+/* T10 (2026-09-18): Story is closed to visitors — visible marker on the card.
+   Amber on dark stays inside the world palette (COLOR_SCIENCE); it is a status
+   marker, not a choice hotspot. */
+.showcase-card__soon {
+  padding: 4px 10px;
+  border: 1px solid rgba(242, 199, 125, 0.5);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #f2c77d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.showcase-card__notice {
+  margin-top: 10px;
+  color: #f2c77d;
+}
 
 .showcase-card__bottom {
   position: relative;

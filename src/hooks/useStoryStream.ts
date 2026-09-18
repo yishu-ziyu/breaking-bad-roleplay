@@ -17,6 +17,12 @@ import {
 import { trimFeedForBeatRedraw, trimFeedThroughBeat } from '../lib/storyReading'
 import { buildStoryCommand } from '../lib/storyCommands'
 import {
+  storyResumeNoticeCopy,
+  type StoryFailure,
+  type StoryResumeNoticeKind,
+} from '../lib/storyFailureCopy'
+import { createStorySession, sessionFailureFromStart } from '../lib/storySessionStart'
+import {
   STOP_RETRY_LIMIT,
   classifyCommandReality,
   stopRetryDelay,
@@ -138,10 +144,10 @@ export async function pingSession(sid: string): Promise<SessionProbeResult> {
   }
 }
 
-/* ----- Auto-resume toast text (English copy; not localized.
- * This only fires when an existing saved session is gone). */
-const RESUME_EXPIRED_TOAST = 'Your last session expired (deleted or server reset). Start a new one.'
-const RESUME_RETRY_TOAST = 'Could not verify your last session. Try again when the server is reachable.'
+/* ----- Auto-resume toast text. Localized through storyResumeNoticeCopy with
+ * the live UI language (App's language prop), so a Chinese interface never
+ * shows the old hard-coded English line. Fires when an existing saved session
+ * is gone or could not be verified. */
 /* P0 network recovery. These are notices inside the running scene, not error
  * pages: the run is intact and the client is still working the problem. */
 const NOTICE_COPY = {
@@ -283,6 +289,15 @@ export interface UseStoryStreamReturn {
    * (still generating, refused because it is unconfirmed, or never arrived).
    * Null when every command the player made is accounted for. */
   commandNotice: { kind: CommandNoticeKind; message: string } | null
+  /** Story-level failure the player must be told about in plain words:
+   * 'session_create' = POST /api/session/create failed (no world exists yet);
+   * 'beat_rejected' = the stream delivered an `error` event mid-run;
+   * 'resume_failed' = loading the saved session failed (raw status/detail kept
+   * out of the player-facing line). `detail` keeps the raw server text for
+   * debugging; the UI renders copy. */
+  sessionFailure: StoryFailure | null
+  /** Resolves true only when a session was created and the stream was opened;
+   * false when the start failed (the caller keeps the opening for a retry). */
   startStory: (
     taskPrompt: string,
     characterId?: string,
@@ -290,7 +305,7 @@ export interface UseStoryStreamReturn {
     language?: string,
     connectionSessionId?: string | null,
     scenarioId?: 'conversation' | 'desert_crisis',
-  ) => Promise<void>
+  ) => Promise<boolean>
   setConnectionSessionId: (id: string | null) => void
   /** P3: wire the BYOK rebind path (App -> useConnection.ensureBound).
    * Returns a fresh connection session id or null when no vault key can
@@ -302,11 +317,21 @@ export interface UseStoryStreamReturn {
   reconnect: () => void
   reset: () => void
   resumeSession: (sid: string) => Promise<void>
+  /** Retry loading the saved session after a resume failure (same sid, never
+   * a new run). No-op when there is no saved session left. */
+  retryResume: () => Promise<void>
   dismissResumeToast: () => void
   getCharState: (characterId: string) => { isSending: boolean; error: string | null }
 }
 
-export function useStoryStream({ autoResume = true }: { autoResume?: boolean } = {}): UseStoryStreamReturn {
+export function useStoryStream({
+  autoResume = true,
+  language,
+}: {
+  autoResume?: boolean
+  /** Live UI language from the caller; player-facing notices follow it. */
+  language?: string
+} = {}): UseStoryStreamReturn {
   const [events, setEvents] = useState<StoryEvent[]>([])
   const [outline, setOutline] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -336,6 +361,11 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
   /* Plain-language notice for an unresolved / refused command. Rendered in
    * the decision bar, never as an error page: the run itself is fine. */
   const [commandNotice, setCommandNotice] = useState<UseStoryStreamReturn['commandNotice']>(null)
+  /* The player-facing reason a run could not start (or could not go on).
+   * Without this, a failed POST /api/session/create only reached the UI as a
+   * raw string inside errorByChar['__session__'], which the story panel did
+   * not treat as its own state. */
+  const [sessionFailure, setSessionFailure] = useState<StoryFailure | null>(null)
 
   const esRef = useRef<SseController | null>(null)
   /* Bumped whenever the client stops wanting a stream (close, reset, stop,
@@ -362,6 +392,14 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
   const bindingRecoverTriedRef = useRef(false)
   // Persist across beat_paused → continue (stream is closed after each beat).
   const languageRef = useRef<string>(readPersistedStoryLanguage())
+  /* Live UI language for player-facing notices (resume toasts / failure copy).
+   * The caller owns this state, so a mid-session language switch is respected
+   * even on a first visit where abq_language was never written — where
+   * readPersistedStoryLanguage() alone would default to English. */
+  const uiLanguageRef = useRef<string>(language ?? readPersistedStoryLanguage())
+  useEffect(() => {
+    uiLanguageRef.current = language ?? readPersistedStoryLanguage()
+  }, [language])
   const voiceExampleRef = useRef<string | null>(null)
   const connectionSessionRef = useRef<string | null>(null)
   const runtimeVersionRef = useRef(0)
@@ -479,6 +517,11 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     setCommandNotice(kind ? { kind, message: noticeText(kind, languageRef.current) } : null)
   }, [])
 
+  const resumeNotice = useCallback(
+    (kind: StoryResumeNoticeKind) => storyResumeNoticeCopy(kind, uiLanguageRef.current),
+    [],
+  )
+
   const clearStorySessionState = useCallback((options?: {
     clearStorage?: boolean
     clearCharacterFeedback?: boolean
@@ -492,6 +535,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     setBeatIndex(0)
     setAutoContinued(false)
     setStreamFailure(null)
+    setSessionFailure(null)
     stallReconnectRef.current = false
     bindingRecoverTriedRef.current = false
     // Invalidate any recovery that is already awaiting /state: it must not
@@ -729,7 +773,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       clearTurnRetry()
       setNotice(null)
       clearStorySessionState({ clearStorage: true })
-      setResumeToast(RESUME_EXPIRED_TOAST)
+      setResumeToast(resumeNotice('expired'))
       return 'missing'
     }
     const reality = classifyCommandReality(snapshot, commandId)
@@ -740,7 +784,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       clearTurnRetry()
       setNotice(null)
       clearStorySessionState({ clearStorage: true })
-      setResumeToast(RESUME_EXPIRED_TOAST)
+      setResumeToast(resumeNotice('expired'))
       return reality
     }
     if (reality === 'complete' || reality === 'paused') {
@@ -797,7 +841,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     setNotice('unconfirmed')
     return reality
   }, [abortActiveRecovery, applyCommittedSnapshot, clearStorySessionState, clearTurnRetry,
-      probeStorySnapshot, resendPendingCommand, setNotice, updateConnectionState])
+      probeStorySnapshot, resendPendingCommand, resumeNotice, setNotice, updateConnectionState])
 
   const scheduleRetryRef = useRef<(sid: string, commandId: string) => void>(() => undefined)
 
@@ -983,6 +1027,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
           stallReconnectRef.current = false
           bindingRecoverTriedRef.current = false
           setStreamFailure(null)
+          setSessionFailure(null)
           updateConnectionState(isFinal ? 'complete' : 'beat_paused')
           closeEventSource()
           return
@@ -1001,14 +1046,19 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
           stallReconnectRef.current = false
           bindingRecoverTriedRef.current = false
           setStreamFailure(null)
+          setSessionFailure(null)
           updateConnectionState('complete')
           closeEventSource()
           return
         }
         if (eventType === 'error') {
-          setSessionError(String(payload.data?.message ?? 'Unknown error'))
+          const streamError = String(payload.data?.message ?? 'Unknown error')
+          setSessionError(streamError)
           appendEvent({ type: 'error', data: payload.data ?? {} })
-          setStreamFailure({ kind: 'unknown', message: String(payload.data?.message ?? 'Unknown error') })
+          setStreamFailure({ kind: 'unknown', message: streamError })
+          // Visible, plain-language notice: a refused beat used to surface as
+          // this raw string only, with no retry entry of its own.
+          setSessionFailure({ kind: 'beat_rejected', status: null, detail: streamError })
           updateConnectionState('error')
           closeEventSource()
         }
@@ -1087,7 +1137,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
           if (status === 409 && detailCode === 'story_paused') {
             clearTurnRetry()
             clearStorySessionState({ clearStorage: true })
-            setResumeToast(RESUME_EXPIRED_TOAST)
+            setResumeToast(resumeNotice('expired'))
             return
           }
           // P3: lost BYOK binding (server restarted after we bound).
@@ -1162,7 +1212,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       armStallWatchdog(sid)
     })()
   }, [appendEvent, armStallWatchdog, clearStorySessionState, clearTurnRetry, closeEventSource,
-      recoverTurn, scheduleTurnRecovery, setCommandNotice, setNotice, setSessionError,
+      recoverTurn, resumeNotice, scheduleTurnRecovery, setCommandNotice, setNotice, setSessionError,
       updateConnectionState])
 
   useEffect(() => {
@@ -1176,10 +1226,11 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     language?: string,
     connectionSessionId?: string | null,
     scenarioId: 'conversation' | 'desert_crisis' = 'conversation',
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     clearStorySessionState()
     setSessionError(null)
     setStreamFailure(null)
+    setSessionFailure(null)
     stallReconnectRef.current = false
     bindingRecoverTriedRef.current = false
     updateConnectionState('connecting')
@@ -1190,44 +1241,47 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       connectionSessionRef.current = connectionSessionId
     }
 
-    try {
-      const res = await fetch('/api/session/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify({
-          title: taskPrompt.slice(0, 80),
-          task_prompt: taskPrompt,
-          active_character_id: characterId,
-          language: resolvedLanguage,
-          scenario_id: scenarioId,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Failed to create session' }))
-        throw new Error(err.detail || 'Session creation failed')
-      }
-      const data = await res.json()
-      const sid = data.session_id as string
-      const skey = typeof data.session_key === 'string' ? data.session_key : null
-      runtimeVersionRef.current = data.runtime_version === 1 ? 1 : 0
-      worldRevisionRef.current = typeof data.world_revision === 'number' ? data.world_revision : 0
-      commandRef.current = typeof data.command_id === 'string' ? data.command_id : null
-      setSessionId(sid)
-      setPlayerActorId(characterId)
-      sessionRef.current = sid
-      writeSavedSessionId(sid, skey)
-      connectStream(sid, voiceExampleRef.current, resolvedLanguage)
-    } catch (e) {
-      setSessionError(e instanceof Error ? e.message : 'Unknown error')
+    const result = await createStorySession({
+      taskPrompt,
+      characterId,
+      language: resolvedLanguage,
+      scenarioId,
+      extraHeaders: await authHeaders(),
+    })
+    if (!result.ok) {
+      // The run never existed. Keep the same opening on hand (App owns the
+      // prompt) and tell the player plainly — the old path only pushed a raw
+      // string into errorByChar['__session__'] with no retry of its own.
+      setSessionError(result.detail ?? 'Session creation failed')
+      setSessionFailure(sessionFailureFromStart(result))
       updateConnectionState('error')
+      return false
     }
+    runtimeVersionRef.current = result.runtimeVersion
+    worldRevisionRef.current = result.worldRevision
+    commandRef.current = result.commandId
+    setSessionId(result.sessionId)
+    setPlayerActorId(characterId)
+    sessionRef.current = result.sessionId
+    writeSavedSessionId(result.sessionId, result.sessionKey)
+    connectStream(result.sessionId, voiceExampleRef.current, resolvedLanguage)
+    return true
   }, [clearStorySessionState, connectStream, setSessionError, updateConnectionState])
+
+  /** A resume that fails keeps the raw detail for debugging but hands the
+   * player the same plain-copy card as the other story-level failures. */
+  const failResume = useCallback((detail: string, status: number | null) => {
+    setSessionError(detail)
+    setSessionFailure({ kind: 'resume_failed', status, detail })
+    updateConnectionState('error')
+  }, [setSessionError, updateConnectionState])
 
   const resumeSession = useCallback(async (sid: string): Promise<void> => {
     setIsResuming(true)
     sessionRef.current = sid
     updateConnectionState('connecting')
     setSessionError(null)
+    setSessionFailure(null)
 
     try {
       const stateRes = await fetch(`/api/session/${sid}/state`, { headers: sessionAuthHeaders() })
@@ -1258,7 +1312,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
             // to idle instead of offering Continue controls for a run that
             // will only answer 409 story_stopped.
             clearStorySessionState({ clearStorage: true })
-            setResumeToast(RESUME_EXPIRED_TOAST)
+            setResumeToast(resumeNotice('expired'))
             return
           }
           if (snapshot.status === 'complete') {
@@ -1280,7 +1334,8 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
           return
         }
       } else if (stateRes.status !== 404) {
-        throw new Error(`Failed to restore story state (${stateRes.status})`)
+        failResume(`Failed to restore story state (${stateRes.status})`, stateRes.status)
+        return
       }
       const res = await fetch(`/api/session/${sid}/messages`, {
         headers: { ...sessionAuthHeaders() },
@@ -1291,7 +1346,8 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
         return
       }
       if (!res.ok) {
-        throw new Error(`Failed to fetch session history (${res.status})`)
+        failResume(`Failed to fetch session history (${res.status})`, res.status)
+        return
       }
       const msgs = (await res.json()) as MessageOut[]
       const restoredProgress = deriveBeatProgressFromMessages(msgs)
@@ -1317,12 +1373,19 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       // Continue to resume streaming (which triggers the next beat).
       updateConnectionState('beat_paused')
     } catch (e) {
-      setSessionError(e instanceof Error ? e.message : 'Failed to resume session')
-      updateConnectionState('error')
+      failResume(e instanceof Error ? e.message : 'Failed to resume session', null)
     } finally {
       setIsResuming(false)
     }
-  }, [clearStorySessionState, connectStream, setSessionError, updateConnectionState])
+  }, [clearStorySessionState, connectStream, failResume, resumeNotice, setSessionError, updateConnectionState])
+
+  /** Retry loading the saved session after a resume failure (same sid, never a
+   * new run). No-op once the session key is gone. */
+  const retryResume = useCallback(async (): Promise<void> => {
+    const sid = sessionRef.current || readSavedSessionId()
+    if (!sid) return
+    await resumeSession(sid)
+  }, [resumeSession])
 
   const sendAction = useCallback(async (action: StoryAction, params?: StoryActionParams, characterId?: string): Promise<boolean> => {
     const sid = sessionRef.current
@@ -1486,7 +1549,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
           // The run was stopped elsewhere; there is nothing left to act on.
           clearTurnRetry()
           clearStorySessionState({ clearStorage: true })
-          setResumeToast(RESUME_EXPIRED_TOAST)
+          setResumeToast(resumeNotice('expired'))
           return false
         }
         if (res.status >= 500) {
@@ -1571,8 +1634,8 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       }
     }
   }, [abortActiveRecovery, adoptServerCommand, appendEvent, clearStorySessionState, clearTurnRetry,
-      closeEventSource, connectStream, recoverTurn, recoverWithFallback, requestStop, setNotice,
-      updateConnectionState])
+      closeEventSource, connectStream, recoverTurn, recoverWithFallback, requestStop, resumeNotice,
+      setNotice, updateConnectionState])
 
   const redrawBeat = useCallback(async (beatId: string, characterId?: string) => {
     await sendAction('replay', { beat_id: beatId }, characterId)
@@ -1582,6 +1645,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     const sid = sessionRef.current
     if (!sid) return
     setSessionError(null)
+    setSessionFailure(null)
     // P0: go through updateConnectionState so the ref matches React state
     // synchronously — a direct setter left the ref on 'streaming' for one
     // render, which made the closing old transport look like a failure.
@@ -1633,12 +1697,12 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
         setSessionError(null)
         setIsResuming(false)
         updateConnectionState('idle')
-        setResumeToast(RESUME_EXPIRED_TOAST)
+        setResumeToast(resumeNotice('expired'))
       } else {
         setSessionError(null)
         setIsResuming(false)
         updateConnectionState('idle')
-        setResumeToast(RESUME_RETRY_TOAST)
+        setResumeToast(resumeNotice('unverified'))
       }
     })()
 
@@ -1646,7 +1710,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
       cancelled = true
       hasAttemptedResumeRef.current = false
     }
-  }, [autoResume, resumeSession, setSessionError, updateConnectionState])
+  }, [autoResume, resumeNotice, resumeSession, setSessionError, updateConnectionState])
 
   // Auto-dismiss the resume toast after 8s. Each time ``resumeToast``
   // transitions to a non-null value (including identical text back-to-back)
@@ -1695,6 +1759,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     autoContinued,
     streamFailure,
     commandNotice,
+    sessionFailure,
     setConnectionSessionId,
     setBindingRecover,
     isResuming,
@@ -1706,6 +1771,7 @@ export function useStoryStream({ autoResume = true }: { autoResume?: boolean } =
     reconnect,
     reset,
     resumeSession,
+    retryResume,
     dismissResumeToast,
     getCharState,
   }

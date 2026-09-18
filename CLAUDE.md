@@ -6,6 +6,7 @@
 
 - 「现在是什么」以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为索引。
 - 当前默认入口：三卡展台，Story / Direct / Crew 直接并列。没有明确要求改入口 → 保持。
+- 剧情对访客关闭（2026-09-18 决定，工作区改动，未提交/未部署）：访客点 STORY 卡或玩法条「剧情」只看到「剧情正在开发中」，不进剧情；作者/本地开发用 `?authoring=1`（写入 localStorage `yishu_authoring_mode`，`?authoring=0` 关回去）。开关与文案在 `src/lib/storyAvailability.ts`。见 AS_BUILT §2。
 - 线上服务: https://bb.yishuziyu.cn
 - 进聊后的 as-built：选角色、建关系再聊（Direct / Crew）；剧情走 SSE。角色见 CONTEXT.md / DEC-0002。这不是与首页竞争的另一套产品定义。
 - 六回合夜晚：已实现，只走 `?night=1`，不在默认剧情路径上。不要叫未加限定的「正式局」。
@@ -63,10 +64,10 @@ Historical `.ship` loops, briefs, scorecards, and “下一轮” queues are **n
 - 前端构建：`npm run build`
 - 前端测试：`npm test`（tsx test runner）
 - 前端 Lint：`npm run lint`
-- 后端启动：`cd backend && uvicorn main:app --reload --port 8001`
+- 后端启动：`cd backend && uv run python -m uvicorn main:app --reload --port 8001`（venv console script 的 shebang 可能断裂：`uv run uvicorn` 会静默换解释器；见 docs/OPS_RUNBOOK.md）
 - 后端测试：`cd backend && uv run python -m pytest`
 - E2E：`npx playwright test`
-- 数据库迁移：Alembic（`cd backend && alembic upgrade head`）
+- 数据库迁移：Alembic（`cd backend && uv run python -m alembic upgrade head`）。路径含空格或目录改名后 `uv run alembic` 会因 shebang 断裂失败；后端启动会校验 DB revision 是否在 head，落后则打印这条命令并以非 0 退出。
 
 ## 历史循环（不约束产品）
 
@@ -97,7 +98,7 @@ YishuShip 11 阶段与 `.ship/loop-N-*` 产出是历史流程，已归档。不�
 这是一个《绝命毒师》主题的 AI 角色扮演。默认打开是 Story / Direct / Crew 三卡展台。入口以 [docs/AS_BUILT.md](docs/AS_BUILT.md) 为准。
 
 进聊后的 as-built：选角色 -> 建立关系锚点 -> 对话 / 剧情演绎。这是聊天侧已落地的流程，不是另一套首页定义。
-角色：Walter, Jesse, Skyler, Saul, Mike, Gus, Hank（见 CONTEXT.md / DEC-0002；界面另有 Marie，导演未收录，见 AS_BUILT）
+角色：Walter, Jesse, Skyler, Saul, Mike, Gus, Hank, Marie（8 人；见 CONTEXT.md / DEC-0002；Marie 于 2026-09-18 接入导演，见 CONTEXT.md「Marie (playable)」）
 模式：Direct Chat（一对一）、Crew（多人辩论）、Story（SSE 剧情流；大纲规划见 DEC-0003 McKee）。六回合夜晚已实现，只 `?night=1`，不是默认剧情。
 
 安全边界：禁止生成现实世界犯罪操作指导（制毒、暴力、洗钱等），戏剧张力保留，虚构语境内允许。
@@ -130,7 +131,7 @@ YishuShip 11 阶段与 `.ship/loop-N-*` 产出是历史流程，已归档。不�
 - `backend/agents/mckee_story.py` — McKee Story 大纲/节拍规划（DEC-0003）
 - `backend/agents/provider.py` — LLM provider 适配 + fallback
 - `backend/agents/memory.py` — 记忆管理
-- `backend/agents/characters/` — 7 个角色 prompt（含 hank / 汉克）
+- `backend/agents/characters/` — 8 个角色 prompt（含 hank / 汉克、marie / 玛丽）
 - `backend/db/` + `backend/alembic/` — 数据库和迁移
 
 ## 代码风格
@@ -146,7 +147,8 @@ YishuShip 11 阶段与 `.ship/loop-N-*` 产出是历史流程，已归档。不�
 ```bash
 # 开发
 npm run dev                    # 前端 dev server
-cd backend && uvicorn main:app --reload --port 8001   # 后端
+cd backend && uv run python -m uvicorn main:app --reload --port 8001   # 后端（-m 绕开可能断掉的 venv shebang）
+cd backend && uv run python -m alembic upgrade head                    # 迁移（同一原因）
 
 # 测试
 npm test                       # 前端单测

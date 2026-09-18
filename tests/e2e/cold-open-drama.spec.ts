@@ -34,6 +34,9 @@ async function gotoDoor(page: Page, path = '/') {
     } catch {
       /* private mode etc. */
     }
+    // T10: Story is closed to visitors. The door→Story tests below drive the
+    // author flow, so opt in the same way a developer does.
+    localStorage.setItem('yishu_authoring_mode', '1')
   })
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.cold-open-showcase')).toBeVisible({ timeout: 15_000 })
@@ -74,6 +77,8 @@ async function seedEnteredWorld(
       }
       localStorage.setItem('abq_enteredWorld', JSON.stringify(true))
       localStorage.setItem('abq_productSurface', JSON.stringify(surface))
+      // T10: Story board is author-only right now; this spec seeds it on purpose.
+      localStorage.setItem('yishu_authoring_mode', '1')
       localStorage.setItem('abq_character', JSON.stringify('walter'))
       localStorage.setItem('abq_view', JSON.stringify('story'))
       localStorage.setItem('abq_knowledgeTrack', JSON.stringify('fan'))

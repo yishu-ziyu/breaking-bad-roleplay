@@ -38,6 +38,7 @@ BACKEND_TO_ACTOR_ID: dict[str, str] = {
     "Mike Ehrmantraut": "mike",
     "Gus Fring": "gus",
     "Hank Schrader": "hank",
+    "Marie Schrader": "marie",
 }
 ACTOR_ID_TO_BACKEND: dict[str, str] = {v: k for k, v in BACKEND_TO_ACTOR_ID.items()}
 

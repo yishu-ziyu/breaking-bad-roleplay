@@ -13,6 +13,8 @@ import {
   UI_COPY,
   briefStartPayload,
 } from './coldOpenCopy'
+import { storyCardClickOutcome, storyComingSoonCopy } from '../lib/storyAvailability'
+import { StoryComingSoonNotice } from './StoryComingSoonNotice'
 
 export type { ColdOpenChoiceId, ColdOpenLanguage, KnowledgeTrack }
 
@@ -39,6 +41,12 @@ export type ColdOpenLandingProps = {
   onEnterDirect?: () => void
   /** Skip Story cold-open and enter Crew debate. */
   onEnterCrew?: () => void
+  /**
+   * Story gate (T10, 2026-09-18). Visitors get a "剧情正在开发中" notice instead
+   * of the knowledge dialog / story start; authors keep the full flow.
+   * Defaults to closed: a caller that forgets the switch must not open Story.
+   */
+  storyOpen?: boolean
   /** Historical prop kept for interface compatibility */
   showIntro?: boolean
   onIntroDone?: () => void
@@ -55,14 +63,18 @@ export function ColdOpenLanding({
   error = null,
   onEnterDirect,
   onEnterCrew,
+  storyOpen = false,
 }: ColdOpenLandingProps) {
   const titleId = useId()
   const zh = language === 'zh'
   const ui = UI_COPY[language]
   const copy = SHOWCASE_COPY[language]
+  const storySoon = storyComingSoonCopy(language)
   const locked = starting
 
   const [dialogOpen, setDialogOpen] = useState(false)
+  /** Visitor tried the closed STORY card — show why, without leaving the door. */
+  const [storyClosedNotice, setStoryClosedNotice] = useState(false)
 
   const card1Ref = useRef<HTMLDivElement>(null)
   const card2Ref = useRef<HTMLDivElement>(null)
@@ -137,7 +149,17 @@ export function ColdOpenLanding({
 
   const handleStoryClick = () => {
     if (locked) return
-    if (knowledgeTrack) {
+    // T10: closed Story never opens the dialog or calls onStart. The decision
+    // itself lives in the shared gate so both states are unit-tested.
+    const outcome = storyCardClickOutcome({
+      storyOpen,
+      hasKnowledgeTrack: Boolean(knowledgeTrack),
+    })
+    if (outcome === 'blocked') {
+      setStoryClosedNotice(true)
+      return
+    }
+    if (outcome === 'start' && knowledgeTrack) {
       beginStoryWithTrack(knowledgeTrack)
       return
     }
@@ -223,9 +245,11 @@ export function ColdOpenLanding({
           {/* ==================== 卡片 1：互动剧情 (Story) ==================== */}
           <article
             ref={card1Ref}
-            className="showcase-card showcase-card--story"
+            className={`showcase-card showcase-card--story${storyOpen ? '' : ' is-story-closed'}`}
             onClick={handleStoryClick}
             aria-label={copy.story.badge}
+            aria-disabled={storyOpen ? undefined : true}
+            data-story-open={storyOpen ? 'true' : 'false'}
           >
             <div className="card-story-bg" aria-hidden="true" />
             <div className="card-story-overlay" aria-hidden="true" />
@@ -233,6 +257,11 @@ export function ColdOpenLanding({
 
             <div className="showcase-card__top">
               <span className="showcase-card__badge badge-story">{copy.story.badge}</span>
+              {!storyOpen && (
+                <span className="showcase-card__soon" data-testid="story-coming-soon">
+                  {storySoon.badge}
+                </span>
+              )}
             </div>
 
             <div className="showcase-card__bottom">
@@ -250,6 +279,9 @@ export function ColdOpenLanding({
                 <span>{copy.story.cta}</span>
                 <span>→</span>
               </button>
+              {!storyOpen && storyClosedNotice && (
+                <StoryComingSoonNotice language={language} className="showcase-card__notice" />
+              )}
             </div>
           </article>
 

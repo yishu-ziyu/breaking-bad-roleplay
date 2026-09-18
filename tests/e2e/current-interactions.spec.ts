@@ -17,6 +17,10 @@ async function seedSurface(
     localStorage.setItem('abq_surface', JSON.stringify(mode))
     localStorage.setItem('abq_character', JSON.stringify('walter'))
     localStorage.setItem('abq_language', JSON.stringify('en'))
+    // T10: a seeded Story surface is reclaimed for visitors on load, so the
+    // Story tests below opt in as authors. Direct / Crew seeds stay visitors —
+    // they keep their surface and must keep working.
+    if (mode === 'story') localStorage.setItem('yishu_authoring_mode', '1')
     for (const [key, value] of Object.entries(values)) {
       localStorage.setItem(key, JSON.stringify(value))
     }

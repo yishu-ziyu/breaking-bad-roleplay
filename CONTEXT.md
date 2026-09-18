@@ -13,6 +13,14 @@ Shared product language for **what already shipped**. Historical roadmaps are no
 | mike | Mike | 麦克 | Never 米克 |
 | gus | Gus | 古斯 | Controlled threat |
 | hank | Hank | 汉克 | DEA; optional Story lead |
+| marie | Marie | 玛丽 | Hank's wife / Skyler's sister-in-law; household observation + status pressure |
+
+## Marie (playable — decision 2026-09-18)
+
+- **Decision: Marie is playable (option A), not delisted.** The UI already offered her; she has a full policy card (`backend/agents/characters/marie.py`), frontend profile (`src/roleProfiles.ts`), opener/wayfinder lines, portrait, voice pitch, and a 2-GIF first-frame-audited starter pool. Nothing was gained by removing her — only the director wiring was missing.
+- **Modes:** Direct + Crew (crew mention aliases: `marie` / `玛丽`). Wired through `FRONTEND_TO_BACKEND_ID`, `CHARACTER_AGENTS`, actor-id map (`narrative_contracts.py`), and Continuity Board aliases (`continuity_board.py`).
+- **Assets:** thin GIF catalog (2, first-frame audited); **no** cloned TTS — browser/default voice, same as Hank.
+- **Unknown ids:** any chat id outside the playable cast fails explicitly with code `unknown_character` (HTTP 400 + server log) — it must never silently answer as Walter White. The old Walter fallback is removed (`backend/agents/director.py` `resolve_playable_character_id`, `backend/api/routes.py` `/api/chat`).
 
 ## Hank (v1)
 

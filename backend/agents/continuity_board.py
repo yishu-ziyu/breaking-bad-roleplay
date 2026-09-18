@@ -42,6 +42,8 @@ CHARACTER_ID_ALIASES: dict[str, str] = {
     "gus fring": "gus",
     "hank": "hank",
     "hank schrader": "hank",
+    "marie": "marie",
+    "marie schrader": "marie",
 }
 
 
