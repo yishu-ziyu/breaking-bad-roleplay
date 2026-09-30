@@ -45,16 +45,16 @@ async function gotoDoor(page: Page, path = '/') {
 
 /** The current door is already the mode picker; assert all three choices. */
 async function passIntro(page: Page) {
-  await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
-  await expect(page.getByRole('button', { name: /选择角色对话|Start Conversation/i })).toBeVisible()
-  await expect(page.getByRole('button', { name: /进入群像会谈|Enter Negotiation/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /开始剧情|Start story/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /找人单聊|Chat 1:1/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /进群聊|Join group chat/i })).toBeVisible()
 }
 
 /** Door → Story → knowledge → 场面卡; SSE still waits for the scene-card start. */
 async function enterNightFromDoor(page: Page, path = '/') {
   await gotoDoor(page, path)
-  await page.getByRole('button', { name: /开始故事|Start Story/i }).click()
-  await page.getByRole('button', { name: /看过 · 直入危机|Yes · Straight to crisis/i }).click()
+  await page.getByRole('button', { name: /开始剧情|Start story/i }).click()
+  await page.getByRole('button', { name: /看过，直接开始|Yes, jump in/i }).click()
   await expect(page.locator('.cold-open-showcase')).toHaveCount(0)
   await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
 }
@@ -142,40 +142,40 @@ test('cold open: door starts the night — no crisis quiz, no cast strip', async
   await gotoDoor(page)
   await passIntro(page)
 
-  await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
-  await expect(page.getByRole('button', { name: /选择角色对话|Start Conversation/i })).toBeVisible()
-  await expect(page.getByRole('button', { name: /进入群像会谈|Enter Negotiation/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /开始剧情|Start story/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /找人单聊|Chat 1:1/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /进群聊|Join group chat/i })).toBeVisible()
   await expect(page.locator('.cold-open__stage--crisis')).toHaveCount(0)
   await expect(page.locator('.cold-open__cast')).toHaveCount(0)
   await expect(page.locator('.char-grid')).toHaveCount(0)
 
-  await page.getByRole('button', { name: /开始故事|Start Story/i }).click()
-  await page.getByRole('button', { name: /看过 · 直入危机|Yes · Straight to crisis/i }).click()
+  await page.getByRole('button', { name: /开始剧情|Start story/i }).click()
+  await page.getByRole('button', { name: /看过，直接开始|Yes, jump in/i }).click()
 
   await expect(page.locator('.cold-open-showcase')).toHaveCount(0)
   await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByRole('button', { name: /寻找杰西|Find Jesse/i })).toHaveCount(0)
   await expect(page.getByText(/你以谁的身份进入|You enter as who/i)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /开始剧情|Start story/i })).toBeVisible()
 })
 
 test('door: Direct enters chat, not Story', async ({ page }) => {
   await gotoDoor(page)
-  await page.getByRole('button', { name: /选择角色对话|Start Conversation/i }).click()
+  await page.getByRole('button', { name: /找人单聊|Chat 1:1/i }).click()
   await expect(page.locator('.cold-open-showcase')).toHaveCount(0)
   await expect(page.locator('.chat-panel')).toBeVisible()
   await expect(page.locator('.story-scene-bill')).toHaveCount(0)
   await expect(page.locator('.play-mode-bar')).toBeVisible()
-  await expect(page.getByRole('button', { name: '单聊' }).or(page.getByRole('button', { name: 'Direct' }))).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '单聊' }).or(page.getByRole('button', { name: '1:1' }))).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('door: Crew enters group chat, not Story', async ({ page }) => {
   await gotoDoor(page)
-  await page.getByRole('button', { name: /进入群像会谈|Enter Negotiation/i }).click()
+  await page.getByRole('button', { name: /进群聊|Join group chat/i }).click()
   await expect(page.locator('.cold-open-showcase')).toHaveCount(0)
   await expect(page.locator('.chat-panel')).toBeVisible()
   await expect(page.locator('.story-scene-bill')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '群聊' }).or(page.getByRole('button', { name: 'Crew' }))).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '群聊' }).or(page.getByRole('button', { name: 'Group chat' }))).toHaveAttribute('aria-pressed', 'true')
 })
 
 /* ------------------------------------------------------------------ */
@@ -193,13 +193,13 @@ test('cold open: starting from the door shows the 场面卡 before any SSE', asy
 
   await expect(page.locator('.story-scene-bill__place')).toBeVisible()
   await expect(page.locator('.story-scene-bill__crisis')).toBeVisible()
-  await expect(page.getByRole('button', { name: /开始故事|Start Story/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /开始剧情|Start story/i })).toBeVisible()
   await expect(page.locator('.story-manuscript')).toHaveCount(0)
   // SSE waits for 开始故事 — session create must not have fired yet.
   await expect.poll(() => create.hits).toBe(0)
 })
 
-test('开始故事 starts the stream, then SSE reading — still not a third chat thread', async ({
+test('开始剧情 starts the stream, then SSE reading — still not a third chat thread', async ({
   page,
 }) => {
   await installMockEventSource(page)
@@ -209,7 +209,7 @@ test('开始故事 starts the stream, then SSE reading — still not a third cha
   await enterNightFromDoor(page)
   await expect.poll(() => create.hits).toBe(0)
 
-  await page.getByRole('button', { name: /开始故事|Start Story/i }).click()
+  await page.getByRole('button', { name: /开始剧情|Start story/i }).click()
   await expect.poll(() => create.hits).toBe(1)
   await page.waitForFunction(
     () => Boolean((window as Window & { __mockSSE?: unknown }).__mockSSE),

@@ -55,7 +55,8 @@ test('author state leaves all three modes selectable with no marker', () => {
 test('English visitor state marks Story as in development', () => {
   const html = renderBar(false, 'en')
   assert.match(html, /In development/)
-  assert.match(html, />Direct</)
+  assert.match(html, />1:1</)
+  assert.match(html, />Group chat</)
 })
 
 test('blocked 剧情 click is decided by the shared story gate, not inline copy', () => {

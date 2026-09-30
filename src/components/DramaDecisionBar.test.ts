@@ -130,7 +130,7 @@ test('canSubmitFreeText only true when trimmed non-empty and not disabled', () =
 })
 
 test('continue label is the skip path, not the primary decide verb', () => {
-  assert.equal(DRAMA_DECISION_COPY.zh.continue, '让导演继续')
+  assert.equal(DRAMA_DECISION_COPY.zh.continue, '先不决定，接着演')
   assert.equal(DRAMA_DECISION_COPY.en.continue, 'Let the scene continue')
   assert.ok(!/^继续$/.test(DRAMA_DECISION_COPY.zh.continue))
   assert.ok(!/^Continue$/.test(DRAMA_DECISION_COPY.en.continue))

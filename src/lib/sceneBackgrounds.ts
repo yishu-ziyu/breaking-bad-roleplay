@@ -73,7 +73,7 @@ export const SCENES: SceneRoute[] = [
   {
     id: 'saul-neon',
     url: '/backgrounds/saul-neon.svg',
-    label: { en: "Saul's Office", zh: 'Saul 律所' },
+    label: { en: "Saul's Office", zh: '索尔的律所' },
     keywords: [
       'saul', 'goodman', '律师', 'lawyer', 'legal', 'attorney', 'office',
       '办公室', 'better call', '合同', 'contract', 'lawyer office',

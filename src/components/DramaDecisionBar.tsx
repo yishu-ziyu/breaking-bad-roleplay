@@ -52,7 +52,7 @@ export const DRAMA_DECISION_COPY = {
   },
   zh: {
     title: '你的决定',
-    continue: '让导演继续',
+    continue: '先不决定，接着演',
     freeSubmit: '决定',
     freePlaceholder: '或自由输入：你要说、做、或观察到什么…',
     kindSay: '说',

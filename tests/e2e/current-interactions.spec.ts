@@ -253,7 +253,7 @@ test('an SSE stream that closes without a terminal event retries once, then fail
 test('accepted Story perspective changes the player but never the independent chat partner', async ({ page }) => {
   await driveModernStoryToPause(page)
   await expectDirectorControls(page)
-  await page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ }).click()
+  await page.locator('.beat-controls button', { hasText: /Play someone else|换个人演/ }).click()
   await page.locator('.perspective-control select').selectOption('jesse')
   await emit(page, 'agent_speak', {
     character_id: 'Walter White',
@@ -272,7 +272,7 @@ test('accepted Story perspective changes the player but never the independent ch
 
   await expect(page.locator('.beat-paused--drama')).toBeVisible()
   await expect(page.locator('.story-hud')).toContainText('Jesse')
-  await page.getByRole('button', { name: /Direct|单聊/ }).first().click()
+  await page.getByRole('button', { name: /1:1|单聊/ }).first().click()
   await expect(page.locator('.chat-header h2')).toContainText('Walter')
 })
 

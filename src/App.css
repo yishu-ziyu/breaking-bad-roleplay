@@ -425,7 +425,10 @@ textarea:focus-visible {
 
 .brand h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--font-display);
   line-height: 1.1;
   font-weight: 900;
@@ -493,7 +496,14 @@ textarea:focus-visible {
 
 .char-card strong {
   font-size: 13px;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.char-card__en {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 .char-card__hint {
@@ -2385,6 +2395,13 @@ button.story-event {
 .chat-header__relation {
   flex: 0 0 auto;
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-header__relation-prefix {
+  font-size: 12px;
+  opacity: 0.75;
+  white-space: nowrap;
 }
 .chat-header__relation select {
   padding: 6px 10px;

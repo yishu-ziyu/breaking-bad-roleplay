@@ -49,7 +49,7 @@ test('stub /api/session/create → 500: the panel shows a plain Chinese notice a
   assert.match(html, /role="alert"/)
   assert.match(html, /剧情没能开始/, 'headline must say plainly that the story did not start')
   assert.match(html, /重试/, 'a retry button must be offered')
-  assert.match(html, /同一段开场/, 'retry copy must promise the identical opening setup')
+  assert.match(html, /同一个开头/, 'retry copy must promise the identical opening setup')
   assert.doesNotMatch(html, /Internal Server Error/, 'raw server text must not be the player-facing line')
   assert.doesNotMatch(html, /\[object Object\]/)
 })
@@ -62,7 +62,7 @@ test('an error event in the stream shows a visible beat notice in both languages
     onRetry: () => {},
   }))
   assert.match(zh, /role="alert"/)
-  assert.match(zh, /这一拍/)
+  assert.match(zh, /这一段/)
   assert.match(zh, /重试/)
   assert.doesNotMatch(zh, /beat rejected by validator/)
 

@@ -6,9 +6,10 @@ import { HomePreview } from './HomePreview'
 
 test('homepage distinguishes story and conversation entry and labels recorded output', () => {
   const html = renderToStaticMarkup(createElement(HomePreview, { onStory: () => {}, onChat: () => {}, onCrew: () => {} }))
-  assert.match(html, /开始故事/)
-  assert.match(html, /与角色聊天/)
-  assert.match(html, /群像会谈/)
+  assert.match(html, /开始剧情/)
+  assert.match(html, /找人单聊/)
+  assert.match(html, /进群聊/)
+  assert.doesNotMatch(html, /Roleplay Lab|ROLEPLAY LAB|游客/)
   assert.match(html, /实际生成片段/)
   assert.match(html, /不是实时对话/)
   assert.doesNotMatch(html, /进入这一夜|看过，直接开始/)

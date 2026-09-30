@@ -13,11 +13,11 @@ export type StoryReadingSurfaceProps = {
 
 const COPY = {
   zh: {
-    redraw: '回看这一拍',
+    redraw: '回看这一段',
     you: '你',
   },
   en: {
-    redraw: 'Replay this beat',
+    redraw: 'Replay this part',
     you: 'You',
   },
 } as const

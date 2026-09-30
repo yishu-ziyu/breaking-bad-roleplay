@@ -97,7 +97,7 @@ test('visitor: STORY card is marked 开发中 and clicking it does not enter Sto
   await expect(page.getByTestId('story-coming-soon')).toHaveText('开发中')
 
   const urlBeforeClick = page.url()
-  await mouseClickCentered(page, storyCard.getByRole('button', { name: /开始故事/ }))
+  await mouseClickCentered(page, storyCard.getByRole('button', { name: /开始剧情/ }))
 
   // Plain-language notice, still on the door, no story surface anywhere.
   await expect(door.locator('.showcase-card--story [role="alert"]')).toContainText('剧情正在开发中')
@@ -120,7 +120,7 @@ test('visitor: English door gets the English notice', async ({ page }) => {
   await expect(storyCard).toHaveAttribute('data-story-open', 'false')
   await expect(page.getByTestId('story-coming-soon')).toHaveText('In development')
 
-  await mouseClickCentered(page, storyCard.getByRole('button', { name: /Start Story/i }))
+  await mouseClickCentered(page, storyCard.getByRole('button', { name: /Start story/i }))
   await expect(storyCard.locator('[role="alert"]')).toContainText('still in development')
 })
 
@@ -132,7 +132,7 @@ test('visitor: 剧情 in the play-mode bar explains instead of switching', async
   const create = await trackSessionCreate(page)
   await gotoFresh(page, 'zh')
 
-  await page.getByRole('button', { name: /选择角色对话/ }).click()
+  await page.getByRole('button', { name: /找人单聊/ }).click()
   await expect(page.locator('.chat-panel')).toBeVisible()
 
   const bar = page.locator('.play-mode-bar')
@@ -154,7 +154,7 @@ test('visitor: 剧情 in the play-mode bar explains instead of switching', async
 test('visitor: settings drawer cannot switch into Story either', async ({ page }) => {
   await gotoFresh(page, 'zh')
 
-  await page.getByRole('button', { name: /选择角色对话/ }).click()
+  await page.getByRole('button', { name: /找人单聊/ }).click()
   await expect(page.locator('.chat-panel')).toBeVisible()
 
   await page.locator('.archive-settings > summary').click()
@@ -188,14 +188,14 @@ test('author: ?authoring=1 enters Story, survives reload, and starts the opening
   await expect(page.getByTestId('story-coming-soon')).toHaveCount(0)
 
   // Door → knowledge question → 场面卡 (same path as before the closure).
-  await storyCard.getByRole('button', { name: /开始故事/ }).click()
-  await page.getByRole('button', { name: /看过 · 直入危机/ }).click()
+  await storyCard.getByRole('button', { name: /开始剧情/ }).click()
+  await page.getByRole('button', { name: /看过，直接开始/ }).click()
   await expect(page.locator('.cold-open-showcase')).toHaveCount(0)
   await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
   expect(create.hits).toBe(0)
 
   // 开局: the scene card's start button opens the session.
-  await page.getByRole('button', { name: /开始故事/ }).click()
+  await page.getByRole('button', { name: /开始剧情/ }).click()
   await expect.poll(() => create.hits).toBe(1)
 
   // The switch is remembered, so local development keeps working after a reload.
@@ -294,7 +294,7 @@ test('visitor: a stored Story surface is reclaimed on load, never rendered', asy
 
   // The reset must not brick the rest of the product: Direct still opens and
   // the board is not reachable from there either.
-  await page.getByRole('button', { name: /选择角色对话/ }).click()
+  await page.getByRole('button', { name: /找人单聊/ }).click()
   await expect(page.locator('.chat-panel')).toBeVisible()
   await expect(page.locator('.story-panel, .story-hud, .story-scene-bill')).toHaveCount(0)
 })
@@ -310,11 +310,11 @@ test('visitor: the surface left by the author flow is reclaimed once ?authoring=
 
   // Author enters Story and starts the opening — the real product path.
   await gotoFresh(page, 'zh', '/?authoring=1')
-  await page.locator('.showcase-card--story').getByRole('button', { name: /开始故事/ }).click()
-  await page.getByRole('button', { name: /看过 · 直入危机/ }).click()
+  await page.locator('.showcase-card--story').getByRole('button', { name: /开始剧情/ }).click()
+  await page.getByRole('button', { name: /看过，直接开始/ }).click()
   await expect(page.locator('.story-scene-bill')).toBeVisible({ timeout: 10_000 })
   await page.screenshot({ path: testInfo.outputPath('author-on-story-board.png') })
-  await page.getByRole('button', { name: /开始故事/ }).click()
+  await page.getByRole('button', { name: /开始剧情/ }).click()
   await expect.poll(() => create.hits).toBe(1)
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('abq_enteredWorld')))
