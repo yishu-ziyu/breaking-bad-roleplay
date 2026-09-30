@@ -137,8 +137,8 @@ test('continue label is the skip path, not the primary decide verb', () => {
 })
 
 test('disabled diegetic status is explicit, not silent gray only', () => {
-  assert.equal(DRAMA_DECISION_COPY.zh.unfolding, '局面展开中…')
-  assert.equal(DRAMA_DECISION_COPY.en.unfolding, 'The scene is unfolding…')
+  assert.equal(DRAMA_DECISION_COPY.zh.unfolding, '正在往下演…')
+  assert.equal(DRAMA_DECISION_COPY.en.unfolding, 'The story is playing out…')
 })
 
 test('free submit label stays tertiary Decide / 决定', () => {

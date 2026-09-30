@@ -1,7 +1,7 @@
 # 产品用语词表（GLOSSARY）
 
 写界面文案之前先读这份。每个概念只用一个词；「禁用」列里的词不许出现在玩家看得到的地方。
-`src/copy/wording.test.ts` 会扫描界面源码，出现禁用词就失败。
+`src/copy/wording.test.ts` 会扫描 `src/` 下的 ts/tsx 字符串和 `index.html` 的标题，出现禁用词、或中文句子里夹英文角色名就失败。它只认字符串字面量和含中文的 JSX 文本；纯英文 JSX 文本、CSS `content:`、`public/*.html` 扫不到，写这些地方时自己对照本表。
 
 决定来源：2026-10-01 用户逐条拍板（D1–D11）。要改词，先改这份，再改代码和测试。
 
@@ -46,6 +46,7 @@
 ## 不在词表管辖内
 
 - 角色台词、开场白、快捷回复（`src/lib/directOpeners.ts`、`directWayfinders.ts`、`voiceExamples.ts`）：角色说话可以用剧中说法。
+- 语音参数（`src/lib/voicePlayerHelpers.ts`）：只有注释是中文，没有界面文案。
 - 实验入口：`?night=1` 六回合（`src/features/game/`）、`?lab=1` 实验台（`AgentHarnessPanel.tsx`）。
 - 发给模型的提示词和内部标签（玩家看不到）：`roleProfiles.ts`，以及 `src/copy/wording.test.ts` 里 `ALLOW` 列出的几条，每条写了原因。
 

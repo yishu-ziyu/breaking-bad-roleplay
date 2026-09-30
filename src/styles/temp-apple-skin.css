@@ -247,7 +247,6 @@
 .story-event--stage-dir .story-event__summary.stage-dir,
 .story-hud--minimal .story-hud__metric small,
 .story-hud--minimal .story-hud__metric span,
-.story-hud--minimal .story-hud__metric--tension span,
 .story-hud--minimal > button,
 .story-hud__credits,
 .story-hud__lang button,
@@ -346,9 +345,7 @@
 .gif-card,
 .brand-return,
 .auth-btn-primary,
-.auth-btn-secondary,
-.auth-btn-guest,
-.auth-guest-hint {
+.auth-btn-secondary {
   border-radius: var(--radius-card);
 }
 .brand-icon {
@@ -860,5 +857,4 @@
   letter-spacing: -0.15px;
   color: var(--ink-2);
 }
-
 

@@ -48,7 +48,7 @@ export const DRAMA_DECISION_COPY = {
     kindSay: 'Say',
     kindDo: 'Do',
     kindObserve: 'Observe',
-    unfolding: 'The scene is unfolding…',
+    unfolding: 'The story is playing out…',
   },
   zh: {
     title: '你的决定',
@@ -58,7 +58,7 @@ export const DRAMA_DECISION_COPY = {
     kindSay: '说',
     kindDo: '做',
     kindObserve: '观察',
-    unfolding: '局面展开中…',
+    unfolding: '正在往下演…',
   },
 } as const
 

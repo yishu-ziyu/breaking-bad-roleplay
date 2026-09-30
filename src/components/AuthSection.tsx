@@ -27,7 +27,7 @@ export function AuthSection({ auth, language, syncStatus }: AuthSectionProps) {
       return zh ? '没能保存到云端，这台设备上的记录还在。' : 'Could not save to the cloud. Everything on this device is still here.'
     }
     if (syncStatus === 'privacy-locked') {
-      return zh ? '登录已过期，重新登录后继续保存到云端。' : 'Your sign-in expired. Sign in again to keep saving to the cloud.'
+      return zh ? '这台设备还打不开你的私密记录，重新登录一次就能继续保存到云端。' : 'This device cannot open your private records yet. Sign in again to keep saving to the cloud.'
     }
     if (syncStatus === 'synced') {
       return zh ? '这台设备上的记录已保存到你的账号。' : 'Everything on this device is now saved to your account.'

@@ -116,5 +116,5 @@ export async function parseQuotaError(res: Response): Promise<QuotaErrorBody | n
   } catch {
     /* ignore */
   }
-  return { code: 'quota_denied', message: 'Free demo unavailable' }
+  return { code: 'quota_denied', message: 'Free messages are not available right now' }
 }

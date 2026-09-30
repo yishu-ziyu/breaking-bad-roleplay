@@ -184,11 +184,6 @@
   border-color: #d6d9ca;
   color: #536753;
 }
-.app-shell--chat-paper .auth-btn-guest {
-  color: #536753;
-  border-color: #d6d9ca;
-  background: transparent;
-}
 .app-shell--chat-paper .auth-input {
   background: #fcfaf4;
   border-color: #d6d9ca;

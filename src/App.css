@@ -581,7 +581,6 @@ select::placeholder, input::placeholder, textarea::placeholder {
   color: rgba(245, 244, 235, 0.35);
 }
 
-
 textarea {
   padding: 12px;
   resize: vertical;
@@ -647,33 +646,6 @@ textarea {
   color: var(--color-error-text);
   font-size: 12px;
   line-height: 1.3;
-}
-
-.auth-btn-guest {
-  min-height: 36px;
-  border: 1px dashed var(--color-border-soft-3);
-  border-radius: var(--radius-card);
-  background: transparent;
-  color: var(--dn-muted-hi);
-  font: 800 12px/1 var(--font-sans);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-
-.auth-btn-guest:hover {
-  color: var(--dn-accent-hi);
-  background: var(--dn-surface-2);
-  border-color: color-mix(in oklch, var(--dn-accent) 45%, var(--dn-border));
-}
-
-.auth-guest-hint {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: var(--radius-card);
-  background: var(--color-ring-olive);
-  color: var(--dn-fg);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 /* ==========================================
@@ -3064,8 +3036,7 @@ button.story-event {
   .auth-btn-primary {
     min-height: 38px;
   }
-  .auth-btn-secondary,
-  .auth-btn-guest {
+  .auth-btn-secondary {
     min-height: 32px;
   }
   .char-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -3591,7 +3562,6 @@ button.story-event {
   cursor: pointer;
 }
 
-
 /* ----- Situation map (opt-in overlay; spine + door + fog) ----- */
 .story-complete__map {
   border-color: color-mix(in oklch, var(--accent-gold) 55%, transparent) !important;
@@ -3991,7 +3961,6 @@ button.story-event {
     min-width: 560px;
   }
 }
-
 
 /* ==========================================
    Agent Harness try panel (floating)
@@ -6623,43 +6592,6 @@ button.story-event {
   color: var(--dn-fg);
 }
 
-/* 张力：10 格方块刻度（纯展示） */
-.story-hud__metric--tension {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.story-hud--minimal .story-hud__metric--tension span {
-  margin: 0;
-  opacity: 1;
-  font-size: 9px;
-}
-
-.story-hud__tengrid {
-  display: inline-flex;
-  gap: 2px;
-  flex: none;
-}
-
-.story-hud__tengrid i {
-  width: 7px;
-  height: 7px;
-  border: 1px solid var(--dn-border);
-  border-radius: 1px;
-}
-
-.story-hud__tengrid i.is-on {
-  background: var(--dn-accent);
-  border-color: var(--dn-accent);
-}
-
-.story-hud--minimal .story-hud__metric--tension strong {
-  color: var(--dn-muted-hi);
-  font-family: var(--font-serif);
-  font-size: 12px;
-}
-
 /* 额度：琥珀 mono 常驻（琥珀只用于额度） */
 .story-hud__credits {
   align-self: center;
@@ -6699,7 +6631,6 @@ button.story-event {
 @media (max-width: 720px) {
   .story-hud { flex-wrap: wrap; }
   .story-hud__night { padding: 6px 12px; }
-  .story-hud__tengrid { display: none; }
 }
 
 /* ---------- 7. 局面预览：一条细 mono 摘要行 ---------- */
@@ -7699,21 +7630,6 @@ button.story-event {
   100% { background-position: -200% 0; }
 }
 
-.crisis-chips {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.crisis-chip {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: rgba(79, 195, 247, 0.12);
-  border: 1px solid rgba(79, 195, 247, 0.3);
-  color: #4fc3f7;
-  font-weight: 700;
-}
 
 .cast-slice-stage {
   position: absolute;
@@ -7817,29 +7733,6 @@ button.story-event {
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
-}
-
-.crew-factions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-}
-
-.faction-tag {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(244, 238, 219, 0.6);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.faction-tag span {
-  color: #f2c77d;
-  font-size: 11px;
 }
 
 .crew-cinematic-dialogue {

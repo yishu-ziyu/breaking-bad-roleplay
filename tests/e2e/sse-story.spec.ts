@@ -455,12 +455,12 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
 
   // story-complete UI visible with completion text
   await expect(page.locator('.story-complete')).toBeVisible()
-  await expect(page.locator('.story-complete')).toContainText(/This scene is over|这一场演完/)
+  await expect(page.locator('.story-complete')).toContainText(/This chapter is over|这一章结束了/)
 
   // BeatControls should no longer be visible (state left beat_paused)
   await expect(page.locator('.beat-controls')).toHaveCount(0)
 
-  await expect(page.locator('.story-complete__hint')).toContainText(/not an infinite chat|不是无限续写/)
+  await expect(page.locator('.story-complete__hint')).toContainText(/does not go on forever|不会一直写下去/)
   await expect.poll(() => mockSSEStates(page)).toEqual([2, 2])
 
   // Story-complete follow-up actions are present, plus Start Again.

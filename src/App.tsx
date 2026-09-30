@@ -235,7 +235,7 @@ const relationLabels: Record<string, Record<Language, string>> = {
   'DEA partner': { en: 'partner at the DEA', zh: '局里的搭档' },
   'suspect under watch': { en: 'suspect he is watching', zh: '他盯上的嫌疑人' },
   'friend of the family': { en: 'friend of the family', zh: '家里的朋友' },
-  'Skyler sister-in-law': { en: 'older sister (Skyler)', zh: '姐姐（斯凯勒）' },
+  'Skyler sister-in-law': { en: "in-law (Skyler's side)", zh: '亲戚（斯凯勒家这边）' },
   'Hank spouse': { en: 'husband (Hank)', zh: '丈夫（汉克）' },
   'supportive but uncomprehending': { en: "someone supportive who doesn't quite get her", zh: '支持她、但不太懂她的人' },
 }
@@ -411,7 +411,7 @@ function formatUsage(quota: { byok: boolean; remaining: number }, lang: Language
 
 /** 「你是沃尔特的：」 — the chat header shows this before the relation picker. */
 function relationPrefix(char: Character, lang: Language): string {
-  return lang === 'zh' ? `你是${charName(char, lang)}的：` : `You are ${char.name}'s`
+  return lang === 'zh' ? `你是${charName(char, lang)}的：` : `You are ${char.name}'s:`
 }
 
 /*  BeatControls - decision UI at beat_ready                          */
@@ -1390,11 +1390,11 @@ function App() {
         if (quotaErr && quotaBlocksPlay({ open: quota.open, byok: quota.byok, remaining: quota.remaining })) {
           connection.setSheetOpen(true)
           void quota.refresh()
+          // Always our own copy: the backend message is English-only and predates docs/GLOSSARY.md.
           throw new Error(
-            quotaErr.message
-              || (language === 'zh'
-                ? '今天的免费次数用完了。登录可以多拿一些，或者在「AI 设置」里填你自己的 API Key 继续。'
-                : 'You have used today’s free messages. Sign in for more, or add your own API key in AI settings.'),
+            language === 'zh'
+              ? '今天的免费次数用完了。登录可以多拿一些，或者在「AI 设置」里填你自己的 API Key 继续。'
+              : 'You have used today’s free messages. Sign in for more, or add your own API key in AI settings.',
           )
         }
         if (quotaErr) {
@@ -1517,7 +1517,7 @@ function App() {
       if (savedRelation !== undefined) {
         const found = characters.find(c => c.id === id)
         setRelationNotice(
-          `${found ? charName(found, language) : id}: ${getRelationLabel(savedRelation, language)}`,
+          found ? `${relationPrefix(found, language)}${getRelationLabel(savedRelation, language)}` : getRelationLabel(savedRelation, language),
         )
       }
       return { ...prev, [key]: savedRelation ?? characters.find(c => c.id === id)!.relationOptions[0] }
@@ -2155,8 +2155,8 @@ function App() {
                   </div>
                   <p className="story-complete__hint">
                     {language === 'zh'
-                      ? '先到这里。需要的话再打开局面图，或另开一场——不是无限续写。'
-                      : 'This scene is over. Open the situation map if you need it, or start another run — not an infinite chat.'}
+                      ? '剧情不会一直写下去。可以打开剧情回顾看看发生了什么，或者从上面选一个继续。'
+                      : 'The story does not go on forever. Open “Story so far” to look back, or pick one of the options above.'}
                   </p>
                 </div>
               )}
@@ -2218,7 +2218,7 @@ function App() {
               <summary>{language === 'zh' ? '旧版聊天记录（只读）' : 'Legacy conversations (read-only)'}</summary>
               <p>{language === 'zh'
                 ? '旧版记录未区分单聊和群聊，保留供回看，不自动带入新对话。'
-                : 'These older records did not distinguish Direct from Crew. They are preserved for reading, not sent into new conversations.'}</p>
+                : 'These older records did not separate 1:1 and group chats. They are kept for reading and are not sent into new conversations.'}</p>
               {legacyMessages.map((row, index) => <p key={index}><strong>{row.sender}: </strong>{row.text}</p>)}
             </details>
           )}
@@ -2242,7 +2242,7 @@ function App() {
                   </div>
                   <div className="msg-body">
                     <div className="msg-meta">
-                      <strong>{isUser ? `${t.you}, ${getRelationLabel(relation, language)}` : senderName}</strong>
+                      <strong>{isUser ? t.you : senderName}</strong>
                       {msg.emotion && !msg.id.startsWith('opener-') && <span>{msg.emotion}</span>}
                     </div>
                     <p>{msg.text}</p>

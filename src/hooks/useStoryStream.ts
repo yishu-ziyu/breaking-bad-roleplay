@@ -1179,9 +1179,9 @@ export function useStoryStream({
           const msg =
             rawMsg
             || (status === 402
-              ? 'Free demo credits used up for today. Sign in for early-access credits or connect your own key.'
+              ? 'You have used today’s free messages. Sign in for more, or add your own API key in AI settings.'
               : status === 429
-                ? 'Too many requests. Slow down or use your own key.'
+                ? 'Too many messages at once. Wait a moment and try again.'
                 : status === 403
                   ? 'This story session is locked to another browser.'
                   : 'Could not start the story stream.')

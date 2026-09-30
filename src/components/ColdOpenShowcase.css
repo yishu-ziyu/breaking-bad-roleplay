@@ -357,21 +357,6 @@
   100% { background-position: -200% 0; }
 }
 
-.crisis-chips {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.crisis-chip {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: rgba(79, 195, 247, 0.12);
-  border: 1px solid rgba(79, 195, 247, 0.3);
-  color: #4fc3f7;
-  font-weight: 700;
-}
 
 /* ==================== 卡片 2：角色对话 (Direct) ==================== */
 .cast-slice-stage {
@@ -478,29 +463,6 @@
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
-}
-
-.crew-factions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-}
-
-.faction-tag {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(244, 238, 219, 0.6);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.faction-tag span {
-  color: #f2c77d;
-  font-size: 11px;
 }
 
 .crew-cinematic-dialogue {

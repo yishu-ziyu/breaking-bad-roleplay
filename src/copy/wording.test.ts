@@ -20,9 +20,9 @@ const EXEMPT = [
 ]
 
 // Strings that match a banned word but are not player-visible copy.
-const ALLOW: Array<{ file: string; text: string; why: string }> = [
-  { file: 'App.tsx', text: '开场压迫', why: 'internal emotion tag on openers; never rendered, keys GIF lookup' },
-  { file: 'lib/gifResolver.ts', text: '开场压迫', why: 'GIF lookup key for the opener emotion tag' },
+const ALLOW: Array<{ file: string; text: string; exact?: boolean; why: string }> = [
+  { file: 'App.tsx', text: '开场压迫', exact: true, why: 'internal emotion tag on openers; never rendered, keys GIF lookup' },
+  { file: 'lib/gifResolver.ts', text: '开场压迫', exact: true, why: 'GIF lookup key for the opener emotion tag' },
   { file: 'App.tsx', text: '从关键节点分叉', why: 'prompt sent to the model when branching a story' },
   { file: 'App.tsx', text: 'Branch from the earlier decisive beat', why: 'prompt sent to the model when branching a story' },
   { file: 'components/coldOpenCopy.ts', text: 'Beat whatever else', why: '"beat" as a verb (get there first)' },
@@ -43,12 +43,18 @@ const BANNED_ZH = [
   '身份对', '锚点',
   // engineering words
   '重定向', '切换视角', '工具调用', '编号', '落地', '结算', '绑定',
+  // retired metaphors
+  '局面图', '局面地图', '局面展开',
   // facts
   '嫂子',
 ]
 
-const BANNED_EN = [/\bBYOK\b/, /\bRoleplay Lab\b/i, /\bdirector\b/i, /\bquota\b/i, /\bbeat\b/i]
-const EN_NAMES = /\b(Walter|Jesse|Skyler|Saul|Mike|Gus|Hank|Marie)\b/
+const BANNED_EN = [
+  /\bBYOK\b/, /\bRoleplay Lab\b/i, /\bdirector\b/i, /\bquota\b/i, /\bbeat\b/i,
+  /\bdemo\b/i, /\bearly-access\b/i, /\bown key\b/i, /\bthe run\b/i, /\bsituation map\b/i,
+  /\bDirect (chat|mode)\b/, /\bCrew\b/,
+]
+const EN_NAMES = /\b(Walter|Jesse|Skyler|Saul|Mike|Gus|Hank|Marie|Heisenberg|Pinkman|Goodman|Fring|Ehrmantraut|Schrader)\b/i
 const HAN = /\p{Script=Han}/u
 
 function uiFiles(dir: string): string[] {
@@ -76,31 +82,50 @@ function visibleStrings(code: string): string[] {
 
 type Hit = { file: string; word: string; text: string }
 
-function scan(): Hit[] {
+function checkStrings(rel: string, strings: string[]): Hit[] {
   const hits: Hit[] = []
-  for (const file of uiFiles(src)) {
-    const rel = relative(src, file)
-    for (const text of visibleStrings(stripComments(readFileSync(file, 'utf8')))) {
-      if (ALLOW.some((a) => a.file === rel && text.includes(a.text))) continue
-      if (HAN.test(text)) {
-        for (const word of BANNED_ZH) if (text.includes(word)) hits.push({ file: rel, word, text })
-        const name = text.match(EN_NAMES)
-        if (name) hits.push({ file: rel, word: `英文名 ${name[1]}`, text })
-      } else {
-        // Ignore interpolated code and class-name strings such as `quota-pill${…}`.
-        const plain = text.replace(/\$\{[^}]*\}/g, ' ').trim()
-        if (!/\s/.test(plain) || /^[\w]+[-_]/.test(plain)) continue
-        for (const re of BANNED_EN) {
-          const m = plain.match(re)
-          if (m) hits.push({ file: rel, word: m[0], text })
-        }
+  for (const text of strings) {
+    if (ALLOW.some((a) => a.file === rel && (a.exact ? text === a.text : text.includes(a.text)))) continue
+    if (HAN.test(text)) {
+      for (const word of BANNED_ZH) if (text.includes(word)) hits.push({ file: rel, word, text })
+      const name = text.match(EN_NAMES)
+      if (name) hits.push({ file: rel, word: `英文名 ${name[1]}`, text })
+    } else {
+      // Ignore interpolated code and class-name strings such as `quota-pill${…}`.
+      const plain = text.replace(/\$\{[^}]*\}/g, ' ').trim()
+      if (!/\s/.test(plain) || /^[a-z0-9]+[-_][a-z0-9-_]*(\s|$)/.test(plain)) continue
+      for (const re of BANNED_EN) {
+        const m = plain.match(re)
+        if (m) hits.push({ file: rel, word: m[0], text })
       }
     }
   }
   return hits
 }
 
+function scan(): Hit[] {
+  const hits = uiFiles(src).flatMap((file) =>
+    checkStrings(relative(src, file), visibleStrings(stripComments(readFileSync(file, 'utf8')))),
+  )
+  // The browser tab title is the first place a player reads the product name.
+  const html = readFileSync(join(src, '..', 'index.html'), 'utf8')
+  const title = html.match(/<title>([^<]*)<\/title>/)?.[1] ?? ''
+  if (/ABQ|Roleplay Lab/i.test(title)) hits.push({ file: 'index.html', word: 'title', text: title })
+  return hits
+}
+
 describe('player-visible wording follows docs/GLOSSARY.md', () => {
+  it('the checker itself catches banned copy (positive control)', () => {
+    const words = checkStrings('fixture.tsx', [
+      '让导演继续', '重试这一拍', '和 Walter 聊聊', '局面展开中…', '平克曼 Pinkman 来了',
+      'Free demo credits used up. Connect your own key.', 'The run may still be generating', 'Direct and Crew',
+    ]).map((h) => h.word)
+    for (const w of ['导演', '这一拍', '英文名 Walter', '局面展开', '英文名 Pinkman', 'demo', 'own key', 'Crew']) {
+      assert.ok(words.includes(w), `expected the checker to flag ${w}; got ${words.join(', ')}`)
+    }
+    assert.deepEqual(checkStrings('fixture.tsx', ['quota-pill is-low', 'beat-paused beat-paused--drama', '今天还剩 3 次']), [])
+  })
+
   it('uses no banned words and no English names inside Chinese copy', () => {
     const hits = scan()
     const report = hits.map((h) => `${h.file}  [${h.word}]  ${h.text.slice(0, 80)}`).join('\n')
