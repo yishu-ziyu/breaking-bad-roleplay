@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ABQ 账本</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=ZCOOL+QingKe+HuangYou&display=swap">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">ABQ 账本</span><span class="week" id="week"></span></div>
+    <div class="money" id="money"></div>
+  </header>
+
+  <section class="meters panel" id="meters" aria-label="局势"></section>
+
+  <section class="stage" id="stage">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="map" aria-label="阿尔伯克基地图"></canvas>
+      <div class="labels" id="labels"></div>
+    </div>
+  </section>
+
+  <aside class="side" id="side">
+    <section class="panel ledger" id="ledger" aria-label="账本"></section>
+    <section class="panel log" id="log" aria-label="记录"></section>
+  </aside>
+
+  <section class="dock" id="dock"></section>
+</div>
+
+<div class="overlay" id="overlay" hidden></div>
+<script type="module" src="/src/ui/main.ts"></script>
+</body>
+</html>
