@@ -22,8 +22,8 @@ export function HomePreview({ onStory, onChat, onCrew }: Props) {
   const [shot, setShot] = React.useState(1)
   return <div className="hp" id="top">
     <header className="hp-nav">
-      <a className="hp-back" href="/">当前游戏</a>
-      <a className="hp-brand" href="#top" aria-label="ABQ Roleplay Lab 首页">abq<span>ROLEPLAY LAB</span></a>
+      <a className="hp-back" href="/">回到首页</a>
+      <a className="hp-brand" href="#top" aria-label="绝命毒师 · 角色扮演">绝命毒师<span>角色扮演</span></a>
       <nav aria-label="首页导航"><a href="#characters">角色</a><a href="#how">玩法</a></nav>
     </header>
     <main>
@@ -34,13 +34,13 @@ export function HomePreview({ onStory, onChat, onCrew }: Props) {
           <span className="hp-cover-credit">JESSE PINKMAN</span>
         </div>
       </section>
-      <div className="hp-game-mark" aria-label="ABQ Roleplay Lab">
+      <div className="hp-game-mark" aria-label="绝命毒师 · 角色扮演">
         <img src={portrait('walter')} alt="" />
-        <span>ABQ Roleplay Lab</span>
+        <span>绝命毒师 · 角色扮演</span>
       </div>
-      <div className="hp-entry"><button className="hp-primary" onClick={onStory}>开始故事</button><a className="hp-secondary" href="#characters">与角色聊天</a><button type="button" className="hp-secondary" onClick={onCrew}>群像会谈</button><p>支持中文与英文 · 可先以游客体验</p></div>
+      <div className="hp-entry"><button className="hp-primary" onClick={onStory}>开始剧情</button><a className="hp-secondary" href="#characters">找人单聊</a><button type="button" className="hp-secondary" onClick={onCrew}>进群聊</button><p>支持中文与英文 · 不登录也能玩</p></div>
       <section className="hp-introduction" id="how" aria-labelledby="hp-intro-title">
-        <p className="hp-eyebrow">ABOUT THE GAME</p><h2 id="hp-intro-title">角色对话与互动剧情</h2>
+        <p className="hp-eyebrow">ABOUT THE GAME</p><h2 id="hp-intro-title">聊天与剧情</h2>
         <p>选择《绝命毒师》中的角色进行单聊，<br className="hp-wide-break" />或扮演角色，通过对话和行动推进故事。</p>
         <p>单聊中，你可以选择与角色的关系，再自由交谈。<br className="hp-wide-break" />剧情中，你可以跟随行动提示，也可以输入自己的决定。</p>
         <a href="#gameplay" className="hp-text-link">查看剧情片段</a>
@@ -61,11 +61,11 @@ export function HomePreview({ onStory, onChat, onCrew }: Props) {
         <div className="hp-section-heading"><p className="hp-eyebrow">THE CHARACTERS</p><h2 id="hp-cast-title">选择角色，开始对话</h2></div>
         <div className="hp-cast-grid">{cast.map(c => <button className="hp-character" key={c.id} onClick={() => onChat(c.id)} aria-label={`和${c.name}聊天`}>
           <div className={`hp-portrait hp-portrait-${c.id}`}><img src={portrait(c.id)} alt="" loading="lazy" /></div>
-          <div className="hp-cast-info"><span className="hp-cast-en">{c.english}</span><h3>{c.name}</h3><p>{c.description}</p><span className="hp-chat-link">与角色聊天</span></div>
+          <div className="hp-cast-info"><span className="hp-cast-en">{c.english}</span><h3>{c.name}</h3><p>{c.description}</p><span className="hp-chat-link">开始聊天</span></div>
         </button>)}</div>
       </section>
-      <section className="hp-play"><h2>想参与剧情？</h2><p>先选择行动，再选择你扮演的角色。</p><button className="hp-primary" onClick={onStory}>开始故事</button></section>
+      <section className="hp-play"><h2>想参与剧情？</h2><p>先选择行动，再选择你扮演的角色。</p><button className="hp-primary" onClick={onStory}>开始剧情</button></section>
     </main>
-    <footer className="hp-footer"><span>ABQ ROLEPLAY LAB</span><span>《绝命毒师》同人互动体验</span><a href="#top">回到顶部</a></footer>
+    <footer className="hp-footer"><span>绝命毒师 · 角色扮演</span><span>《绝命毒师》同人互动体验</span><a href="#top">回到顶部</a></footer>
   </div>
 }

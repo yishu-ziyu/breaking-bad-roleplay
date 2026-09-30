@@ -88,37 +88,6 @@ const DISPLAY_NAME_TO_ID: Record<string, CharacterId> = {
   'Marie Schrader': 'marie', 'Marie': 'marie',
 }
 
-/** Emotion → 0-10 tension dial for the HUD ten-block gauge. */
-const STAGE_TENSION_LEVEL: Record<string, number> = {
-  calm: 2,
-  resigned: 3,
-  guilty: 4,
-  fearful: 5,
-  manipulative: 6,
-  tense: 6,
-  desperate: 7,
-  angry: 8,
-}
-
-/** Map director emotion_state tags for HUD display (tags stay English for GIFs). */
-const EMOTION_LABELS: Record<string, Record<Language, string>> = {
-  calm: { en: 'calm', zh: '平静' },
-  tense: { en: 'tense', zh: '紧张' },
-  angry: { en: 'angry', zh: '愤怒' },
-  fearful: { en: 'fearful', zh: '恐惧' },
-  manipulative: { en: 'manipulative', zh: '操控' },
-  guilty: { en: 'guilty', zh: '内疚' },
-  resigned: { en: 'resigned', zh: '无奈' },
-  desperate: { en: 'desperate', zh: '绝望' },
-  opening: { en: 'opening pressure', zh: '开场压迫' },
-}
-
-function formatEmotionLabel(raw: string | null | undefined, lang: Language): string {
-  if (!raw) return ''
-  const key = raw.trim().toLowerCase()
-  return EMOTION_LABELS[key]?.[lang] ?? raw
-}
-
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
@@ -156,6 +125,7 @@ type ChatMessage = {
 type Character = {
   id: CharacterId
   name: string
+  nameZh: string
   color: string
   oneLiner: Record<Language, string>
   relationOptions: string[]
@@ -168,37 +138,37 @@ type Character = {
 
 const characters: Character[] = [
   {
-    id: 'walter', name: 'Walter', color: '#d7e36f',
+    id: 'walter', name: 'Walter', nameZh: '沃尔特', color: '#d7e36f',
     oneLiner: { en: 'A chemistry teacher turned empire builder. Precision, pride, and terrible secrets.', zh: '化学老师转型帝国建造者。精确、骄傲，和见不得人的秘密。' },
     relationOptions: ['family member', 'lab partner', 'former student', 'DEA liability'],
     opener: { en: 'Porch light keeps buzzing. Come in. What is it?', zh: '门廊灯一直在嗡。进来。什么事？' },
   }, {
-    id: 'jesse', name: 'Jesse', color: '#93d7ff',
+    id: 'jesse', name: 'Jesse', nameZh: '杰西', color: '#93d7ff',
     oneLiner: { en: 'A cook with a conscience. Street-smart, impulsive, and desperately loyal.', zh: '有良知的制作者。街头聪明、冲动，却又极度忠诚。' },
     relationOptions: ['partner', 'old friend', 'dealer contact', 'person he disappointed'],
     opener: { en: 'Yo, fridge is empty except mustard. You eating, or just hovering?', zh: 'Yo，冰箱里除了芥末啥也没有。你是来吃的，还是来飘着的？' },
   }, {
-    id: 'skyler', name: 'Skyler', color: '#f3d9a2',
+    id: 'skyler', name: 'Skyler', nameZh: '斯凯勒', color: '#f3d9a2',
     oneLiner: { en: 'The wife who found the cracks. Protective, sharp, and running out of patience.', zh: '发现了裂痕的妻子。护家心切、敏锐，耐心快要耗尽。' },
     relationOptions: ['spouse', 'family member', 'neighbor', 'person hiding something'],
     opener: { en: 'Dish rack is still wet. Ask once. Answer once. What happened?', zh: '碗架还是湿的。问一次，答一次。出什么事了？' },
   }, {
-    id: 'saul', name: 'Saul', color: '#f7ce46',
+    id: 'saul', name: 'Saul', nameZh: '索尔', color: '#f7ce46',
     oneLiner: { en: 'A criminal lawyer who sees every problem as a business opportunity.', zh: '把每个问题都看成商机的刑事律师。' },
     relationOptions: ['client', 'business partner', 'witness', 'problem to solve'],
     opener: { en: 'Good news: you came to the right office. Bad news: that usually means something went very wrong.', zh: '好消息是：你找对办公室了。坏消息是：这通常说明事情已经非常不对劲。' },
   }, {
-    id: 'mike', name: 'Mike', color: '#b9c0a5',
+    id: 'mike', name: 'Mike', nameZh: '迈克', color: '#b9c0a5',
     oneLiner: { en: 'A former cop who cleaned up after everyone. Quiet, lethal, and exhausted by incompetence.', zh: '为所有人善后的前警探。安静、致命，厌倦了愚蠢。' },
     relationOptions: ['asset', 'employer', 'person under protection', 'loose end'],
     opener: { en: 'Sit down. Talk less. Start with the part you think I do not already know.', zh: '坐下。少说废话。从你以为我还不知道的部分开始。' },
   }, {
-    id: 'gus', name: 'Gus', color: '#b2f09a',
+    id: 'gus', name: 'Gus', nameZh: '古斯', color: '#b2f09a',
     oneLiner: { en: 'A restaurant owner with absolute control. Every gesture is calculated, every silence is a threat.', zh: '拥有绝对控制权的餐厅老板。每个动作都经过计算，每段沉默都是威胁。' },
     relationOptions: ['employee', 'supplier', 'guest', 'person being evaluated'],
     opener: { en: 'Please, sit. The fryer just went quiet. What do you need?', zh: '请坐。炸炉刚停了声。你需要什么？' },
   }, {
-    id: 'hank', name: 'Hank', color: '#f0a36b',
+    id: 'hank', name: 'Hank', nameZh: '汉克', color: '#f0a36b',
     oneLiner: {
       en: 'A loud DEA agent with a soft spot for family. Jokes first, then the questions that stick.',
       zh: '吵闹的 DEA 探员，对家人护短。先开玩笑，再问到你改口。',
@@ -214,10 +184,10 @@ const characters: Character[] = [
       zh: '衬衫上还沾着烤肉烟味。坐。故事从哪开始不对劲？',
     },
   }, {
-    id: 'marie', name: 'Marie', color: '#c8b6e2',
+    id: 'marie', name: 'Marie', nameZh: '玛丽', color: '#c8b6e2',
     oneLiner: {
-      en: 'Hank\u2019s wife and Skyler\u2019s sister-in-law. Polished hospitality with a sharp eye for what does not add up at home.',
-      zh: 'Hank 的妻子，Skyler 的嫂子。礼貌周到，对家里说不通的地方尤其敏锐。',
+      en: 'Hank\u2019s wife and Skyler\u2019s younger sister. Polished hospitality with a sharp eye for what does not add up at home.',
+      zh: '汉克的妻子，斯凯勒的妹妹。礼貌周到，对家里说不通的地方尤其敏锐。',
     },
     relationOptions: [
       'Skyler sister-in-law',
@@ -233,293 +203,193 @@ const characters: Character[] = [
 ]
 
 const relationLabels: Record<string, Record<Language, string>> = {
-  'former student': { en: 'former student', zh: '前学生' },
-  'family member': { en: 'family member', zh: '家人' },
+  'former student': { en: 'student', zh: '学生' },
+  'family member': { en: 'family', zh: '家人' },
   'lab partner': { en: 'lab partner', zh: '实验室搭档' },
-  'DEA liability': { en: 'someone Hank might investigate', zh: '汉克可能盯上的人' },
-  'old colleague': { en: 'old colleague', zh: '旧同事' },
+  'DEA liability': { en: 'liability (Hank might look into you)', zh: '隐患（汉克可能会查到你）' },
+  'old colleague': { en: 'old colleague', zh: '老同事' },
   partner: { en: 'partner', zh: '搭档' },
   'old friend': { en: 'old friend', zh: '老朋友' },
-  'dealer contact': { en: 'dealer contact', zh: '地下联系人' },
-  'younger sibling figure': { en: 'younger sibling figure', zh: '像弟妹一样的人' },
-  'person he disappointed': { en: '被他辜负的人', zh: '被他辜负的人' },
-  spouse: { en: 'spouse', zh: '配偶' },
-  'bookkeeping client': { en: 'bookkeeping client', zh: '记账客户' },
+  'dealer contact': { en: 'contact on the street', zh: '道上的熟人' },
+  'younger sibling figure': { en: 'little-brother figure', zh: '像弟弟妹妹一样的人' },
+  'person he disappointed': { en: 'someone he let down', zh: '被他辜负过的人' },
+  spouse: { en: 'husband', zh: '丈夫' },
+  'bookkeeping client': { en: 'bookkeeping client', zh: '记账的客户' },
   neighbor: { en: 'neighbor', zh: '邻居' },
-  'person hiding something': { en: 'person hiding something', zh: '有所隐瞒的人' },
+  'person hiding something': { en: 'someone hiding something from her', zh: '有事瞒着她的人' },
   client: { en: 'client', zh: '客户' },
   witness: { en: 'witness', zh: '证人' },
-  'business partner': { en: 'business partner', zh: '商业伙伴' },
-  'problem to solve': { en: 'problem to solve', zh: '待处理麻烦' },
-  'person with cash': { en: 'person with cash', zh: '带着现金的人' },
-  asset: { en: 'asset', zh: '线人资产' },
+  'business partner': { en: 'business partner', zh: '生意伙伴' },
+  'problem to solve': { en: 'problem he has to fix', zh: '要他摆平的麻烦' },
+  'person with cash': { en: 'someone bringing cash', zh: '来送钱的人' },
+  asset: { en: 'informant', zh: '线人' },
   employer: { en: 'employer', zh: '雇主' },
-  'person under protection': { en: 'person under protection', zh: '受保护对象' },
-  'loose end': { en: 'loose end', zh: '未清理风险' },
+  'person under protection': { en: 'someone he protects', zh: '他罩着的人' },
+  'loose end': { en: 'loose end', zh: '知道太多的人' },
   rookie: { en: 'rookie', zh: '新手' },
   employee: { en: 'employee', zh: '员工' },
-  supplier: { en: 'supplier', zh: '供应方' },
+  supplier: { en: 'supplier', zh: '供货的人' },
   rival: { en: 'rival', zh: '对手' },
   guest: { en: 'guest', zh: '客人' },
-  'person being evaluated': { en: '被评估的人', zh: '被评估的人' },
-  'DEA partner': { en: "Hank's partner at work", zh: '汉克局里的搭档' },
-  'suspect under watch': { en: 'suspect under watch', zh: '被盯上的人' },
-  'friend of the family': { en: 'friend of the family', zh: '家人的朋友' },
-  'Skyler sister-in-law': { en: 'Skyler sister-in-law', zh: 'Skyler 的嫂子' },
-  'Hank spouse': { en: 'Hank spouse', zh: 'Hank 的妻子' },
-  'supportive but uncomprehending': { en: 'supportive but uncomprehending', zh: '支持却不理解的人' },
+  'person being evaluated': { en: 'someone he is sizing up', zh: '他正在考察的人' },
+  'DEA partner': { en: 'partner at the DEA', zh: '局里的搭档' },
+  'suspect under watch': { en: 'suspect he is watching', zh: '他盯上的嫌疑人' },
+  'friend of the family': { en: 'friend of the family', zh: '家里的朋友' },
+  'Skyler sister-in-law': { en: "in-law (Skyler's side)", zh: '亲戚（斯凯勒家这边）' },
+  'Hank spouse': { en: 'husband (Hank)', zh: '丈夫（汉克）' },
+  'supportive but uncomprehending': { en: "someone supportive who doesn't quite get her", zh: '支持她、但不太懂她的人' },
 }
 
 const uiText: Record<Language, Record<string, string>> = {
   en: {
-    character: 'Active Profile',
+    character: 'Characters',
     language: 'Language',
-    relation: 'Relation',
-    view: 'View',
+    relation: 'You are',
+    view: 'Mode',
     story: 'Story',
-    direct: 'Direct',
-    crew: 'Crew',
-    model: 'Model engine',
-    storyTitle: 'ABQ Roleplay Lab',
-    setStage: 'Set the Stage',
-    setStageHint: 'Describe the story you want in natural language. The scene board will play it beat by beat, pausing at pressure points for your decision.',
-    placeholder: 'e.g. Walter White needs to secure a new methylamine supply from Gus Fring without Skyler finding out…',
-    startStory: 'Start Story',
-    narrativeStream: 'Story',
-    eventFeed: 'Fine-grained event-driven narrative',
-    directorDecision: 'Choose the next move:',
-    switchToChat: 'Direct',
+    direct: '1:1',
+    crew: 'Group chat',
+    model: 'AI settings',
+    storyTitle: 'Breaking Bad Roleplay',
+    setStage: 'Where do you want to start?',
+    setStageHint: 'Describe the conflict you want in a sentence or two. The story plays out part by part and stops when it needs your decision.',
+    placeholder: 'e.g. Walter needs a new supply from Gus without Skyler finding out…',
+    startStory: 'Start story',
     you: 'You',
     send: 'Send',
-    sending: 'Thinking…',
     waitingAs: '{character} is thinking…',
     inspectThinking: 'How they played it',
-    messagePlaceholder: 'Negotiate with {character} as their {relation}…',
-    privateScene: 'Direct',
-    crewScene: 'Crew',
-    schema: 'On scene',
-    gifTrigger: 'Scene beat',
-    connected: 'Stream live',
-    connecting: 'Half a bag of cash left in the RV. The night is not done with anyone.',
-    streamingUnfold: 'The situation is still unfolding…',
-    disconnected: 'Disconnected',
-    storyComplete: 'This scene is over.',
+    messagePlaceholder: 'Say something to {character}…',
+    privateScene: '1:1',
+    crewScene: 'Group chat',
+    gifTrigger: 'Scene clip',
+    connecting: 'Starting…',
+    storyComplete: 'This chapter is over.',
     continue: 'Continue',
     stop: 'Stop',
-    storyOutline: 'The situation',
-    paused: 'Paused',
-    toolLabel: 'Tool Call',
-    eventOutline: 'The situation',
-    eventSceneChange: 'Scene Setup',
-    eventSpeaks: 'speaks',
-    eventThinks: 'inner',
-    eventActs: 'acts',
-    eventBeatReady: 'Beat decision',
-    eventWorldDelta: 'Consequences',
-    eventStatus: 'Scene Status',
-    eventComplete: 'Scene Wrapped',
-    eventError: 'Error',
     openingEmotion: 'opening pressure',
-    enterWorld: 'Chat with Walter',
     langEn: 'EN',
-    beatRedirect: '↩ Redirect',
-    beatSwitchPerspective: '👤 Switch Perspective',
+    beatRedirect: '↩ Change direction',
+    beatSwitchPerspective: '👤 Play someone else',
     beatSubmit: 'Submit',
     beatCancel: 'Cancel',
     beatSelectCharacter: 'Select character…',
-    beatRedirectPlaceholder: 'Enter new plot direction…',
-    chatHeaderWith: '{character} with their {relation}',
-    savePrompt: 'Sign in to save this conversation to the cloud.',
+    beatRedirectPlaceholder: 'Where should the story go?',
+    savePrompt: 'Sign in to save this chat to the cloud.',
     langZh: '中文',
     resumingStory: 'Resuming previous story...',
     reconnect: 'Reconnect',
     restart: 'Restart',
-    autoContinue: 'Scene resumes after 5min idle...',
-    streaming: 'Streaming',
-    returnToLanding: '↩ Return to Landing',
+    autoContinue: 'No move for 5 minutes — the story continues on its own…',
+    streaming: 'Playing',
+    returnToLanding: '↩ Home',
     continueChapter: 'Start Chapter 2',
-    branchStory: 'Try a Different Branch',
-    replayBeat: 'Replay Last Beat',
+    branchStory: 'Try another path',
+    replayBeat: 'Replay last part',
     startAgain: 'Start Again',
-    storyCompleteHint: 'Each new beat will pick up the last chapter\'s context.',
-    plotNet: 'Situation map',
-    plotNetShow: 'Open situation map',
+    plotNet: 'Story so far',
+    plotNetShow: 'Open story so far',
     plotNetHide: 'Close',
-    plotNetLoad: 'Reading the room…',
-    plotNetError: 'Could not load the map.',
-    plotNetEmpty: 'Play a few beats first - the map grows from what you lived.',
-    plotNetPast: 'Already lived',
-    plotNetNow: 'Current situation',
-    plotNetFog: 'Unknown future',
+    plotNetLoad: 'Loading…',
+    plotNetError: 'Could not load.',
+    plotNetEmpty: 'Play a few parts first — this fills in as things happen.',
+    plotNetPast: 'Already happened',
+    plotNetNow: 'Now',
+    plotNetFog: 'Not known yet',
     plotNetKnown: 'You already know',
     plotNetShifting: 'Still shifting',
     plotNetCast: 'Who spoke',
-    plotNetNoPast: 'This is where the thread starts.',
-    plotNetNoFog: 'No open pressure yet - the next beat will write the fog.',
-    plotNetHint: 'Past is fact. Present is the door. Future is fog - only this session.',
-    plotNetBeats: 'beats',
+    plotNetNoPast: 'The story starts here.',
+    plotNetNoFog: 'Nothing unresolved yet.',
+    plotNetHint: 'Only what happened in this story.',
+    plotNetBeats: 'parts',
     plotNetCastMeta: 'cast',
     plotNetLines: 'lines',
     plotNetNowTag: 'NOW',
-    plotNetFogTag: 'FOG',
-    pressureDossier: 'Relationship pressure',
-    pressureTrust: 'Trust',
-    pressureStyle: 'Pressure',
-    pressureConflict: 'Conflict',
-    scene: 'Scene',
+    plotNetFogTag: 'UNKNOWN',
     location: 'Location',
-    tension: 'Tension',
-    time: 'Time',
-    sceneTimeline: 'Beats',
-    unspokenPressure: 'Unspoken Pressure',
-    possibleConsequences: 'Possible Consequences',
-    relationshipImpact: 'Relationship Impact',
-    currentBeat: 'Current Beat',
-    sceneFallback: 'The scene is waiting for the first beat.',
     storyLocationFallback: 'North of ABQ',
-    outlineExpand: 'Open',
-    outlineCollapse: 'Close',
-    timelineHint: 'Tap a beat to focus the stage',
-    archiveHandle: 'Archive',
-    timelineCollapse: 'Hide rail',
-    timelineExpand: 'Show rail',
-    gifToggleHide: 'Hide GIF',
-    gifToggleShow: 'Show GIF',
+    archiveHandle: 'Menu',
     stopGenerating: 'Stop',
     newMessages: 'New messages',
-    stagePrev: 'Previous card',
-    stageNext: 'Next card',
-    backToLive: 'Back to latest',
     storyStartHint: 'Tip: press ⌘/Ctrl+Enter to start',
-    shotList: 'SHOT LIST',
-    directorBusy: 'Director analyzing the task…',
-    interLabel: 'INTERMISSION · YOUR NEXT MOVE',
-    interSub: 'The director awaits your call',
+    interLabel: 'YOUR TURN',
+    interSub: 'You decide what happens next',
   },
   zh: {
-    character: '角色档案',
+    character: '角色',
     language: '语言',
-    relation: '身份关系',
-    view: '游玩模式',
+    relation: '你的身份',
+    view: '玩法',
     story: '剧情',
     direct: '单聊',
     crew: '群聊',
-    model: '模型引擎',
-    storyTitle: 'ABQ Roleplay Lab',
-    setStage: '开场设定',
-    setStageHint: '用自然语言写下你想推进的冲突。场面会一段段推，到紧要处停下来等你。',
-    placeholder: '例如：Walter White 需要想办法从 Gus Fring 那里拿到新的甲胺供应，同时不能让 Skyler 发现…',
-    startStory: '开始故事',
-    narrativeStream: '剧情',
-    eventFeed: '实时剧情事件',
-    directorDecision: '关键节点：选择下一步',
-    switchToChat: '单聊',
+    model: 'AI 设置',
+    storyTitle: '绝命毒师 · 角色扮演',
+    setStage: '你想从哪儿开始？',
+    setStageHint: '用一两句话写下你想演的冲突。剧情会一段一段往下演，到要你做决定时停下来。',
+    placeholder: '例如：沃尔特得从古斯那里弄到新的原料，还不能让斯凯勒发现…',
+    startStory: '开始剧情',
     you: '你',
     send: '发送',
-    sending: '生成回应…',
     waitingAs: '{character}还在想…',
     inspectThinking: '他怎么想的',
-    messagePlaceholder: '以{relation}身份对 {character} 说…',
+    messagePlaceholder: '对{character}说…',
     privateScene: '单聊',
     crewScene: '群聊',
-    schema: '现场',
-    gifTrigger: '镜头节点',
-    connected: '现场已连接',
-    connecting: '房车里还剩半袋现金。夜还没放过任何人。',
-    streamingUnfold: '局面还在展开…',
-    disconnected: '已断开',
-    storyComplete: '这一场演完了。',
+    gifTrigger: '剧中画面',
+    connecting: '正在开始…',
+    storyComplete: '这一章结束了。',
     continue: '继续',
     stop: '停止',
-    storyOutline: '局面',
-    paused: '已暂停',
-    toolLabel: '工具调用',
-    eventOutline: '局面',
-    eventSceneChange: '场景建立',
-    eventSpeaks: '说',
-    eventThinks: '内心',
-    eventActs: '行动',
-    eventBeatReady: '关键选择',
-    eventWorldDelta: '后果',
-    eventStatus: '现场状态',
-    eventComplete: '收场',
-    eventError: '错误',
-    reconnect: '重连',
+    reconnect: '重新连接',
     restart: '重新开始',
-    autoContinue: '5 分钟无操作，现场自动继续中…',
-    streaming: '播放中',
+    autoContinue: '5 分钟没有操作，剧情自动往下演…',
+    streaming: '正在演',
     resumingStory: '正在恢复上次剧情…',
     openingEmotion: '开场压迫',
     langZh: '中文',
-    enterWorld: '和 Walter 聊聊',
     langEn: 'EN',
-    beatRedirect: '↩ 重定向',
-    beatSwitchPerspective: '👤 切换视角',
+    beatRedirect: '↩ 换个方向',
+    beatSwitchPerspective: '👤 换个人演',
     beatSubmit: '提交',
     beatCancel: '取消',
     beatSelectCharacter: '选择角色…',
-    beatRedirectPlaceholder: '输入新的剧情方向…',
-    chatHeaderWith: '{character} 与{relation}',
-    savePrompt: '同步档案后，可在云端保存这段会谈。',
-    returnToLanding: '↩ 回到主页',
+    beatRedirectPlaceholder: '你想让剧情往哪儿走？',
+    savePrompt: '登录后，这段聊天会保存到云端。',
+    returnToLanding: '↩ 回到首页',
     continueChapter: '开始第二章',
-    branchStory: '换一个分支重开',
-    replayBeat: '重演最后节点',
+    branchStory: '换条路重来',
+    replayBeat: '重演最后一段',
     startAgain: '重新开始',
-    storyCompleteHint: '下一节会用上一章的剧情作为起点。',
-    plotNet: '局面地图',
-    plotNetShow: '打开局面地图',
+    plotNet: '剧情回顾',
+    plotNetShow: '打开剧情回顾',
     plotNetHide: '关闭',
-    plotNetLoad: '正在读场…',
-    plotNetError: '地图加载失败。',
-    plotNetEmpty: '先多玩几拍，地图会从你经历的内容长出来。',
-    plotNetPast: '已经历',
-    plotNetNow: '当前局面',
-    plotNetFog: '未知未来',
+    plotNetLoad: '正在加载…',
+    plotNetError: '加载失败。',
+    plotNetEmpty: '多玩几段，这里会记下发生过的事。',
+    plotNetPast: '已经发生',
+    plotNetNow: '现在',
+    plotNetFog: '还不知道',
     plotNetKnown: '你已知道',
     plotNetShifting: '正在变化',
-    plotNetCast: '谁开过口',
-    plotNetNoPast: '这就是线头开始的地方。',
-    plotNetNoFog: '还没有未解压力，下一拍会写出迷雾。',
-    plotNetHint: '过去是图，现在是门，未来是雾。只来自本局。',
-    plotNetBeats: '节拍',
+    plotNetCast: '谁说过话',
+    plotNetNoPast: '故事从这里开始。',
+    plotNetNoFog: '暂时没有悬着的事。',
+    plotNetHint: '只记这一局里发生的事。',
+    plotNetBeats: '段',
     plotNetCastMeta: '角色',
     plotNetLines: '台词',
-    plotNetNowTag: '此刻',
-    plotNetFogTag: '迷雾',
-    pressureDossier: '关系压力',
-    pressureTrust: '信任',
-    pressureStyle: '施压方式',
-    pressureConflict: '冲突钩子',
-    scene: '场次',
+    plotNetNowTag: '现在',
+    plotNetFogTag: '未知',
     location: '地点',
-    tension: '张力',
-    time: '时间',
-    sceneTimeline: '分镜',
-    unspokenPressure: '未说出口的压力',
-    possibleConsequences: '可能后果',
-    relationshipImpact: '关系影响',
-    currentBeat: '当前节点',
-    sceneFallback: '现场还在等第一拍。',
     storyLocationFallback: '阿尔伯克基北部',
-    outlineExpand: '展开',
-    outlineCollapse: '收起',
-    timelineHint: '点选分镜，主舞台切换',
-    archiveHandle: '档案',
-    timelineCollapse: '收起分镜',
-    timelineExpand: '展开分镜',
-    gifToggleHide: '关 GIF',
-    gifToggleShow: '开 GIF',
+    archiveHandle: '菜单',
     stopGenerating: '停止',
     newMessages: '新消息',
-    stagePrev: '上一张',
-    stageNext: '下一张',
-    backToLive: '回到最新',
     storyStartHint: '提示：按 ⌘/Ctrl+Enter 快速开始',
-    shotList: '分镜 · SHOT LIST',
-    directorBusy: '导演正在分析任务…',
-    interLabel: '幕间 · 你的下一步',
-    interSub: '导演等待你的抉择',
+    interLabel: '轮到你了',
+    interSub: '你来决定下一步',
   },
 }
 
@@ -529,14 +399,19 @@ function getRelationLabel(relation: string, lang: Language): string {
   return relationLabels[relation]?.[lang] ?? relation
 }
 
-function formatRelation(char: Character, relation: string, lang: Language): string {
-  const label = getRelationLabel(relation, lang)
-  // Labels that already name a person are complete phrases — don't wrap
-  // them as "Walter 的汉克可能盯上的人".
-  if (/汉克|沃尔特|杰西|斯凯勒|索尔|古斯|Hank|Walter|Jesse|Skyler|Saul|Gus/i.test(label)) {
-    return label
-  }
-  return lang === 'zh' ? `${char.name} 的${label}` : `${char.name}'s ${label}`
+function charName(char: Character, lang: Language): string {
+  return lang === 'zh' ? char.nameZh : char.name
+}
+
+/** One way to say how many messages are left (docs/GLOSSARY.md「免费次数」). */
+function formatUsage(quota: { byok: boolean; remaining: number }, lang: Language): string {
+  if (quota.byok) return lang === 'zh' ? '用你自己的 API Key · 不限次数' : 'Your own API key · unlimited'
+  return lang === 'zh' ? `今天还剩 ${quota.remaining} 次` : `${quota.remaining} left today`
+}
+
+/** 「你是沃尔特的：」 — the chat header shows this before the relation picker. */
+function relationPrefix(char: Character, lang: Language): string {
+  return lang === 'zh' ? `你是${charName(char, lang)}的：` : `You are ${char.name}'s:`
 }
 
 /*  BeatControls - decision UI at beat_ready                          */
@@ -1310,7 +1185,7 @@ function App() {
     try {
       if (!connection.view.canStart) {
         connection.setSheetOpen(true)
-        setError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
+        setError(language === 'zh' ? '先在「AI 设置」里选一个模型。' : 'Pick a model in AI settings first.')
         setCurtainRaised(false)
         return
       }
@@ -1319,8 +1194,8 @@ function App() {
         connection.setSheetOpen(true)
         setError(
           language === 'zh'
-            ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
-            : 'Key session is not ready. Re-save your key in the model engine.',
+            ? '你的 API Key 没有生效，请在「AI 设置」里重新保存。'
+            : 'Your API key is not active. Save it again in AI settings.',
         )
         setCurtainRaised(false)
         return
@@ -1440,7 +1315,7 @@ function App() {
     // Bind / open sheet before optimistic UI so a dead BYOK session does not leave a stranded bubble.
     if (!connection.view.canStart) {
       connection.setSheetOpen(true)
-      setError(language === 'zh' ? '请先连接模型引擎' : 'Connect the model engine first')
+      setError(language === 'zh' ? '先在「AI 设置」里选一个模型。' : 'Pick a model in AI settings first.')
       return
     }
     setIsSending(true)
@@ -1456,8 +1331,8 @@ function App() {
         connection.setSheetOpen(true)
         throw new Error(
           language === 'zh'
-            ? '密钥会话未就绪，请在模型引擎中重新保存密钥。'
-            : 'Key session is not ready. Re-save your key in the model engine.',
+            ? '你的 API Key 没有生效，请在「AI 设置」里重新保存。'
+            : 'Your API key is not active. Save it again in AI settings.',
         )
       }
     } catch (e) {
@@ -1515,11 +1390,11 @@ function App() {
         if (quotaErr && quotaBlocksPlay({ open: quota.open, byok: quota.byok, remaining: quota.remaining })) {
           connection.setSheetOpen(true)
           void quota.refresh()
+          // Always our own copy: the backend message is English-only and predates docs/GLOSSARY.md.
           throw new Error(
-            quotaErr.message
-              || (language === 'zh'
-                ? '今日免费次数已用完。连接你自己的密钥继续。'
-                : 'Free demo credits used up. Connect your own key to continue.'),
+            language === 'zh'
+              ? '今天的免费次数用完了。登录可以多拿一些，或者在「AI 设置」里填你自己的 API Key 继续。'
+              : 'You have used today’s free messages. Sign in for more, or add your own API key in AI settings.',
           )
         }
         if (quotaErr) {
@@ -1640,9 +1515,9 @@ function App() {
       const key = chatThreadKey(mode, id)
       const savedRelation = prev[key]
       if (savedRelation !== undefined) {
-        const charName = characters.find(c => c.id === id)?.name ?? id
+        const found = characters.find(c => c.id === id)
         setRelationNotice(
-          `${charName}: ${getRelationLabel(savedRelation, language)}`,
+          found ? `${relationPrefix(found, language)}${getRelationLabel(savedRelation, language)}` : getRelationLabel(savedRelation, language),
         )
       }
       return { ...prev, [key]: savedRelation ?? characters.find(c => c.id === id)!.relationOptions[0] }
@@ -1753,13 +1628,9 @@ function App() {
       : `Day ${day + 1} · ${todLabel} · ${weatherLabel}`
   }, [latestWorldDelta?.data?.world_clock, language])
   const storyBeatLabel = language === 'zh'
-    ? `节点 ${Math.max(story.beatIndex, 1)}`
-    : `Beat ${Math.max(story.beatIndex, 1)}`
-  const lastEmotion = findLastStoryEvent(story.events, e => typeof e.data.emotion_state === 'string')?.data.emotion_state as string | undefined
-  const storyTensionLabel = formatEmotionLabel(lastEmotion, language) || (language === 'zh' ? '未定' : 'Unset')
+    ? `第 ${Math.max(story.beatIndex, 1)} 段`
+    : `Part ${Math.max(story.beatIndex, 1)}`
   const stageBeatNo = Math.max(story.beatIndex, 1)
-  const stageEmotionRaw = (lastEmotion ?? '').trim().toLowerCase()
-  const stageTensionLevel = STAGE_TENSION_LEVEL[stageEmotionRaw] ?? 4
 
   const handleContinueChapter = useCallback(async () => {
     const base = defaultStoryPrompt(language)
@@ -1915,7 +1786,7 @@ function App() {
             type="button"
             className="sidebar__toggle"
             onClick={() => setSidebarCollapsed(v => !v)}
-            aria-label={sidebarCollapsed ? t.archiveHandle : (language === 'zh' ? '收起档案' : 'Hide archive')}
+            aria-label={sidebarCollapsed ? t.archiveHandle : (language === 'zh' ? '收起菜单' : 'Hide menu')}
             aria-expanded={!sidebarCollapsed}
           >
             {sidebarCollapsed ? t.archiveHandle : '▸'}
@@ -1947,9 +1818,9 @@ function App() {
                 style={{ '--char-color': c.color } as CSSProperties}
                 title={c.oneLiner[language]}
               >
-                <Silhouette characterId={c.id} name={c.name} size={42} />
+                <Silhouette characterId={c.id} name={charName(c, language)} size={42} />
                 <div className="char-card__info">
-                  <strong>{c.name}</strong>
+                  <strong>{charName(c, language)}{language === 'zh' && <small className="char-card__en">{c.name}</small>}</strong>
                   <span className="char-card__hint">{c.oneLiner[language]}</span>
                 </div>
               </button>
@@ -1983,15 +1854,11 @@ function App() {
           <section className="connection-sidebar-block">
             <span className="field-label">{t.model}</span>
             <ConnectionChip conn={connection} language={language} />
-            <p className={`quota-pill${!quota.open && quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
-              {quota.byok
-                ? (language === 'zh' ? '自备密钥 · 不占平台次数' : 'Your key · not metered')
-                : quota.open
-                  ? (language === 'zh' ? '额度已打开' : 'Quota open')
-                  : (language === 'zh'
-                  ? `${quota.tier === 'user' ? '登录赠送' : '游客'} ${quota.remaining}/${quota.limit} 次`
-                  : `${quota.tier === 'user' ? 'Member' : 'Guest'} ${quota.remaining}/${quota.limit}`)}
-            </p>
+            {(quota.byok || !quota.open) && (
+              <p className={`quota-pill${!quota.open && quota.remaining <= 2 && !quota.byok ? ' is-low' : ''}`}>
+                {formatUsage(quota, language)}
+              </p>
+            )}
           </section>
         </details>
           </aside>
@@ -2013,17 +1880,8 @@ function App() {
             <div className="story-hud__metric story-hud__metric--slug">
               <span>{t.location}</span>
               <strong>{storyLocation}</strong>
-              <small>{language === 'zh' ? '你扮演：' : 'You play: '}{selectedChar.name}</small>
+              <small>{language === 'zh' ? '你扮演：' : 'You play: '}{charName(selectedChar, language)}</small>
               {storyWorldClock && <small className="world-clock">{storyWorldClock}</small>}
-            </div>
-            <div className="story-hud__metric story-hud__metric--tension">
-              <span>{t.tension}</span>
-              <span className="story-hud__tengrid" role="img" aria-label={storyTensionLabel}>
-                {Array.from({ length: 10 }, (_, i) => (
-                  <i key={i} className={i < stageTensionLevel ? 'is-on' : undefined} />
-                ))}
-              </span>
-              <strong title={storyTensionLabel}>{storyTensionLabel}</strong>
             </div>
             {/* QA P2#10: language switch reachable in-game, not only on the
                 cold open toolbar. Quiet pill, same seg-control grammar. */}
@@ -2055,18 +1913,13 @@ function App() {
               </button>
             </div>
             {/* Stage v2 HUD right: credits always on, amber mono (design hud-credits). */}
-            <div
-              className={`story-hud__credits${!quota.open && !quota.byok && quota.remaining <= 2 ? ' is-low' : ''}`}
-              title={quota.byok || quota.open ? undefined : `${quota.remaining}/${quota.limit}`}
-            >
-              {quota.byok
-                ? (language === 'zh' ? '自备密钥 · 不占额度' : 'BYOK · unmetered')
-                : quota.open
-                  ? (language === 'zh' ? '额度已打开' : 'Quota open')
-                  : (language === 'zh'
-                  ? `额度 ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`
-                  : `CREDITS ${String(quota.remaining).padStart(2, '0')}/${quota.limit}`)}
-            </div>
+            {(quota.byok || !quota.open) && (
+              <div
+                className={`story-hud__credits${!quota.open && !quota.byok && quota.remaining <= 2 ? ' is-low' : ''}`}
+              >
+                {formatUsage(quota, language)}
+              </div>
+            )}
           </header>
 
           {showSceneBill && (
@@ -2082,7 +1935,7 @@ function App() {
               <h3>{t.setStage}</h3>
               <p>{t.setStageHint}</p>
               <p className="story-setup__identity">
-                {language === 'zh' ? '你扮演：' : 'You play: '}{selectedChar.name}
+                {language === 'zh' ? '你扮演：' : 'You play: '}{charName(selectedChar, language)}
               </p>
               <textarea
                 ref={storyTaskRef}
@@ -2136,15 +1989,15 @@ function App() {
                   remaining: quota.remaining,
                 })
                   ? (language === 'zh'
-                    ? '今天的免费体验额度用完了。登录领取早期用户额度，或连接你自己的模型 Key 继续这场剧情——进度已保存。'
-                    : 'Free demo credits used up for today. Sign in for early-access credits or connect your own key to keep this scene going — your progress is saved.')
+                    ? '今天的免费次数用完了。登录可以多拿一些，或者在「AI 设置」里填你自己的 API Key 继续。进度已保存。'
+                    : 'You have used today’s free messages. Sign in for more, or add your own API key in AI settings. Your progress is saved.')
                   : story.streamFailure?.kind === 'timeout'
                     ? (language === 'zh'
-                      ? '剧情演出中断了 90 秒没有回应。进度已保存——可以直接重试。'
-                      : 'The story stalled mid-beat with no response for 90s. Your progress is saved — retry now.')
+                      ? '剧情 90 秒没有回应。进度已保存，可以直接重试。'
+                      : 'The story went quiet for 90 seconds. Your progress is saved — retry now.')
                     : story.streamFailure?.kind === 'network'
                       ? (language === 'zh'
-                        ? '与导演的连接断开，且自动重连未成功。进度已保存——可以重试。'
+                        ? '连接断了，自动重连也没成功。进度已保存，可以重试。'
                         : 'The connection dropped and auto-reconnect failed. Your progress is saved — retry.')
                       : story.getCharState(selectedCharId).error}
               </p>
@@ -2154,7 +2007,7 @@ function App() {
                 remaining: quota.remaining,
               })) && (
                 <button type="button" onClick={story.reconnect}>
-                  {language === 'zh' ? '重试演出' : t.reconnect}
+                  {language === 'zh' ? '重试' : 'Retry'}
                 </button>
               )}
               {story.streamFailure?.kind === 'quota' && quotaBlocksPlay({
@@ -2163,7 +2016,7 @@ function App() {
                 remaining: quota.remaining,
               }) && (
                 <button type="button" onClick={() => connection.setSheetOpen(true)}>
-                  {language === 'zh' ? '连接自己的 Key' : 'Connect your own key'}
+                  {language === 'zh' ? '填自己的 API Key' : 'Add your own API key'}
                 </button>
               )}
               <button type="button" onClick={story.reset}>
@@ -2268,11 +2121,11 @@ function App() {
                   />
                   <details className="beat-paused__advanced">
                     <summary>
-                      {language === 'zh' ? '更多导演控制' : 'More director controls'}
+                      {language === 'zh' ? '更多操作' : 'More options'}
                     </summary>
                     <BeatControls
                       t={t}
-                      characters={characters}
+                      characters={characters.map(c => ({ ...c, name: charName(c, language) }))}
                       onContinue={() => story.sendAction('continue', undefined, selectedCharId)}
                       onStop={() => story.sendAction('stop', undefined, selectedCharId)}
                       onRedirect={(prompt) => story.sendAction('redirect', { redirect_prompt: prompt }, selectedCharId)}
@@ -2302,8 +2155,8 @@ function App() {
                   </div>
                   <p className="story-complete__hint">
                     {language === 'zh'
-                      ? '先到这里。需要的话再打开局面图，或另开一场——不是无限续写。'
-                      : 'This scene is over. Open the situation map if you need it, or start another run — not an infinite chat.'}
+                      ? '剧情不会一直写下去。可以打开剧情回顾看看发生了什么，或者从上面选一个继续。'
+                      : 'The story does not go on forever. Open “Story so far” to look back, or pick one of the options above.'}
                   </p>
                 </div>
               )}
@@ -2321,7 +2174,7 @@ function App() {
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
                   <h2>
-                    {selectedChar.name}
+                    {charName(selectedChar, language)}
                   </h2>
                   {showSavePrompt && (
                     <div className="save-prompt">
@@ -2340,10 +2193,10 @@ function App() {
             />
             <a className="chat-character-link" href="/?home=preview#characters">{language === 'zh' ? '选择角色' : 'Characters'}</a>
             <label className="chat-header__relation" htmlFor="chat-relation">
-              <span className="sr-only">{t.relation}</span>
+              <span className="chat-header__relation-prefix">{relationPrefix(selectedChar, language)}</span>
               {relationLocked ? (
-                <span className="chat-header__relation-locked" title={language === 'zh' ? '开聊后关系锚点锁定；可在对话里口头纠正' : 'Locked after you start talking; correct it in chat'}>
-                  {formatRelation(selectedChar, relation, language)}
+                <span className="chat-header__relation-locked" title={language === 'zh' ? '聊起来以后身份就定了，可以在对话里改口' : 'Set once you start talking — you can correct it in the chat'}>
+                  {getRelationLabel(relation, language)}
                 </span>
               ) : (
                 <select
@@ -2353,7 +2206,7 @@ function App() {
                   aria-label={t.relation}
                 >
                   {selectedChar.relationOptions.map(opt => (
-                    <option key={opt} value={opt}>{formatRelation(selectedChar, opt, language)}</option>
+                    <option key={opt} value={opt}>{getRelationLabel(opt, language)}</option>
                   ))}
                 </select>
               )}
@@ -2365,7 +2218,7 @@ function App() {
               <summary>{language === 'zh' ? '旧版聊天记录（只读）' : 'Legacy conversations (read-only)'}</summary>
               <p>{language === 'zh'
                 ? '旧版记录未区分单聊和群聊，保留供回看，不自动带入新对话。'
-                : 'These older records did not distinguish Direct from Crew. They are preserved for reading, not sent into new conversations.'}</p>
+                : 'These older records did not separate 1:1 and group chats. They are kept for reading and are not sent into new conversations.'}</p>
               {legacyMessages.map((row, index) => <p key={index}><strong>{row.sender}: </strong>{row.text}</p>)}
             </details>
           )}
@@ -2376,7 +2229,7 @@ function App() {
             {messages.map(msg => {
               const isUser = msg.sender === 'user'
               const senderChar = isUser ? null : characters.find(c => c.id === msg.sender)
-              const senderName = senderChar?.name ?? (isUser ? t.you : (msg.sender as string))
+              const senderName = senderChar ? charName(senderChar, language) : (isUser ? t.you : (msg.sender as string))
               const senderColor = senderChar?.color ?? selectedChar.color
               return (
                 <article
@@ -2389,7 +2242,7 @@ function App() {
                   </div>
                   <div className="msg-body">
                     <div className="msg-meta">
-                      <strong>{isUser ? `${t.you}, ${getRelationLabel(relation, language)}` : senderName}</strong>
+                      <strong>{isUser ? t.you : senderName}</strong>
                       {msg.emotion && !msg.id.startsWith('opener-') && <span>{msg.emotion}</span>}
                     </div>
                     <p>{msg.text}</p>
@@ -2436,7 +2289,7 @@ function App() {
             {isSending && (
               <div className="typing" aria-live="polite">
                 <span className="dot" /><span className="dot" /><span className="dot" />
-                <span className="typing__label">{t.waitingAs.replace('{character}', selectedChar.name)}</span>
+                <span className="typing__label">{t.waitingAs.replace('{character}', charName(selectedChar, language))}</span>
               </div>
             )}
             {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}
@@ -2449,7 +2302,7 @@ function App() {
                 value={message}
                 onChange={handleComposerChange}
                 onKeyDown={handleComposerKeyDown}
-                placeholder={t.messagePlaceholder.replace('{character}', selectedChar.name).replace('{relation}', getRelationLabel(relation, language))}
+                placeholder={t.messagePlaceholder.replace('{character}', charName(selectedChar, language))}
               />
               {isSending ? (
                 <button type="button" className="composer__stop" onClick={handleStopSending}>

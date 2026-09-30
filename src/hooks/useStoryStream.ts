@@ -152,24 +152,24 @@ export async function pingSession(sid: string): Promise<SessionProbeResult> {
  * pages: the run is intact and the client is still working the problem. */
 const NOTICE_COPY = {
   confirming: {
-    zh: '上一步还在结算，正在自动接着演出——不用重复发送。',
-    en: 'Your last move is still resolving. Reconnecting to it now — nothing to resend.',
+    zh: '上一步还在处理，马上接着演，不用重新发送。',
+    en: 'Your last move is still being processed. Picking it back up now — no need to resend.',
   },
   refused: {
-    zh: '上一步还没确认落地。等它出结果，再送新的行动。',
-    en: 'Your last move is not confirmed yet. Let it land before sending a different one.',
+    zh: '上一步还没演完，等它出结果再做下一步。',
+    en: 'Your last move is not finished yet. Wait for it before making another.',
   },
   unconfirmed: {
-    zh: '上一步没有送达导演。再发一次会用同一个编号，不会重复扣额度。',
-    en: 'Your last move never reached the director. Sending it again keeps the same id and is never charged twice.',
+    zh: '上一步没发出去。再发一次就行，不会多算次数。',
+    en: 'Your last move did not go through. Send it again — it will not be counted twice.',
   },
   stalled: {
-    zh: '导演还在收尾。进度已保存——稍后重试。',
-    en: 'The director is still finishing. Your progress is saved — retry in a moment.',
+    zh: '剧情还在收尾。进度已保存，稍后再试。',
+    en: 'The story is still wrapping up. Your progress is saved — try again in a moment.',
   },
   stopFailed: {
-    zh: '停止尚未确认：服务器没有回应。本地已停下，但这场 run 可能还在生成——再点一次停止，或稍后重试。',
-    en: 'Stop is not confirmed yet: the server did not answer. It is paused here, but the run may still be generating — press Stop again.',
+    zh: '还没停下来：服务器没有回应。再点一次「停止」，或者稍后再试。',
+    en: 'Not stopped yet: the server did not answer. Press Stop again, or try later.',
   },
 } as const
 
@@ -484,7 +484,7 @@ export function useStoryStream({
       setStreamFailure({
         kind: 'timeout',
         message:
-          'Lost contact with the director (no response on any channel for 90s). Your progress is saved — retry or continue later.',
+          'The story went quiet for 90 seconds. Your progress is saved — retry or continue later.',
       })
       updateConnectionState('error')
     }, STREAM_STALL_TIMEOUT_MS)
@@ -1088,7 +1088,7 @@ export function useStoryStream({
         setStreamFailure({
           kind: 'network',
           message:
-            'The connection to the director dropped and one reconnect already failed. Your progress is saved — retry when ready.',
+            'The connection dropped and one reconnect already failed. Your progress is saved — retry when ready.',
         })
         updateConnectionState('error')
       }
@@ -1127,7 +1127,7 @@ export function useStoryStream({
             if (commandRef.current) {
               void recoverTurn(sid, commandRef.current)
             } else {
-              setStreamFailure({ kind: 'http', message: 'This beat is no longer available. Continue to go on.' })
+              setStreamFailure({ kind: 'http', message: 'This part is no longer available. Press Continue to go on.' })
               updateConnectionState('beat_paused')
             }
             return
@@ -1179,9 +1179,9 @@ export function useStoryStream({
           const msg =
             rawMsg
             || (status === 402
-              ? 'Free demo credits used up for today. Sign in for early-access credits or connect your own key.'
+              ? 'You have used today’s free messages. Sign in for more, or add your own API key in AI settings.'
               : status === 429
-                ? 'Too many requests. Slow down or use your own key.'
+                ? 'Too many messages at once. Wait a moment and try again.'
                 : status === 403
                   ? 'This story session is locked to another browser.'
                   : 'Could not start the story stream.')

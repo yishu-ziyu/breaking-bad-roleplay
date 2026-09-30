@@ -130,12 +130,12 @@ async function seedDirectProfile(page: Page) {
 }
 
 async function signInProfile(page: Page) {
-  await page.getByRole('button', { name: '档案' }).click()
-  await expect(page.getByText('玩家档案')).toBeVisible()
+  await page.getByRole('button', { name: '菜单' }).click()
+  await expect(page.getByText('不登录也能玩')).toBeVisible()
   await page.getByPlaceholder('邮箱').fill(TEST_EMAIL)
-  await page.getByPlaceholder('访问密码').fill('password-123')
-  await page.getByRole('button', { name: '同步档案' }).click()
-  await expect(page.getByText('已同步档案')).toBeVisible()
+  await page.getByPlaceholder('密码').fill('password-123')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page.getByText('已登录')).toBeVisible()
 }
 
 test.describe('auth profile product flow', () => {
@@ -155,7 +155,7 @@ test.describe('auth profile product flow', () => {
     })
     await page.goto('/')
     await signInProfile(page)
-    await page.getByRole('button', { name: '收起档案' }).click()
+    await page.getByRole('button', { name: '收起菜单' }).click()
     await page.locator('.composer textarea').fill('我叫PRIVATE_CLOUD_MARKER，别告诉其他人。')
     await page.locator('.composer button[type="submit"]').click()
     await expect(page.locator('.chat-stream')).toContainText('单聊回复')
@@ -198,8 +198,8 @@ test.describe('auth profile product flow', () => {
     expect(firstChatInsert.message).not.toContain('我记得你')
 
     await page.reload()
-    await page.getByRole('button', { name: '档案' }).click()
-    await expect(page.getByText('已同步档案')).toBeVisible()
+    await page.getByRole('button', { name: '菜单' }).click()
+    await expect(page.getByText('已登录')).toBeVisible()
     await expect(page.getByText(TEST_EMAIL)).toBeVisible()
   })
 
@@ -225,7 +225,7 @@ test.describe('auth profile product flow', () => {
     await page.waitForTimeout(150)
     const writesBeforeTurn = chatPostBodies.length
 
-    await page.getByRole('button', { name: '收起档案' }).click()
+    await page.getByRole('button', { name: '收起菜单' }).click()
     const input = page.locator('.composer textarea')
     await input.fill('这句话不应该留在云端。')
     await page.locator('.composer button[type="submit"]').click()

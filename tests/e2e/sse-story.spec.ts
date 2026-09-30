@@ -185,7 +185,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
   await expect(page.locator('.msg--user, .msg--char, .story-scene-card__quote')).toHaveCount(0)
 
   // Beat index indicator shows Beat 1
-  await expect(page.locator('.story-hud')).toContainText('Beat 1')
+  await expect(page.locator('.story-hud')).toContainText('Part 1')
 
   // BeatControls visible (Continue + Stop + Redirect)
   await expect(
@@ -195,7 +195,7 @@ test('TC-SSE-1: outline + agent_speak + beat_ready renders and pauses at beat_pa
     page.locator('.beat-controls button', { hasText: /Stop/ }),
   ).toBeVisible()
   await expect(
-    page.locator('.beat-controls button', { hasText: /Redirect/ }),
+    page.locator('.beat-controls button', { hasText: /Change direction/ }),
   ).toBeVisible()
   await expect.poll(() => mockSSEStates(page)).toEqual([2])
 })
@@ -225,7 +225,7 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
 
   await expect(page.locator('.story-hud')).toBeVisible()
   await expect(page.locator('.story-hud')).not.toContainText('NIGHT')
-  await expect(page.locator('.story-hud')).toContainText('Beat 1')
+  await expect(page.locator('.story-hud')).toContainText('Part 1')
   await expect(page.locator('.story-hud')).toContainText('Los Pollos Hermanos')
   await expect(page.locator('.story-outline')).toHaveCount(0)
 
@@ -233,13 +233,13 @@ test('TC-SSE-HUD-1: beat_paused Story Board shows HUD, outline, manuscript, lore
   await expect(page.locator('.story-manuscript__dialogue cite').filter({ hasText: 'Gus Fring' })).toBeVisible()
   await expectDialogue(page, 'The fryer just went quiet')
 
-  await expect(page.locator('.beat-paused')).toContainText(/YOUR NEXT MOVE|你的下一步/)
+  await expect(page.locator('.beat-paused')).toContainText(/YOUR TURN|轮到你了/)
   await expect(page.locator('.beat-controls button', { hasText: /Continue/ })).toBeVisible()
-  await expect(page.locator('.beat-controls button', { hasText: /Redirect/ })).toBeVisible()
-  await expect(page.locator('.beat-controls button', { hasText: /Switch Perspective/ })).toBeVisible()
+  await expect(page.locator('.beat-controls button', { hasText: /Change direction/ })).toBeVisible()
+  await expect(page.locator('.beat-controls button', { hasText: /Play someone else/ })).toBeVisible()
 })
 
-test('TC-SSE-REPLAY: 回看这一拍 sends replay, not a full restart', async ({ page }) => {
+test('TC-SSE-REPLAY: 回看这一段 sends replay, not a full restart', async ({ page }) => {
   const actionLog = await driveToBeatPaused(page, { beatId: 'beat-2' })
   await expect(page.locator('.story-manuscript__redraw')).toBeVisible()
   await page.locator('.story-manuscript__redraw').click()
@@ -325,7 +325,7 @@ test('TC-SSE-2: continue action sends {action:"continue"} and next beat_ready in
   await emitSSE(page, 'beat_ready', { data: { beat_id: 'beat-2' } })
 
   // Beat index incremented to 2
-  await expect(page.locator('.story-hud')).toContainText('Beat 2')
+  await expect(page.locator('.story-hud')).toContainText('Part 2')
 
   await expectDialogue(page, 'The batch is ready.')
 
@@ -373,7 +373,7 @@ test('TC-SSE-3: redirect action changes the future while preserving prior manusc
 
   // Open redirect form
   await page
-    .locator('.beat-controls button', { hasText: /Redirect/ })
+    .locator('.beat-controls button', { hasText: /Change direction/ })
     .click()
 
   const redirectInput = page.locator('.redirect-control input')
@@ -424,7 +424,7 @@ test('TC-SSE-3: redirect action changes the future while preserving prior manusc
   await expect(
     page.locator('.story-manuscript__prose').filter({ hasText: 'Los Pollos Hermanos' }),
   ).toBeVisible()
-  await expect(page.locator('.story-hud')).toContainText('Beat 1')
+  await expect(page.locator('.story-hud')).toContainText('Part 1')
 
   await expectDialogue(page, 'take him out')
 
@@ -455,12 +455,12 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
 
   // story-complete UI visible with completion text
   await expect(page.locator('.story-complete')).toBeVisible()
-  await expect(page.locator('.story-complete')).toContainText(/This scene is over|这一场演完/)
+  await expect(page.locator('.story-complete')).toContainText(/This chapter is over|这一章结束了/)
 
   // BeatControls should no longer be visible (state left beat_paused)
   await expect(page.locator('.beat-controls')).toHaveCount(0)
 
-  await expect(page.locator('.story-complete__hint')).toContainText(/not an infinite chat|不是无限续写/)
+  await expect(page.locator('.story-complete__hint')).toContainText(/does not go on forever|不会一直写下去/)
   await expect.poll(() => mockSSEStates(page)).toEqual([2, 2])
 
   // Story-complete follow-up actions are present, plus Start Again.
@@ -468,10 +468,10 @@ test('TC-SSE-4: complete event transitions to complete state and shows restart U
     page.locator('.story-complete button', { hasText: /Start Chapter/ }),
   ).toBeVisible()
   await expect(
-    page.locator('.story-complete button', { hasText: /Try a Different Branch/ }),
+    page.locator('.story-complete button', { hasText: /Try another path/ }),
   ).toBeVisible()
   await expect(
-    page.locator('.story-complete button', { hasText: /Replay Last Beat/ }),
+    page.locator('.story-complete button', { hasText: /Replay last part/ }),
   ).toBeVisible()
   await expect(
     page.locator('.story-complete button', { hasText: /Start Again/ }),
@@ -503,7 +503,7 @@ test('TC-SSE-4c: Different Branch submits a branch command from the committed be
   })
   await expect(page.locator('.story-complete')).toBeVisible()
 
-  await page.locator('.story-complete button', { hasText: /Different Branch|不同分支/ }).click()
+  await page.locator('.story-complete button', { hasText: /Try another path|换条路重来/ }).click()
 
   await expect.poll(() => actionLog.some(event => event.action === 'branch')).toBe(true)
   const branch = actionLog.find(event => event.action === 'branch')
@@ -528,7 +528,7 @@ test('TC-SSE-5: error event transitions to error state and shows a plain notice 
   // out of the player-facing line (T2).
   const notice = page.locator('.story-failure')
   await expect(notice).toBeVisible()
-  await expect(notice).toContainText('This beat could not go on')
+  await expect(notice).toContainText('This part could not go on')
   await expect(notice).not.toContainText('boom')
 
   // BeatControls should no longer be visible (state left beat_paused)
@@ -635,7 +635,7 @@ test('TC-SIDEBAR-1: story mode sidebar has no Perspective field-label', async ({
 
 test('TC-SIDEBAR-2: BeatControls Switch Perspective button still visible at beat_paused', async ({ page }) => {
   await driveToBeatPaused(page)
-  const switchBtn = page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ })
+  const switchBtn = page.locator('.beat-controls button', { hasText: /Play someone else|换个人演/ })
   await expect(switchBtn).toBeVisible()
   await expect(switchBtn).toBeEnabled()
 })
@@ -650,7 +650,7 @@ test('TC-SSE-8: switch_perspective via UI hides BeatControls and shows Streaming
   })
 
   // Click "Switch Perspective" button to open the select dropdown
-  const switchBtn = page.locator('.beat-controls button', { hasText: /Switch Perspective|切换视角/ })
+  const switchBtn = page.locator('.beat-controls button', { hasText: /Play someone else|换个人演/ })
   await switchBtn.click()
 
   // Select Jesse from the dropdown — triggers onSwitchPerspective('jesse')
@@ -689,7 +689,7 @@ test('TC-SSE-9: redirect via UI hides BeatControls and shows Streaming indicator
   })
 
   // Click "Redirect" button to open the input
-  const redirectBtn = page.locator('.beat-controls button', { hasText: /Redirect|重定向/ })
+  const redirectBtn = page.locator('.beat-controls button', { hasText: /Change direction|换个方向/ })
   await redirectBtn.click()
 
   // Fill redirect text and submit

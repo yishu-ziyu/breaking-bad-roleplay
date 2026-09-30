@@ -52,6 +52,7 @@
 .chat-refresh .typing__label { color: #748071; }
 .chat-refresh .chat-character-link { color: #7d513d; font-size: 12px; text-decoration: none; white-space: nowrap; }
 .chat-refresh .chat-header__relation { margin: 0; }
+.chat-refresh .chat-header__relation-prefix { color: #5f6b5c; opacity: 1; }
 .chat-refresh .chat-header__relation select {
   background: #e8e5da; color: #405343; border: 1px solid #d8d9cc;
   border-radius: 12px; padding: 10px 30px 10px 14px; min-height: 42px; font-size: 12px;
@@ -182,11 +183,6 @@
   background: #fcfaf4;
   border-color: #d6d9ca;
   color: #536753;
-}
-.app-shell--chat-paper .auth-btn-guest {
-  color: #536753;
-  border-color: #d6d9ca;
-  background: transparent;
 }
 .app-shell--chat-paper .auth-input {
   background: #fcfaf4;

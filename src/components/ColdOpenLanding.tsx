@@ -265,10 +265,6 @@ export function ColdOpenLanding({
             </div>
 
             <div className="showcase-card__bottom">
-              <div className="crisis-chips">
-                <span className="crisis-chip">{copy.story.chip1}</span>
-                <span className="crisis-chip">{copy.story.chip2}</span>
-              </div>
               <h2 className="showcase-card__title">{copy.story.title}</h2>
               <p className="showcase-card__summary">{copy.story.desc}</p>
               <button
@@ -299,19 +295,19 @@ export function ColdOpenLanding({
               <div className="cast-slice-overlay" />
               <div className="avatars-fan">
                 <div className="avatar-card-item">
-                  <img src="/avatars/desert-noir/walter.jpg" alt="老白" />
+                  <img src="/avatars/desert-noir/walter.jpg" alt="沃尔特" />
                 </div>
                 <div className="avatar-card-item">
-                  <img src="/avatars/illustrated/jesse.png" alt="小粉" />
+                  <img src="/avatars/illustrated/jesse.png" alt="杰西" />
                 </div>
                 <div className="avatar-card-item">
-                  <img src="/avatars/illustrated/gus.png" alt="炸鸡叔" />
+                  <img src="/avatars/illustrated/gus.png" alt="古斯" />
                 </div>
                 <div className="avatar-card-item">
                   <img src="/avatars/illustrated/saul.png" alt="索尔" />
                 </div>
                 <div className="avatar-card-item">
-                  <img src="/avatars/illustrated/mike.png" alt="麦克" />
+                  <img src="/avatars/illustrated/mike.png" alt="迈克" />
                 </div>
                 <div className="avatar-card-item hank-crop">
                   <img src="/avatars/illustrated/hank.png" alt="汉克" />
@@ -356,10 +352,6 @@ export function ColdOpenLanding({
             </div>
 
             <div className="crew-standoff-stage">
-              <div className="crew-factions">
-                <div className="faction-tag">{copy.crew.faction}</div>
-                <div className="faction-tag"><span>{copy.crew.allPresent}</span></div>
-              </div>
 
               <div className="crew-cinematic-dialogue">
                 <div className="cinematic-line">

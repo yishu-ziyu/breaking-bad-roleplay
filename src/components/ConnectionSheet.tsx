@@ -18,9 +18,9 @@ type Lang = 'zh' | 'en'
 
 const copy = {
   en: {
-    title: 'Model engine',
-    modePlatform: 'Platform demo',
-    modeByok: 'My keys',
+    title: 'AI settings',
+    modePlatform: 'Use ours (free, daily limit)',
+    modeByok: 'Use my own API key',
     fieldLlm: 'Chat API key',
     fieldTts: 'Speech API key',
     fieldBase: 'API base URL',
@@ -30,48 +30,48 @@ const copy = {
     fieldModel: 'Model',
     test: 'Test connection',
     saveBind: 'Save & use',
-    clear: 'Clear keys',
+    clear: 'Clear API keys',
     getKey: 'Get API key',
-    trust: 'Keys are encrypted on-device. The server never stores them on disk — only a short-lived RAM session.',
+    trust: 'Your API key is encrypted on this device. Our server never saves it — it is only held briefly in memory while you play.',
     close: 'Close',
     status: 'Status',
     placeholderKey: 'Paste key…',
     placeholderBase: 'https://api.example.com/v1',
-    platformOnly: 'Platform demo only offers MiniMax and StepFun.',
+    platformOnly: 'The free option offers MiniMax and StepFun.',
     savedKey: 'Saved on this device',
     leaveBlank: 'Leave blank to keep using the saved key',
     needKey: 'Paste an API key first (or use a saved one).',
-    bound: 'Connected for this session',
-    bindFailed: 'Could not open a session. Check the key and try again.',
+    bound: 'Ready to use',
+    bindFailed: 'Could not connect. Check the API key and try again.',
     testing: 'Testing…',
     saving: 'Saving…',
   },
   zh: {
-    title: '模型引擎',
-    modePlatform: '平台演示',
-    modeByok: '我的密钥',
-    fieldLlm: '对话密钥',
-    fieldTts: '语音密钥',
+    title: 'AI 设置',
+    modePlatform: '用平台的（免费，每天有次数）',
+    modeByok: '用我自己的 API Key',
+    fieldLlm: '聊天用的 API Key',
+    fieldTts: '语音用的 API Key',
     fieldBase: '接口地址',
     fieldRegion: '区域',
     regionCn: '国内站',
     regionGlobal: '国际站',
     fieldModel: '模型',
     test: '测试连接',
-    saveBind: '保存并用于本会话',
-    clear: '清除密钥',
-    getKey: '获取密钥',
-    trust: '密钥加密保存在本机；服务端不入库，仅内存会话临时使用。',
+    saveBind: '保存并使用',
+    clear: '清除 API Key',
+    getKey: '去申请 API Key',
+    trust: 'API Key 加密保存在这台设备上。服务器不会保存它，只在你玩的时候临时放在内存里。',
     close: '关闭',
     status: '状态',
-    placeholderKey: '粘贴密钥…',
+    placeholderKey: '粘贴 API Key…',
     placeholderBase: 'https://api.example.com/v1',
-    platformOnly: '平台演示只提供 MiniMax 和 StepFun。',
-    savedKey: '本机已保存',
-    leaveBlank: '留空则继续使用已保存密钥',
-    needKey: '请先粘贴密钥，或使用本机已保存的密钥。',
-    bound: '已绑定本会话',
-    bindFailed: '无法建立会话，请检查密钥后重试。',
+    platformOnly: '平台免费提供 MiniMax 和 StepFun 两个模型。',
+    savedKey: '这台设备上已保存',
+    leaveBlank: '留空就继续用已保存的 API Key',
+    needKey: '先粘贴一个 API Key，或者用这台设备上已保存的。',
+    bound: '可以用了',
+    bindFailed: '连不上，请检查 API Key 后再试。',
     testing: '测试中…',
     saving: '保存中…',
   },
@@ -81,9 +81,9 @@ const statusLabel: Record<string, Record<Lang, string>> = {
   empty: { en: 'Not configured', zh: '未配置' },
   saved: { en: 'Saved', zh: '已保存' },
   valid: { en: 'Connected', zh: '已连接' },
-  invalid: { en: 'Invalid key', zh: '密钥无效' },
-  quota: { en: 'Quota exceeded', zh: '额度不足' },
-  unreachable: { en: 'Unreachable', zh: '线路不可达' },
+  invalid: { en: 'Invalid API key', zh: 'API Key 无效' },
+  quota: { en: 'Out of credit', zh: '次数或余额不足' },
+  unreachable: { en: 'Unreachable', zh: '连不上' },
 }
 
 type Props = {
@@ -321,7 +321,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
       if (action === 'save') return t.saving
       return '…'
     }
-    return mode === 'byok' ? t.saveBind : t.modePlatform
+    return mode === 'byok' ? t.saveBind : (language === 'zh' ? '用这个' : 'Use this')
   }
 
   return (
@@ -381,7 +381,7 @@ function ConnectionSheetForm({ conn, language }: Props) {
                     <strong>{b.displayName}</strong>
                     <span>{b.productLine}</span>
                     {b.platformDemo && mode === 'platform' && view.platform[b.id as 'minimax' | 'stepfun'] && (
-                      <em className="connection-brand__plat">demo</em>
+                      <em className="connection-brand__plat">{language === 'zh' ? '免费' : 'free'}</em>
                     )}
                     {mode === 'byok' && vault?.slots[llmSlotFor(b.id)] && (
                       <em className="connection-brand__saved">key</em>
@@ -491,8 +491,8 @@ function ConnectionSheetForm({ conn, language }: Props) {
         {mode === 'platform' && (
           <p className="connection-sheet__platform-note">
             {language === 'zh'
-              ? `${t.platformOnly} 适合路演；个人用量请切换「我的密钥」。`
-              : `${t.platformOnly} Switch to My keys for personal usage.`}
+              ? `${t.platformOnly}想不限次数，就用你自己的 API Key。`
+              : `${t.platformOnly} For unlimited use, add your own API key.`}
           </p>
         )}
 

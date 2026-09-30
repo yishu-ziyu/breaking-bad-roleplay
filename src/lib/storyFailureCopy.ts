@@ -32,8 +32,8 @@ const COPY: Record<StoryFailureKind, Record<'zh' | 'en', StoryFailureCopy>> = {
   session_create: {
     zh: {
       headline: '剧情没能开始',
-      body: '创建这次故事时出错了，一个字都还没演出。你的开场设定还在——重试会用同一段开场重新开始。',
-      retryLabel: '重试用同一段开场',
+      body: '开始的时候出错了，还什么都没演。你写的开头还在，重试会用同一个开头重新开始。',
+      retryLabel: '用同一个开头重试',
     },
     en: {
       headline: 'The story did not start',
@@ -43,14 +43,14 @@ const COPY: Record<StoryFailureKind, Record<'zh' | 'en', StoryFailureCopy>> = {
   },
   beat_rejected: {
     zh: {
-      headline: '这一拍没能继续',
-      body: '后面的内容生成失败了。已经演过的部分已保存，重试会接着往下一拍走。',
-      retryLabel: '重试这一拍',
+      headline: '这一段没能继续',
+      body: '后面的内容没生成出来。已经演过的都保存了，重试会接着这一段往下演。',
+      retryLabel: '重试这一段',
     },
     en: {
-      headline: 'This beat could not go on',
-      body: 'Generating the next part failed. Everything already performed is saved — retry continues from this beat.',
-      retryLabel: 'Retry this beat',
+      headline: 'This part could not go on',
+      body: 'Generating what comes next failed. Everything so far is saved — retry picks up from this part.',
+      retryLabel: 'Retry this part',
     },
   },
   resume_failed: {

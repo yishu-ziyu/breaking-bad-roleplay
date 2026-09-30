@@ -62,7 +62,7 @@ test('T2 /api/session/create 500: plain Chinese notice + retry re-runs the same 
   const notice = page.locator('.story-failure')
   await expect(notice).toBeVisible()
   await expect(notice).toContainText('剧情没能开始')
-  await expect(notice).toContainText('同一段开场')
+  await expect(notice).toContainText('同一个开头')
   await expect(notice).not.toContainText('Internal Server Error')
   await expect(page.locator('.story-failure__retry')).toBeVisible()
 
@@ -106,7 +106,7 @@ test('T2 stream error event (beat refused): visible plain notice with retry', as
 
   const notice = page.locator('.story-failure')
   await expect(notice).toBeVisible()
-  await expect(notice).toContainText('这一拍没能继续')
+  await expect(notice).toContainText('这一段没能继续')
   await expect(notice).toContainText('重试')
   await expect(notice).not.toContainText('beat rejected')
 })

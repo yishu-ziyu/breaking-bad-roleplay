@@ -14,7 +14,7 @@
 
 颜色：眼下保持现役门。以后如果上夜色/黄绿，同一改动里更新 [COLOR_SCIENCE.md](COLOR_SCIENCE.md)。不要让文档还要求烟草色、代码却用危化绿。
 
-「现在是什么」以本文件为索引。[CLAUDE.md](../CLAUDE.md)、[README.md](../README.md)、[HANDOFF_2026-09-14.md](HANDOFF_2026-09-14.md) 指向这里，不当平行「当前」。
+「现在是什么」以本文件为索引。界面用语（产品名、玩法名、角色译名、次数与登录说法）以 [GLOSSARY.md](GLOSSARY.md) 为准。[CLAUDE.md](../CLAUDE.md)、[README.md](../README.md)、[HANDOFF_2026-09-14.md](HANDOFF_2026-09-14.md) 指向这里，不当平行「当前」。
 
 ---
 
@@ -27,8 +27,8 @@
 | 壳 | `night === '1'` → 六回合界面；否则 → App | `src/main.tsx` 12–16 | 同文件 5、8–10：App 与临时皮肤都挂上 |
 | App | `home === 'preview'` | 插画封面 | `src/App.tsx` 805、1652–1661 |
 | App | 未进入世界 | 三卡玩法展台 | `src/components/ColdOpenLanding.tsx`：Story / Direct / Crew 三张卡 |
-| Story | 点「开始故事」 | 先问是否看过原作，再进入场面卡 | `ColdOpenLanding.tsx` 的 `showcase-dialog` + `beginStoryWithTrack` |
-| Story（访客） | 点「开始故事」 | **不进剧情**：卡上「开发中」标记 + 卡内 `role="alert"` 提示 | `ColdOpenLanding.tsx` 148–162、248–284；开关见 §2 |
+| Story | 点「开始剧情」 | 先问是否看过原作，再进入场面卡 | `ColdOpenLanding.tsx` 的 `showcase-dialog` + `beginStoryWithTrack` |
+| Story（访客） | 点「开始剧情」 | **不进剧情**：卡上「开发中」标记 + 卡内 `role="alert"` 提示 | `ColdOpenLanding.tsx` 148–162、248–284；开关见 §2 |
 | 门组件 | 现役根类名 | `cold-open-showcase` | `src/components/ColdOpenLanding.tsx` |
 
 2026-09-17 Playwright 已按现役三卡入口重新跑通 `cold-open-drama.spec.ts`；旧 `.cold-open` / 「进来坐」断言已移除。
@@ -92,9 +92,9 @@ Vite 应用，并通过命令行 `--port` 覆盖配置；需要复用本地开�
 21. 角色回合被拒的原因与同拍重生成（2026-09-18 T12，未提交/未部署）：runtime v1 每拍必须有至少一个可发布的角色 `agent_speak`；被拒时 `story/renderer.py` 记录原因（计划的台词写给玩家 / 说话人不在场 / 计划里根本没有角色台词 / 角色回合被校验拒 / 角色子代理调用失败），抛 `StoryTurnRejected(code, retryable, detail, reasons)`，`api/routes.py` 转成带 `code` / `retryable` / `detail` 的 SSE `error` 事件，`code` 可为 `no_accepted_character_turn`、`character_subagent_failed`、`beat_llm_retry_exhausted`、`beat_parse_failed` 等。同一拍内**至多重新生成一次**（`BEAT_TURN_REGENERATION_ATTEMPTS = 2`，同 command、同计费）：整拍无角色台词时带原因再生成一次；计划里没有角色台词时 `director._generate_beat` 先按在场非玩家名单纠正后重规划一次（`BEAT_SPEAK_REGEN_ATTEMPTS = 2`）。desert 权威板下角色代理只准用舞台动词（`look_at/turn_to/gesture/sit/stand/idle/idle_tense`），角色子代理调用也走 T3 的瞬时网络重试；`beat_json.py` 对模型把 `agent_speak` 括号写早/输出被截断的坏 JSON 逐个抢救完整事件对象。不降级成旁白；重生成后仍无角色台词才拒绝并带原因上报。
 22. 计划说话人先规范化再进角色管线（2026-09-18 T14，未提交/未部署）：beat 计划里的说话人若写短 id（如 `"jesse"`）而不是规范全名（`"Jesse Pinkman"`），原来会 `CHARACTER_AGENTS.get()` 落空、整段 Character Policy / 校验被跳过，规划草稿台词直接发布——同一句写全名则走策略。现在 `director._generate_beat` 在 actor 过滤 / `hoist_perspective_speak` / 角色表演之前先跑 `canonicalize_plan_speakers`：带 `character_id` 的事件统一经 `canonical_playable_character_id`（`resolve_playable_character_id` 的非抛错形式，与 Direct/Crew 同一套 `FRONTEND_TO_BACKEND_ID` / `CHARACTER_AGENTS` 映射，没有第三张表）改写为规范名；仍解析不出的 `agent_speak` / `agent_think` 整条丢弃，把 `{type, character_id, reason:"unresolved_speaker", code, retryable:true}` 写进 `context["turn_rejection_log"]` 并打 WARNING——丢弃后整拍无可发布角色台词时走既有的同拍重生成（`BEAT_SPEAK_REGEN_ATTEMPTS`），仍无则 T12 的 `no_accepted_character_turn` 带原因拒绝，不静默发布兜底；policy 循环里 `CHARACTER_AGENTS` 落空的 `agent_speak` 也只丢弃+记原因，不再落到「purify 后发布」的路径。`story/renderer.py` 的发布闸再加一层：`agent_speak` / policy `agent_act` 的说话人必须是可玩的规范角色，否则以 `unresolved_speaker`（不在可玩名单）或 `speaker_not_canonical`（可解析但没走规范化，意味着策略被跳过）拒绝并进 `rejected_events` / 日志。测试 `backend/tests/test_plan_speaker_policy.py`（8 项）。
 
-**打架**：注释写「等开演」（`App.tsx` 908、1288）；按钮文案是「开始故事」（`src/lib/storyScene.ts` 74）；场面卡测试禁止出现「开演」（`src/components/StorySceneBillboard.test.ts` 23–25）。同一条路径，三个名字。
+用语：界面文案以 [GLOSSARY.md](GLOSSARY.md) 为准（2026-10-01），首页卡片与场面卡按钮都叫「开始剧情」；`src/copy/wording.test.ts` 扫描禁用词。代码注释里的「开演」不是界面文案。
 
-连线抽屉 / 额度：门上和进世界后都挂 `ConnectionSheet`（`App.tsx` 1711、1851）；额度 pill 在剧情顶栏（1908–1918）。未把每一条额度分支逐行读完 → 细节 **未读**。
+连线抽屉 / 额度：门上和进世界后都挂 `ConnectionSheet`（`App.tsx` 1711、1851）；次数 pill 在剧情顶栏和侧栏，文案统一走 `App.tsx` 的 `formatUsage`（「今天还剩 N 次」；不限量时不显示）。行号会漂，按函数名找。未把每一条额度分支逐行读完 → 细节 **未读**。
 
 ### 剧情（访客关闭，作者可开 — 2026-09-18 T10，未提交/未部署）
 

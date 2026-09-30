@@ -414,7 +414,7 @@ test('a manual reconnect that closes before any event retries instead of showing
   // its own budget — and the stream must be asked again.
   api.emptyNextStreams(1)
   const streamsBefore = api.state.streamUrls.length
-  await page.getByRole('button', { name: '重试演出' }).click()
+  await page.getByRole('button', { name: '重试' }).click()
   await expect(page.locator('.story-manuscript')).toContainText(ACTION_LINE, { timeout: 20_000 })
   await expect(page.locator('.story-error')).toHaveCount(0)
   await expect(page.locator('.beat-paused--drama')).toBeVisible()
@@ -584,7 +584,7 @@ test('an unconfirmed Stop keeps the session key and says so', async ({ page }) =
   // Bounded re-asks, then an honest notice — the run may still be generating
   // on the server, so the session key survives for a real retry.
   await expect(page.locator('.beat-paused__notice')).toBeVisible({ timeout: 10_000 })
-  await expect(page.locator('.beat-paused__notice')).toContainText('停止尚未确认')
+  await expect(page.locator('.beat-paused__notice')).toContainText('还没停下来')
   expect(api.state.stopCalls).toBe(3)
   expect(await page.evaluate(() => localStorage.getItem('abq_story_session_id'))).toBe('net-story')
   await expect(page.locator('.story-error')).toHaveCount(0)
@@ -672,7 +672,7 @@ test('an unconfirmed Stop still fences a recovery that is already in flight', as
   api.failNextStops(99)
   await page.locator('.beat-paused__advanced summary').click()
   await page.locator('.beat-controls button', { hasText: '停止' }).first().click()
-  await expect(page.locator('.beat-paused__notice')).toContainText('停止尚未确认', { timeout: 15_000 })
+  await expect(page.locator('.beat-paused__notice')).toContainText('还没停下来', { timeout: 15_000 })
 
   const streamsAtStop = api.state.streamUrls.length
   const command = String(api.state.actions[0].command_id)
@@ -705,7 +705,7 @@ test('Stop during an in-flight resend still stops the run', async ({ page }) => 
   api.failNextStops(99)
   await page.locator('.beat-paused__advanced summary').click()
   await page.locator('.beat-controls button', { hasText: '停止' }).first().click()
-  await expect(page.locator('.beat-paused__notice')).toContainText('停止尚未确认', { timeout: 15_000 })
+  await expect(page.locator('.beat-paused__notice')).toContainText('还没停下来', { timeout: 15_000 })
 
   const streamsAtStop = api.state.streamUrls.length
   const command = String(api.state.actions[0].command_id)

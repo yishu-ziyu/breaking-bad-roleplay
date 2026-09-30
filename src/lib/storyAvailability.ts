@@ -211,7 +211,7 @@ const STORY_COMING_SOON: Record<StoryGateLanguage, StoryComingSoonCopy> = {
   },
   en: {
     badge: 'In development',
-    notice: 'Story mode is still in development and cannot be opened yet. Direct chat and Crew work right now.',
+    notice: 'Story mode is still in development and cannot be opened yet. 1:1 chat and group chat work right now.',
   },
 }
 

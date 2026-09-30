@@ -25,7 +25,7 @@ export type PlayModeBarProps = {
 
 const COPY: Record<'zh' | 'en', Record<PlayMode | 'label', string>> = {
   zh: { label: '玩法', story: '剧情', direct: '单聊', crew: '群聊' },
-  en: { label: 'Play', story: 'Story', direct: 'Direct', crew: 'Crew' },
+  en: { label: 'Mode', story: 'Story', direct: '1:1', crew: 'Group chat' },
 }
 
 const MODES: PlayMode[] = ['story', 'direct', 'crew']

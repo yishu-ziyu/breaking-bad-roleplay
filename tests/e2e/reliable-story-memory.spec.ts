@@ -182,7 +182,7 @@ test('Story uses stable action commands, restores the saved result and replays w
   await page.reload()
   await expect(page.locator('.story-manuscript')).toContainText('手机已经交到杰西手里。')
   await expect(page.locator('.story-manuscript__player').filter({ hasText: '把手机交给杰西' })).toHaveCount(1)
-  await page.getByRole('button', { name: '回看这一拍' }).click()
+  await page.getByRole('button', { name: '回看这一段' }).click()
   await expect(page.locator('.story-manuscript__dialogue').filter({ hasText: '好，我拿着。' })).toHaveCount(1)
   await expect(page.locator('vite-error-overlay')).toHaveCount(0)
   expect(errors).toEqual([])

@@ -48,17 +48,17 @@ export const DRAMA_DECISION_COPY = {
     kindSay: 'Say',
     kindDo: 'Do',
     kindObserve: 'Observe',
-    unfolding: 'The scene is unfolding…',
+    unfolding: 'The story is playing out…',
   },
   zh: {
     title: '你的决定',
-    continue: '让导演继续',
+    continue: '先不决定，接着演',
     freeSubmit: '决定',
     freePlaceholder: '或自由输入：你要说、做、或观察到什么…',
     kindSay: '说',
     kindDo: '做',
     kindObserve: '观察',
-    unfolding: '局面展开中…',
+    unfolding: '正在往下演…',
   },
 } as const
 

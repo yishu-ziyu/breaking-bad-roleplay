@@ -117,9 +117,9 @@ async function mockChatCrew(
 test('AC-1: fresh session shows the current three-mode showcase', async ({ page }) => {
   await gotoFresh(page)
   await expect(page.locator('.cold-open-showcase')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Start Story|开始故事/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /Start Conversation|选择角色对话/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /Enter Negotiation|进入群像会谈/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start story|开始剧情/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Chat 1:1|找人单聊/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Join group chat|进群聊/ })).toBeVisible()
 })
 
 /* ------------------------------------------------------------------ */
@@ -264,7 +264,7 @@ test('AC-8: crew debate renders a GIF card for each debate log', async ({ page }
   ])
 
   await gotoFresh(page)
-  await expect(page.locator('header.chat-header p')).toContainText(/Crew|群聊/)
+  await expect(page.locator('header.chat-header p')).toContainText(/Group chat|群聊/)
   await sendChatMessage(page, 'What is the plan?')
 
   const debateReplies = [
