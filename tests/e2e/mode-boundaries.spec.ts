@@ -67,6 +67,12 @@ test('unclassified legacy history stays readable but never enters new model cont
   })
   await page.goto('/')
   await expect(page.locator('.chat-stream')).not.toContainText('LEGACY_PRIVATE_MARKER')
+  // The archive toggle must sit on top of the chat stream, not underneath it.
+  const topmost = await page.locator('.chat-legacy-archive summary').evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('summary') === el
+  })
+  expect(topmost).toBe(true)
   await page.locator('.chat-legacy-archive summary').click()
   await expect(page.locator('.chat-legacy-archive')).toContainText('LEGACY_GROUP_MARKER')
   await send(page, 'Hello again')

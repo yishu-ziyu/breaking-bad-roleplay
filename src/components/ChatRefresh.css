@@ -217,3 +217,6 @@
   .chat-panel.chat-refresh { height: calc(100dvh - 52px); }
   .chat-refresh .composer button { min-width: 62px; width: auto; }
 }
+
+/* The legacy archive toggle sits above the chat stream so it stays clickable. */
+.chat-refresh .chat-legacy-archive { position: relative; z-index: 3; }

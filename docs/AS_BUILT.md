@@ -117,6 +117,7 @@ Vite 应用，并通过命令行 `--port` 覆盖配置；需要复用本地开�
 
 发送：`App.tsx` 1377–1395 → `POST /api/chat`。后端只收 `direct`/`crew`（`backend/api/routes.py` 1304–1334、1409–1426）→ `director.handle_chat_message`（`backend/agents/director.py` 2510–2535）。
 
+- 单聊开场白：按角色 × 关系（`src/lib/directOpeners.ts` 的 `OPENERS_BY_RELATION`，96 句，发消息形式）；八人各有 CONVERSATION BEHAVIOR（`backend/agents/characters/*.py`），单聊输出格式不再规定句数（`backend/agents/direct_chat_stack.py`）。2026-10-01。
 - 单聊：`bubbleFromDirectPayload`（`src/lib/directChatReply.ts` 16–29）。
 - 群聊：`bubblesFromCrewPayload`（`App.tsx` 1422–1426）。
 

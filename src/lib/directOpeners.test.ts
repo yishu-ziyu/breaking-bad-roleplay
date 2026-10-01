@@ -97,3 +97,55 @@ test('each playable character ships at least 12 openers', async () => {
     assert.ok((OPENERS_BY_CHARACTER[id]?.length ?? 0) >= 12, `${id} opener library too small`)
   }
 })
+
+// Relation options offered in src/App.tsx (characters[].relationOptions).
+const RELATIONS: Record<string, string[]> = {
+  walter: ['family member', 'lab partner', 'former student', 'DEA liability'],
+  jesse: ['partner', 'old friend', 'dealer contact', 'person he disappointed'],
+  skyler: ['spouse', 'family member', 'neighbor', 'person hiding something'],
+  saul: ['client', 'business partner', 'witness', 'problem to solve'],
+  mike: ['asset', 'employer', 'person under protection', 'loose end'],
+  gus: ['employee', 'supplier', 'guest', 'person being evaluated'],
+  hank: ['family member', 'DEA partner', 'suspect under watch', 'friend of the family'],
+  marie: ['Skyler sister-in-law', 'Hank spouse', 'supportive but uncomprehending', 'neighbor'],
+}
+
+test('every character × relation has its own text-message openers', async () => {
+  const { OPENERS_BY_RELATION } = await import('./directOpeners.ts') as {
+    OPENERS_BY_RELATION: Record<string, Record<string, DirectOpener[]>>
+  }
+  for (const [id, relations] of Object.entries(RELATIONS)) {
+    for (const rel of relations) {
+      const pool = OPENERS_BY_RELATION[id]?.[rel] ?? []
+      assert.ok(pool.length >= 2, `${id} / ${rel} needs at least 2 openers`)
+      for (const o of pool) assert.ok(o.zh && o.en, `${id}/${o.id} needs zh + en`)
+    }
+  }
+})
+
+test('openers are text messages, not same-room scenes', async () => {
+  const { OPENERS_BY_CHARACTER } = await import('./directOpeners.ts') as {
+    OPENERS_BY_CHARACTER: Record<string, DirectOpener[]>
+  }
+  const inPerson = /坐[下吧。]|先坐|进来[吧说坐。]|柜台|门廊|洗手|进门/
+  const inPersonEn = /\b(sit down|come in|counter|porch|wash your hands)\b/i
+  for (const [id, pool] of Object.entries(OPENERS_BY_CHARACTER)) {
+    for (const o of pool) {
+      assert.doesNotMatch(o.zh, inPerson, `${id}/${o.id} zh`)
+      assert.doesNotMatch(o.en, inPersonEn, `${id}/${o.id} en`)
+    }
+  }
+})
+
+test('the opener matches the relation the player picked', () => {
+  const picked = pickDirectOpener({
+    characterId: 'marie',
+    language: 'zh',
+    attitude: deriveAttitudeTint('Hank spouse'),
+    relation: 'Hank spouse',
+    recentIds: [],
+  })
+  assert.ok(picked)
+  assert.match(picked.id, /^marie\.hank-spouse\./)
+  assert.doesNotMatch(picked.text, /汉克不在/)
+})
