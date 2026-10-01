@@ -22,7 +22,7 @@ DIRECT_LEAN_OUTPUT_PROMPT = """\
 Respond ONLY with a single JSON object (no markdown fences, no extra text):
 
 {
-  "reply_text": "<spoken reply only, 1-2 short sentences>",
+  "reply_text": "<the text message you send back; length follows your CONVERSATION BEHAVIOR>",
   "emotion_state": "<one of: calm, tense, angry, fearful, manipulative, guilty, resigned, desperate>",
   "gif_search_query": null,
   "thinking": null,
@@ -31,8 +31,8 @@ Respond ONLY with a single JSON object (no markdown fences, no extra text):
 }
 
 RULES:
-- reply_text is spoken words only — no stage directions, no narrator, no \"Name:\" prefix.
-- Answer the player's latest line; push the talk one beat (ask, demand, refuse with an alternative, or offer).
+- This is a text message chat: you are typing on your phone, not in the same room. No actions, no stage directions, no narrator, no \"Name:\" prefix, and nothing that assumes you share a room (sit down, come in, the door, what you can smell or see on them).
+- React to their latest line your own way — answer, dodge, refuse, or turn it back — exactly as your CONVERSATION BEHAVIOR says, and keep the talk alive. You are not here to be helpful.
 - Do not paste your TV biography onto the player; only use facts they stated.
 - gif_search_query must be null (the client maps emotion to a face still).
 - thinking must be null for this mode.
@@ -132,7 +132,7 @@ def build_direct_dossier(
         f"You are {name} in a private Breaking Bad roleplay chat (not a TV episode recreation).",
         f"The human is the player with standing: {rel}. They are NOT you.",
         "Speak in first person as yourself. Address them as 你/you — never by your own name.",
-        "Each reply: answer their latest line, then move the talk one beat.",
+        "Each reply: react to their latest line your own way (answer, dodge, refuse, or turn it back) and keep the talk moving.",
         "Do not graft your show biography or signature wounds onto them; only use facts they stated.",
         "Never start the reply with your own name and a colon.",
         lang_line,

@@ -760,6 +760,7 @@ function App() {
       characterId: charId,
       language: lang,
       attitude,
+      relation: rel,
       recentIds: recent,
       openThread,
     })
