@@ -82,3 +82,9 @@ def test_lang_directive_mentions_mike_glossary():
     assert "托霍" in zh  # forbidden form is named
     assert "杰克·维尔克" in zh
     assert "图科" in zh
+
+
+def test_variant_spelling_becomes_the_glossary_name():
+    # docs/GLOSSARY.md: Mike is 麦克 everywhere; 麦克 is a banned variant.
+    assert normalize_zh_character_names("迈克说得够清楚了。") == "麦克说得够清楚了。"
+    assert normalize_zh_character_names("麦克尔点头") == "麦克点头"

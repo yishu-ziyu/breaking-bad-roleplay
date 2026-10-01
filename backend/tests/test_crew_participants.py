@@ -50,7 +50,7 @@ def test_chinese_aliases_pull_each_speaker():
         ("jesse", "沃尔特你说话", "Walter White"),
         ("walter", "杰西刚才说的是真的吗", "Jesse Pinkman"),
         ("walter", "古斯还在听吗", "Gus Fring"),
-        ("walter", "迈克怎么看", "Mike Ehrmantraut"),
+        ("walter", "麦克怎么看", "Mike Ehrmantraut"),
         ("walter", "索尔你接得住吗", "Saul Goodman"),
         ("walter", "斯凯勒知道多少", "Skyler White"),
         ("walter", "汉克要是打电话过来", "Hank Schrader"),

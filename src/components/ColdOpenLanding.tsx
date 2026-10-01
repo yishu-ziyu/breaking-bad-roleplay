@@ -307,7 +307,7 @@ export function ColdOpenLanding({
                   <img src="/avatars/illustrated/saul.png" alt="索尔" />
                 </div>
                 <div className="avatar-card-item">
-                  <img src="/avatars/illustrated/mike.png" alt="迈克" />
+                  <img src="/avatars/illustrated/mike.png" alt="麦克" />
                 </div>
                 <div className="avatar-card-item hank-crop">
                   <img src="/avatars/illustrated/hank.png" alt="汉克" />

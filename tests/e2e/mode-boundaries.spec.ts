@@ -126,3 +126,19 @@ test('Story recovery never changes the independent chat partner', async ({ page 
   await page.locator('.play-mode-bar').getByRole('button', { name: '1:1', exact: true }).click()
   await expect(page.locator('.chat-header h2')).toContainText('Saul')
 })
+
+test('group chat replies land one by one, with the next speaker typing in between', async ({ page }) => {
+  await setup(page, { surface: 'crew', language: 'zh' })
+  await page.route('**/api/chat', route => route.fulfill({ json: { debate_logs: [
+    { sender: 'walter', text: 'LEAD_LINE', emotion: 'calm' },
+    { sender: 'jesse', text: 'REACTION_LINE', emotion: 'tense' },
+  ] } }))
+  await page.goto('/')
+  await send(page, '沃尔特，你昨晚去哪了？')
+  await expect(page.locator('.chat-stream')).toContainText('LEAD_LINE')
+  // The second person types first; their line is not there yet.
+  await expect(page.locator('.typing__label')).toHaveText('杰西正在输入…')
+  await expect(page.locator('.chat-stream')).not.toContainText('REACTION_LINE')
+  await expect(page.locator('.chat-stream')).toContainText('REACTION_LINE')
+  await expect(page.locator('.typing')).toHaveCount(0)
+})

@@ -43,7 +43,7 @@ _DISPLAY: dict[str, dict[str, str]] = {
     "jesse": {"en": "Jesse", "zh": "杰西"},
     "skyler": {"en": "Skyler", "zh": "斯凯勒"},
     "saul": {"en": "Saul", "zh": "索尔"},
-    "mike": {"en": "Mike", "zh": "迈克"},
+    "mike": {"en": "Mike", "zh": "麦克"},
     "gus": {"en": "Gus", "zh": "古斯"},
     "hank": {"en": "Hank", "zh": "汉克"},
     "marie": {"en": "Marie", "zh": "玛丽"},
