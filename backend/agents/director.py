@@ -50,6 +50,11 @@ from scenes.state_reducer import apply_validated_turn
 from scenes.validator import validate_world_turn
 from scenes.world_mode import parse_world_mode
 from models.schemas import AgentEvent
+from agents.cast_relations import (
+    collect_other_ids,
+    crew_player_scope_note,
+    format_cast_relations_block,
+)
 from agents.memory import failed_delta_count, update_dossiers
 from sqlalchemy import select
 import httpx
@@ -760,6 +765,16 @@ def sanitize_direct_gif_query(query: str | None) -> str | None:
     if _GUN_GIF_RE.search(raw):
         return "tense"
     return query
+
+
+def _mention_text_from_chat(user_message: str, history: list[dict] | None) -> str:
+    """User line plus recent history so an earlier name still injects a row."""
+    parts = [str(user_message or "")]
+    if isinstance(history, list):
+        for turn in history[-6:]:
+            if isinstance(turn, dict):
+                parts.append(str(turn.get("text") or ""))
+    return "\n".join(parts)
 
 
 def crew_participants_from_message(character_id: str, user_message: str, *, cap: int = 3) -> list[str]:
@@ -2173,6 +2188,44 @@ class DirectorAgent:
                     logger.debug(
                         "Character intelligence inject failed for %s", character_id
                     )
+                try:
+                    present_ids: list[str] = []
+                    if beat_contract is not None:
+                        present_ids.extend(beat_contract.present_characters)
+                    if continuity_board is not None:
+                        present_ids.extend(
+                            str(x) for x in (continuity_board.get("present_cast") or [])
+                        )
+                    for planned in events:
+                        pdata = planned.get("data") if isinstance(planned, dict) else None
+                        if not isinstance(pdata, dict):
+                            continue
+                        if planned.get("type") != "agent_speak":
+                            continue
+                        cid = pdata.get("character_id")
+                        if cid:
+                            present_ids.append(str(cid))
+                    mention_text = f"{scene_desc}\n{task}\n"
+                    for prior in prior_spoken_lines:
+                        mention_text += (
+                            f"{prior.get('character_id', '')} {prior.get('content', '')}\n"
+                        )
+                    others = collect_other_ids(
+                        character_id,
+                        present_ids=present_ids,
+                        mention_text=mention_text,
+                    )
+                    rel_block = format_cast_relations_block(character_id, others)
+                    if rel_block:
+                        dossier_context = (
+                            f"{dossier_context}\n\n{rel_block}".strip()
+                            if dossier_context
+                            else rel_block
+                        )
+                except Exception:
+                    logger.debug(
+                        "Cast relation inject failed for %s", character_id
+                    )
                 peer_context: list[dict[str, str]] = []
                 for prior in prior_spoken_lines:
                     peer_context.append(
@@ -3112,6 +3165,7 @@ class DirectorAgent:
             play_mode="direct",
             era=chat_era,
             board=board,
+            mention_text=_mention_text_from_chat(user_message, history),
         )
         from agents.turn_runtime import TurnGenerationError, generate_accepted_turn
 
@@ -3257,6 +3311,10 @@ class DirectorAgent:
                 era=chat_era,
                 audience_ids=audience,
                 board=continuity_board,
+                mention_text=_mention_text_from_chat(user_message, history),
+                present_ids=participants_frontend,
+                primary_id=backend_primary,
+                primary_relation=relation,
             )
             last_prompt_block = actor_view.prompt_block()
             user_msg = (
@@ -3264,6 +3322,7 @@ class DirectorAgent:
                 f"[Reply language: {target_language} only.]\n"
                 f"{_language_directive(language)}\n"
                 f"You are {backend_name} in a crew scene. Speak only as yourself.\n"
+                f"{crew_player_scope_note(backend_primary, relation)}\n"
             )
             if prior_lines:
                 user_msg += "Already said in this crew beat (do not restart):\n" + "\n".join(prior_lines) + "\n"

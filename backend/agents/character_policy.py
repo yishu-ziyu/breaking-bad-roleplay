@@ -12,6 +12,11 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
+from agents.cast_relations import (
+    collect_other_ids,
+    crew_player_scope_note,
+    format_cast_relations_block,
+)
 from agents.character_intelligence import format_intelligence_prompt_block
 from agents.characters.gus import GUS_SYSTEM_PROMPT
 from agents.characters.hank import HANK_SYSTEM_PROMPT
@@ -63,6 +68,10 @@ class ActorView:
     audience_ids: list[str] = field(default_factory=list)
     visible_facts: list[str] = field(default_factory=list)
     world_mode: str = "alternate"
+    mention_text: str = ""
+    present_ids: list[str] = field(default_factory=list)
+    primary_id: str = ""
+    primary_relation: str = ""
 
     def prompt_block(self) -> str:
         """Player-facing policy + this turn's relation and known facts.
@@ -78,11 +87,23 @@ class ActorView:
                 "PLAYER RELATION (this turn — apply the matching RELATION TO PLAYER "
                 f"tactic from the policy card): {rel}"
             )
+        if self.play_mode == "crew" and (self.primary_id or self.primary_relation):
+            chunks.append(
+                crew_player_scope_note(self.primary_id, self.primary_relation)
+            )
         if self.audience_ids:
             chunks.append(
                 "AUDIENCE (who can hear this line): "
                 + ", ".join(self.audience_ids)
             )
+        others = collect_other_ids(
+            self.policy.actor_id,
+            present_ids=[*self.present_ids, *self.audience_ids],
+            mention_text=self.mention_text,
+        )
+        rel_block = format_cast_relations_block(self.policy.actor_id, others)
+        if rel_block:
+            chunks.append(rel_block)
         if self.visible_facts:
             fact_lines = "\n".join(f"- {f}" for f in self.visible_facts if f)
             chunks.append(
@@ -124,6 +145,10 @@ def compile_actor_view(
     visible_facts: list[str] | None = None,
     world_mode: str = "alternate",
     board: dict[str, Any] | None = None,
+    mention_text: str = "",
+    present_ids: list[str] | None = None,
+    primary_id: str = "",
+    primary_relation: str = "",
 ) -> ActorView:
     policy = compile_character_policy(character_id, era=era, play_mode=play_mode)
     facts = list(visible_facts or [])
@@ -142,4 +167,8 @@ def compile_actor_view(
         audience_ids=list(audience_ids or []),
         visible_facts=facts,
         world_mode=world_mode,
+        mention_text=mention_text or "",
+        present_ids=list(present_ids or []),
+        primary_id=primary_id or "",
+        primary_relation=primary_relation or "",
     )

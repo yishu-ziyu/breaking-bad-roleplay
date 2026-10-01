@@ -1,6 +1,6 @@
 # 现状地图（as-built）
 
-写于 2026-09-15，更新至 2026-09-18。只记当前工作区现在是什么。不写「应该是」。对不上写「打架」或「未读」。未提交/未部署的改动会明确标注。
+写于 2026-09-15，更新至 2026-10-01。只记当前工作区现在是什么。不写「应该是」。对不上写「打架」或「未读」。未提交/未部署的改动会明确标注。
 
 ## 已锁定（2026-09-17）
 
@@ -120,6 +120,7 @@ Vite 应用，并通过命令行 `--port` 覆盖配置；需要复用本地开�
 - 单聊开场白：按角色 × 关系（`src/lib/directOpeners.ts` 的 `OPENERS_BY_RELATION`，96 句，发消息形式）；八人各有 CONVERSATION BEHAVIOR（`backend/agents/characters/*.py`），单聊输出格式不再规定句数（`backend/agents/direct_chat_stack.py`）。2026-10-01。
 - 单聊：`bubbleFromDirectPayload`（`src/lib/directChatReply.ts` 16–29）。
 - 群聊：`bubblesFromCrewPayload`（`App.tsx` 1422–1426）。
+- 人物关系表（2026-10-01，未部署）：`backend/agents/cast_relations.py` 只记整剧成立的公开事实（谁是谁、怎么称呼、谁不熟；不含时期剧透）。单聊 / 群聊 / 剧情说话时注入与在场或被提到的人相关的行。群聊写明玩家只是主聊对象的关系，其他人不得编亲属或共享家庭。关系问答评测：`cd backend && uv run python -m eval.relationship_qa --label after`。
 
 Direct 当前工作区已接通：核心角色 policy 不再被轻量 dossier 覆盖；五类 durable memory 都以「检索到的对话数据」进入上下文；中文身份/秘密/承诺/态度/约定提取已补回归测试。仍未部署，见 §6。
 
