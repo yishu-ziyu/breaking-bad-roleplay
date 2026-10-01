@@ -434,6 +434,7 @@ class AgentHarnessService:
                 "玛丽": "marie",
                 "索尔": "saul",
                 "麦克": "mike",
+                "迈克": "mike",
                 "古斯": "gus",
             }
             # Prefer other cast members as the *about* focus; never default

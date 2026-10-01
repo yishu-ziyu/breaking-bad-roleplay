@@ -26,7 +26,7 @@
 | 产品名 | 绝命毒师 · 角色扮演 | Breaking Bad Roleplay | ABQ Roleplay、Roleplay Lab、Lab | 第一眼说清是什么；和新游戏「ABQ 账本」分开 |
 | 玩法 | 剧情 / 聊天（单聊、群聊） | Story / Chat (1:1, Group chat) | 互动剧情、长线剧情演绎、角色对话、角色深度对话、群像会谈、游玩模式 | 首页和切换条说同一套词；和代码 story / direct / crew 一一对应 |
 | 进入按钮 | 开始剧情 / 找人单聊 / 进群聊 | Start story / Chat 1:1 / Join group chat | 开始故事、选择角色对话、进入群像会谈 | 同上 |
-| 角色名 | 沃尔特、杰西、斯凯勒、索尔、迈克、古斯、汉克、玛丽 | Walter, Jesse, Skyler, Saul, Mike, Gus, Hank, Marie | 中文界面里的英文名；麦克；老白、小粉、炸鸡叔 | 正文、按钮、输入框用中文名；只有角色卡上加一行小字英文名 |
+| 角色名 | 沃尔特、杰西、斯凯勒、索尔、麦克、古斯、汉克、玛丽 | Walter, Jesse, Skyler, Saul, Mike, Gus, Hank, Marie | 中文界面里的英文名；迈克、米克；老白、小粉、炸鸡叔 | 正文、按钮、输入框用中文名；只有角色卡上加一行小字英文名。Mike 用「麦克」（2026-10-01 用户定，后端规范化同此） |
 | 剧情的一段 | 段（第 1 段、重试这一段） | part | 节点、一拍、这一拍、下一拍、节拍、幕间、分镜 | 玩家不需要懂戏剧术语 |
 | 剧情的一章 | 章 | chapter | — | — |
 | 推进剧情的后台 | （界面上不出现） | (never shown) | 导演、Director | director 是内部模块名；按钮只写动作：继续 / 换个方向 |

@@ -96,8 +96,8 @@ class TestB5_CrewChat:
 
     async def test_crew_chat_returns_debate_logs(self, director, mock_provider):
         """Given crew mode with valid LLM response, debate_logs is non-empty."""
-        mock_provider.call_model_with_tools = AsyncMock(
-            return_value=_mr(json.dumps({
+        mock_provider.call_model = AsyncMock(
+            return_value=(json.dumps({
                 "reply_text": "We need to discuss the lab situation.",
                 "emotion_state": "tense",
                 "gif_search_query": "walter white serious",
@@ -116,14 +116,15 @@ class TestB5_CrewChat:
         }
         result = await director._handle_crew_chat("walter", "What's the plan?", context)
         assert len(result["debate_logs"]) >= 1
+        assert result["debate_logs"][0]["text"] == "We need to discuss the lab situation."
         for log in result["debate_logs"]:
             assert "text" in log
             assert len(log["text"]) > 0, "Debate log entry has empty text"
 
     async def test_crew_chat_parses_fenced_json(self, director, mock_provider):
         """Independent crew turns still publish speakable lines."""
-        mock_provider.call_model_with_tools = AsyncMock(
-            return_value=_mr(json.dumps({
+        mock_provider.call_model = AsyncMock(
+            return_value=(json.dumps({
                 "reply_text": "Let us discuss business.",
                 "emotion_state": "calm",
                 "gif_search_query": "gus fring calm",
@@ -185,7 +186,10 @@ class TestLoop7_CrewVoiceInjection:
                 "tool_log": None,
             }))
 
-        mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
+        async def _lean(messages, *args, **kwargs):  # crew uses the lean texting transport
+            return (await _tools(messages, *args, **kwargs)).content
+
+        mock_provider.call_model = AsyncMock(side_effect=_lean)
         context = {
             "mode": "crew",
             "history": [],

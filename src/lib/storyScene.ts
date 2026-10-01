@@ -31,7 +31,7 @@ const FACE_NAME: Record<CharacterId, Record<ColdOpenLanguage, string>> = {
   jesse: { zh: '杰西', en: 'Jesse' },
   skyler: { zh: '斯凯勒', en: 'Skyler' },
   saul: { zh: '索尔', en: 'Saul' },
-  mike: { zh: '迈克', en: 'Mike' },
+  mike: { zh: '麦克', en: 'Mike' },
   gus: { zh: '古斯', en: 'Gus' },
   hank: { zh: '汉克', en: 'Hank' },
   marie: { zh: '玛丽', en: 'Marie' },

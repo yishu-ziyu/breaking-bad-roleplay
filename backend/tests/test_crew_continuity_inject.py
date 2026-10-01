@@ -57,7 +57,10 @@ async def test_crew_each_speaker_sees_only_own_board(director, mock_provider):
             return _reply("Jesse Pinkman", "Yeah, whatever.")
         return _reply("Walter White", "We stay precise.")
 
-    mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
+    async def _lean(messages, *args, **kwargs):  # crew uses the lean texting transport
+        return (await _tools(messages, *args, **kwargs)).content
+
+    mock_provider.call_model = AsyncMock(side_effect=_lean)
     context = {
         "mode": "crew",
         "history": [],
@@ -66,7 +69,7 @@ async def test_crew_each_speaker_sees_only_own_board(director, mock_provider):
         "llmProvider": "stepfun",
     }
     result = await director._handle_crew_chat(
-        "walter", "Jesse, what's the plan with Gus?", context
+        "walter", "Walter, Jesse, what do you make of Gus?", context
     )
     assert result["debate_logs"]
     assert len(captured) >= 2
@@ -93,7 +96,10 @@ async def test_crew_skyler_input_hides_gus_roof(director, mock_provider):
         captured.append(messages)
         return _reply("Skyler White", "I need the truth about this house.")
 
-    mock_provider.call_model_with_tools = AsyncMock(side_effect=_tools)
+    async def _lean(messages, *args, **kwargs):  # crew uses the lean texting transport
+        return (await _tools(messages, *args, **kwargs)).content
+
+    mock_provider.call_model = AsyncMock(side_effect=_lean)
     context = {
         "mode": "crew",
         "history": [],

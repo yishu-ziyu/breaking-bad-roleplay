@@ -334,7 +334,7 @@ _ACTOR_LABELS: dict[str, dict[str, str]] = {
     "jesse": {_LANG_ZH: "杰西", _LANG_EN: "Jesse"},
     "skyler": {_LANG_ZH: "斯凯勒", _LANG_EN: "Skyler"},
     "saul": {_LANG_ZH: "索尔", _LANG_EN: "Saul"},
-    "mike": {_LANG_ZH: "迈克", _LANG_EN: "Mike"},
+    "mike": {_LANG_ZH: "麦克", _LANG_EN: "Mike"},
     "gus": {_LANG_ZH: "古斯", _LANG_EN: "Gus"},
     "hank": {_LANG_ZH: "汉克", _LANG_EN: "Hank"},
     "marie": {_LANG_ZH: "玛丽", _LANG_EN: "Marie"},

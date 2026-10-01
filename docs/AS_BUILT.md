@@ -117,6 +117,7 @@ Vite 应用，并通过命令行 `--port` 覆盖配置；需要复用本地开�
 
 发送：`App.tsx` 1377–1395 → `POST /api/chat`。后端只收 `direct`/`crew`（`backend/api/routes.py` 1304–1334、1409–1426）→ `director.handle_chat_message`（`backend/agents/director.py` 2510–2535）。
 
+- 群聊（2026-10-01）：`backend/agents/crew_router.py` 决定谁说话——群成员 = 你选中的人 + 群里最近说过话的人 + 你直接称呼的人（最多 4 人；只是被提到不会被叫来）；每轮一个人主回，最多再一人插一句（被一起称呼 / 被说到 / 被点名 / 有冲突，且不连续两轮插话），然后轮到玩家。两人都走单聊同款发消息短格式；每人看到的历史里自己的话是自己的、别人标中文名，回复会剥掉名字前缀和串进来的别人台词。前端 `src/lib/crewReveal.ts` 逐个显示，第二人前有「正在输入…」。真模型评测：`cd backend && uv run python -m eval.crew_feel --label <名字>`。
 - 单聊开场白：按角色 × 关系（`src/lib/directOpeners.ts` 的 `OPENERS_BY_RELATION`，96 句，发消息形式）；八人各有 CONVERSATION BEHAVIOR（`backend/agents/characters/*.py`），单聊输出格式不再规定句数（`backend/agents/direct_chat_stack.py`）。2026-10-01。
 - 单聊：`bubbleFromDirectPayload`（`src/lib/directChatReply.ts` 16–29）。
 - 群聊：`bubblesFromCrewPayload`（`App.tsx` 1422–1426）。

@@ -8,7 +8,7 @@ const cast: { id: ChatCharacter; name: string; english: string; description: str
   { id: 'jesse', name: '杰西·平克曼', english: 'JESSE PINKMAN', description: '沃尔特的搭档。冲动，重感情。' },
   { id: 'saul', name: '索尔·古德曼', english: 'SAUL GOODMAN', description: '刑事律师。善于谈判，也善于寻找漏洞。' },
   { id: 'gus', name: '古斯·弗林', english: 'GUSTAVO FRING', description: '餐厅经营者。礼貌、谨慎，要求事情按计划进行。' },
-  { id: 'mike', name: '迈克·厄曼特劳特', english: 'MIKE EHRMANTRAUT', description: '前警察。务实、寡言，负责处理麻烦。' },
+  { id: 'mike', name: '麦克·厄曼特劳特', english: 'MIKE EHRMANTRAUT', description: '前警察。务实、寡言，负责处理麻烦。' },
   { id: 'skyler', name: '斯凯勒·怀特', english: 'SKYLER WHITE', description: '沃尔特的妻子。关注家庭，也留意他的隐瞒。' },
   { id: 'hank', name: '汉克·施拉德', english: 'HANK SCHRADER', description: '缉毒局探员。直率、敏锐，也是沃尔特的家人。' },
   { id: 'marie', name: '玛丽·施拉德', english: 'MARIE SCHRADER', description: '汉克的妻子、斯凯勒的妹妹。关心家人，喜欢追问。' },

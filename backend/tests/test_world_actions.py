@@ -245,7 +245,7 @@ def test_opening_cast_is_localized_for_each_language():
 
 def test_actor_and_location_labels_have_readable_fallbacks():
     assert actor_label("Walter White", "zh") == "沃尔特"
-    assert actor_label("mike", "zh") == "迈克"
+    assert actor_label("mike", "zh") == "麦克"
     assert actor_label("unknown_actor", "en") == "Unknown Actor"
     assert location_label("desert", "zh") == "荒漠"
     assert location_label("rv", "en") == "the RV"

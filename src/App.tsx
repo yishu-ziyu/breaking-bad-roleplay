@@ -40,6 +40,7 @@ import { canEnterStory, playModeBlocked, reclaimVisitorStorySurface, resolveAuth
 import { toDirectChatMemoryWire } from './lib/directChatMemory'
 import { getDirectWayfinders, isInspectableThinking } from './lib/directWayfinders'
 import { bubbleFromDirectPayload, bubblesFromCrewPayload } from './lib/directChatReply'
+import { revealCrewReplies } from './lib/crewReveal'
 import { rewriteOpenerText, syncOpenerLanguage } from './lib/openerLanguage'
 import {
   OPENERS_BY_CHARACTER,
@@ -158,7 +159,7 @@ const characters: Character[] = [
     relationOptions: ['client', 'business partner', 'witness', 'problem to solve'],
     opener: { en: 'Good news: you came to the right office. Bad news: that usually means something went very wrong.', zh: '好消息是：你找对办公室了。坏消息是：这通常说明事情已经非常不对劲。' },
   }, {
-    id: 'mike', name: 'Mike', nameZh: '迈克', color: '#b9c0a5',
+    id: 'mike', name: 'Mike', nameZh: '麦克', color: '#b9c0a5',
     oneLiner: { en: 'A former cop who cleaned up after everyone. Quiet, lethal, and exhausted by incompetence.', zh: '为所有人善后的前警探。安静、致命，厌倦了愚蠢。' },
     relationOptions: ['asset', 'employer', 'person under protection', 'loose end'],
     opener: { en: 'Sit down. Talk less. Start with the part you think I do not already know.', zh: '坐下。少说废话。从你以为我还不知道的部分开始。' },
@@ -258,6 +259,8 @@ const uiText: Record<Language, Record<string, string>> = {
     you: 'You',
     send: 'Send',
     waitingAs: '{character} is thinking…',
+    typingAs: '{character} is typing…',
+    crewWaiting: 'Someone in the group is typing…',
     inspectThinking: 'How they played it',
     messagePlaceholder: 'Say something to {character}…',
     privateScene: '1:1',
@@ -333,6 +336,8 @@ const uiText: Record<Language, Record<string, string>> = {
     you: '你',
     send: '发送',
     waitingAs: '{character}还在想…',
+    typingAs: '{character}正在输入…',
+    crewWaiting: '群里有人正在输入…',
     inspectThinking: '他怎么想的',
     messagePlaceholder: '对{character}说…',
     privateScene: '单聊',
@@ -828,6 +833,9 @@ function App() {
   }, [threadKey])
   const [sendingByThread, setSendingByThread] = useState<Record<string, boolean>>({})
   const isSending = sendingByThread[threadKey] ?? false
+  // Group chat: who is "typing" while the replies land one by one.
+  const [typingByThread, setTypingByThread] = useState<Record<string, string | null>>({})
+  const typingAs = typingByThread[threadKey] ?? null
   const setIsSending = useCallback((sending: boolean) => {
     setSendingByThread(prev => ({ ...prev, [threadKey]: sending }))
   }, [threadKey])
@@ -1421,10 +1429,16 @@ function App() {
           // Billed crew turn produced nothing visible — say so instead of
           // leaving the player's question hanging in silence.
           throw new Error(language === 'zh'
-            ? '辩论生成失败（本次不显示内容）。请重试。'
-            : 'The debate came back empty. Please try again.')
+            ? '群聊这次没有人回复，请重试。'
+            : 'Nobody in the group replied this time. Please try again.')
         }
-        updateMessages(current => [...current, ...debateReplies])
+        const replyThread = threadKey
+        await revealCrewReplies(debateReplies, {
+          append: (reply) => updateMessages(current => [...current, reply]),
+          setTyping: (who) => setTypingByThread(prev => ({ ...prev, [replyThread]: who })),
+          senderOf: (reply) => reply.sender,
+          signal: controller.signal,
+        })
 
         if (auth.user && cloudPrivacy.key && debateReplies.length > 0) {
           setSyncStatus('syncing')
@@ -1628,6 +1642,12 @@ function App() {
       ? `第 ${day + 1} 天 · ${todLabel} · ${weatherLabel}`
       : `Day ${day + 1} · ${todLabel} · ${weatherLabel}`
   }, [latestWorldDelta?.data?.world_clock, language])
+  const typingChar = typingAs ? characters.find(c => c.id === typingAs) : undefined
+  const typingLabel = typingChar
+    ? t.typingAs.replace('{character}', charName(typingChar, language))
+    : mode === 'crew'
+      ? t.crewWaiting
+      : t.waitingAs.replace('{character}', charName(selectedChar, language))
   const storyBeatLabel = language === 'zh'
     ? `第 ${Math.max(story.beatIndex, 1)} 段`
     : `Part ${Math.max(story.beatIndex, 1)}`
@@ -2290,7 +2310,7 @@ function App() {
             {isSending && (
               <div className="typing" aria-live="polite">
                 <span className="dot" /><span className="dot" /><span className="dot" />
-                <span className="typing__label">{t.waitingAs.replace('{character}', charName(selectedChar, language))}</span>
+                <span className="typing__label">{typingLabel}</span>
               </div>
             )}
             {error && <ErrorBox message={error} onDismiss={() => setError(null)} />}

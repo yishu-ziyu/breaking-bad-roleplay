@@ -120,7 +120,7 @@ LANG_DIRECTIVE = {
         "- 短句、直接、带停顿；宁可少说，不说废话；表达要像中文母语者在说话。\n"
         "- 内心独白（thought_content）同样遵守，禁止书面翻译腔。\n"
         "角色中文名必须用下列固定译名（禁止音译乱写）：\n"
-        "Mike/Mike Ehrmantraut → 麦克（禁止「米克」）；\n"
+        "Mike/Mike Ehrmantraut → 麦克（禁止「米克」「迈克」）；\n"
         "Walter/Walter White → 沃尔特；Jesse/Jesse Pinkman → 杰西；\n"
         "Skyler/Skyler White → 斯凯勒；Saul/Saul Goodman → 索尔；\n"
         "Gus/Gus Fring → 古斯；Hank/Hank Schrader → 汉克；Marie → 玛丽；\n"
@@ -334,6 +334,7 @@ _ZH_NAME_FIXES: tuple[tuple[str, str], ...] = (
     ("托霍", "托德"),  # LLM mangling of Todd
     ("米克", "麦克"),
     ("麦克尔", "麦克"),
+    ("迈克", "麦克"),
     ("沃尔特怀特", "沃尔特"),
     ("杰西平克曼", "杰西"),
     # English first names that leak into Chinese dialogue
@@ -724,29 +725,6 @@ CHARACTER_AGENTS: dict[str, Any] = {
 }
 
 # Crew mention → cast (word boundaries; no bare "dea").
-_CREW_MENTION_PATTERNS: tuple[tuple[str, str], ...] = (
-    (r"\bsaul\b", "Saul Goodman"),
-    (r"\bmike\b", "Mike Ehrmantraut"),
-    (r"\bgus\b", "Gus Fring"),
-    (r"\bskyler\b", "Skyler White"),
-    (r"\bjesse\b", "Jesse Pinkman"),
-    (r"\bhank\b", "Hank Schrader"),
-    (r"\bschrader\b", "Hank Schrader"),
-    (r"\bmarie\b", "Marie Schrader"),
-)
-
-# CJK names have no word boundary; match as substrings on the original text.
-_CREW_CJK_ALIASES: tuple[tuple[str, str], ...] = (
-    ("沃尔特", "Walter White"),
-    ("杰西", "Jesse Pinkman"),
-    ("古斯", "Gus Fring"),
-    ("迈克", "Mike Ehrmantraut"),
-    ("索尔", "Saul Goodman"),
-    ("斯凯勒", "Skyler White"),
-    ("汉克", "Hank Schrader"),
-    ("玛丽", "Marie Schrader"),
-)
-
 _GUN_GIF_RE = re.compile(r"gun|pistol|rifle|weapon|firearm|举枪|手枪", re.IGNORECASE)
 
 
@@ -766,19 +744,14 @@ def crew_participants_from_message(character_id: str, user_message: str, *, cap:
     """Return backend character names for a crew turn (primary first, max cap).
 
     Raises ``UnknownCharacterError`` when the primary id is not playable —
-    crew must never quietly answer as Walter White.
+    crew must never quietly answer as Walter White. Name matching lives in
+    ``agents.crew_router`` (one alias table for routing and participants).
     """
+    from agents.crew_router import mentions_in_order
+
     backend_primary = resolve_playable_character_id(character_id)
-    participants: list[str] = [backend_primary]
-    raw = user_message or ""
-    text_lower = raw.lower()
-    for alias, backend_name in _CREW_CJK_ALIASES:
-        if alias in raw and backend_name not in participants:
-            participants.append(backend_name)
-    for pattern, backend_name in _CREW_MENTION_PATTERNS:
-        if re.search(pattern, text_lower) and backend_name not in participants:
-            participants.append(backend_name)
-    return participants[:cap]
+    named = [n for n in mentions_in_order(user_message) if n != backend_primary]
+    return [backend_primary, *named][:cap]
 
 
 class DirectorAgent:
@@ -2193,7 +2166,7 @@ class DirectorAgent:
                         "thinking 必须是该角色私密内心（1-3 句），从面具底下写，"
                         "禁止旁白腔、禁止解说剧情功能。"
                         + (ZH_SPEAK_GUARD if zh_guard else "")
-                        + "角色中文名固定：Mike→麦克（禁米克）、Walter→沃尔特、"
+                        + "角色中文名固定：Mike→麦克（禁米克、迈克）、Walter→沃尔特、"
                         "Jesse→杰西、Skyler→斯凯勒、Saul→索尔、Gus→古斯、"
                         "Hank→汉克、Todd→托德（禁托霍）、Jack Welker→杰克·维尔克"
                         "（禁杰克·托霍）、Tuco→图科。"
@@ -2694,7 +2667,7 @@ class DirectorAgent:
                     "You translate Breaking Bad roleplay lines into natural Simplified Chinese. "
                     "Keep character voice and pressure. Output ONLY the Chinese translation, "
                     "no quotes, no English. "
-                    "Name glossary (mandatory): Mike→麦克 (never 米克), Walter→沃尔特, "
+                    "Name glossary (mandatory): Mike→麦克 (never 米克 or 迈克), Walter→沃尔特, "
                     "Jesse→杰西, Skyler→斯凯勒, Saul→索尔, Gus→古斯, Hank→汉克, Marie→玛丽, "
                     "Todd→托德 (never 托霍), Jack Welker→杰克·维尔克 (never 杰克·托霍), "
                     "Tuco→图科, Gale→盖尔, Gomez→戈麦兹, Lydia→莉迪亚."
@@ -3182,8 +3155,12 @@ class DirectorAgent:
         """Crew: one accepted turn per speaker, each with their own ActorView."""
         llm_provider: str = context.get("llmProvider", "stepfun")
         provider_prefix = "minimax" if llm_provider == "minimax" else "stepfun"
-        participants_backend = crew_participants_from_message(character_id, user_message)
-        backend_primary = participants_backend[0]
+        from agents.crew_router import clean_crew_line, crew_history_for, crew_room, pick_lead, pick_reactor
+
+        backend_primary = resolve_playable_character_id(character_id)
+        raw_history = context.get("history", [])
+        room_history = raw_history if isinstance(raw_history, list) else []
+        participants_backend = crew_room(backend_primary, room_history, user_message)
         participants_frontend = [
             BACKEND_TO_FRONTEND_ID.get(name, name.lower().split()[0])
             for name in participants_backend
@@ -3191,16 +3168,6 @@ class DirectorAgent:
         relation: str = context.get("relation", "partner")
         language: str = context.get("language", "en")
         target_language = "Simplified Chinese" if language == "zh" else "English"
-        history: list[dict] = context.get("history", [])
-        ctx_messages: list[dict] = []
-        if isinstance(history, list):
-            for turn in history[-6:]:
-                role = turn.get("sender", "user")
-                text = turn.get("text", "")
-                if role == "user":
-                    ctx_messages.append({"role": "user", "content": text})
-                else:
-                    ctx_messages.append({"role": "assistant", "content": f"{role}: {text}"})
         from agents.character_policy import compile_actor_view
         from agents.continuity_board import load_or_init_session_board
         from agents.turn_runtime import TurnGenerationError, generate_accepted_turn
@@ -3241,13 +3208,22 @@ class DirectorAgent:
             fallback=model_route,
         )
         audience = [BACKEND_TO_FRONTEND_ID.get(n, n) for n in participants_backend]
-        prior_lines: list[str] = []
+        group_block = (
+            "This is a group text chat. In the chat: "
+            + ", ".join(participants_backend)
+            + ", and the player. Everyone reads every message.\n"
+            f"The player is {backend_primary}'s {relation}. Nobody else is related to the player "
+            "unless the player says so; do not invent kinship.\n"
+            "Only you are typing right now: speak only as yourself, never for the others."
+        )
         debate_logs: list[dict[str, Any]] = []
         last_prompt_block = ""
-        for backend_name in participants_backend:
+
+        async def _speak(backend_name: str, turn_message: str) -> str | None:
+            nonlocal last_prompt_block
             char_cls = CHARACTER_AGENTS.get(backend_name)
             if char_cls is None:
-                continue
+                return None
             rel = relation if backend_name == backend_primary else "crew peer"
             actor_view = compile_actor_view(
                 backend_name,
@@ -3259,47 +3235,68 @@ class DirectorAgent:
                 board=continuity_board,
             )
             last_prompt_block = actor_view.prompt_block()
-            user_msg = (
-                f"{user_message}\n\n"
-                f"[Reply language: {target_language} only.]\n"
-                f"{_language_directive(language)}\n"
-                f"You are {backend_name} in a crew scene. Speak only as yourself.\n"
-            )
-            if prior_lines:
-                user_msg += "Already said in this crew beat (do not restart):\n" + "\n".join(prior_lines) + "\n"
             try:
                 accepted = await generate_accepted_turn(
                     char_cls(self.provider),
                     actor_view=actor_view,
-                    user_message=user_msg,
-                    context=ctx_messages,
+                    user_message=turn_message,
+                    context=crew_history_for(backend_name, room_history, language=language),
                     model_route=model_route,
                     backend_id=backend_name,
                     board=continuity_board,
                     world_mode=context.get("world_mode") or "alternate",
-                    voice_example=context.get("voiceExample"),
                     language=language,
+                    extra_dossier=group_block,
+                    lean_chat=True,
                 )
             except TurnGenerationError:
                 logger.warning("Crew turn failed for %s", backend_name)
-                continue
+                return None
             if accepted is None:
-                continue
+                return None
             result = accepted.result
-            line = str(result.get("reply_text") or "").strip()
+            line = clean_crew_line(str(result.get("reply_text") or ""), backend_name)
+            if line and _norm_lang(language) == "zh":
+                line = normalize_zh_character_names(line)
+                if _needs_zh_rewrite(line):
+                    line = (await self._translate_one_field_to_zh(line, model_route=model_route)).strip()
             if not line:
-                continue
-            prior_lines.append(f"{backend_name}: {line}")
+                return None
             debate_logs.append({
                 "sender": BACKEND_TO_FRONTEND_ID.get(backend_name, backend_name.lower().split()[0]),
                 "text": line,
                 "emotion": result.get("emotion_state"),
-                "gifQuery": result.get("gif_search_query"),
-                "thinking": result.get("thinking"),
-                "tool_executed": result.get("tool_executed"),
-                "tool_log": result.get("tool_log"),
+                "gifQuery": None,
+                "thinking": None,
+                "tool_executed": None,
+                "tool_log": None,
                 "policy_version": accepted.policy_version,
             })
+            return line
+
+        language_lines = f"[Reply language: {target_language} only.]\n{_language_directive(language)}\n"
+        lead = pick_lead(participants_backend, user_message, history=room_history)
+        lead_line = await _speak(lead, f"{user_message}\n\n{language_lines}")
+        reactor = (
+            pick_reactor(
+                participants_backend,
+                lead=lead,
+                lead_reply=lead_line,
+                user_message=user_message,
+                history=room_history,
+            )
+            if lead_line
+            else None
+        )
+        if reactor:
+            await _speak(
+                reactor,
+                f"{lead} just wrote in the group: \u201c{lead_line}\u201d\n"
+                f"(The player had written: \u201c{user_message}\u201d)\n"
+                f"React to {lead} in one short line, a few words to one sentence. "
+                "You are reacting to them, not answering the player from scratch.\n"
+                f"{language_lines}",
+            )
         if not debate_logs:
             debate_logs = [{
                 "sender": BACKEND_TO_FRONTEND_ID.get(backend_primary, "walter"),
