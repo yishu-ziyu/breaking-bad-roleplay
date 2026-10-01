@@ -80,12 +80,10 @@ async def _crew(director: DirectorAgent, primary: str, relation: str, message: s
 def _score_logs(speaker: str, logs: list[dict]) -> dict:
     texts = [row["text"] for row in logs if row.get("sender") == speaker]
     if not texts:
-        # On main, mentioning a name can pull that person in; still score the
-        # intended speaker if they answered under any nearby id.
-        texts = [row["text"] for row in logs]
+        return {"texts": [], "flags": ["no_speaker_line"], "pass": False}
     joined = "\n".join(texts)
     flags = flag_relation_errors(speaker, joined)
-    return {"texts": texts, "flags": flags, "pass": not flags and bool(texts)}
+    return {"texts": texts, "flags": flags, "pass": not flags}
 
 
 async def run(label: str) -> dict:
