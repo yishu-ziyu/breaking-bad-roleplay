@@ -64,6 +64,12 @@ import { HomePreview } from './components/HomePreview'
 import './components/HomePreview.css'
 import './components/ChatRefresh.css'
 import { PlayModeBar, type PlayMode } from './components/PlayModeBar'
+import { RelationPills } from './components/RelationPills'
+import {
+  relationExplanation,
+  relationLockCopy,
+  relationPrototypeEnabled,
+} from './lib/relationPrototype'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -662,6 +668,8 @@ function App() {
    * the same. Gate + copy live in `src/lib/storyAvailability.ts`. */
   const [authoringMode] = useState(() => resolveAuthoringMode())
   const storyOpen = canEnterStory(authoringMode)
+  /** #83 prototype only. Default product still uses the header <select>. */
+  const [relationProto] = useState(() => relationPrototypeEnabled())
   /** Visitor pressed a blocked 剧情 entry in the settings drawer. */
   const [storyClosedNotice, setStoryClosedNotice] = useState(false)
 
@@ -2171,6 +2179,7 @@ function App() {
         <section className={`chat-panel chat-refresh ${sceneReady ? 'is-crossfade' : ''}`}>
           <div className="scene-layer scene-layer--prev" style={{ backgroundImage: prevSceneUrl ? `url(${prevSceneUrl})` : 'none' } as CSSProperties} />
           <div className="scene-layer scene-layer--current" style={{ backgroundImage: `url(${currentSceneUrl})` } as CSSProperties} />
+          <div className="chat-header-stack">
           <header className="chat-header">
             <div>
               <p>{mode === 'crew' ? t.crewScene : t.privateScene}</p>
@@ -2193,6 +2202,7 @@ function App() {
               }}
             />
             <a className="chat-character-link" href="/?home=preview#characters">{language === 'zh' ? '选择角色' : 'Characters'}</a>
+            {!relationProto && (
             <label className="chat-header__relation" htmlFor="chat-relation">
               <span className="chat-header__relation-prefix">{relationPrefix(selectedChar, language)}</span>
               {relationLocked ? (
@@ -2212,7 +2222,26 @@ function App() {
                 </select>
               )}
             </label>
+            )}
           </header>
+          {relationProto && (
+            <RelationPills
+              prefix={relationPrefix(selectedChar, language)}
+              options={selectedChar.relationOptions}
+              value={relation}
+              locked={relationLocked}
+              language={language}
+              labels={Object.fromEntries(
+                selectedChar.relationOptions.map((opt) => [opt, getRelationLabel(opt, language)]),
+              )}
+              explanations={Object.fromEntries(
+                selectedChar.relationOptions.map((opt) => [opt, relationExplanation(opt, language)]),
+              )}
+              lockHint={relationLockCopy(language)}
+              onChange={(next) => setRelationByChar((prev) => ({ ...prev, [threadKey]: next }))}
+            />
+          )}
+          </div>
 
           {legacyMessages.length > 0 && (
             <details className="chat-legacy-archive" key={selectedCharId}>
