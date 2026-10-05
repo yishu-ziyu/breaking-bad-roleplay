@@ -95,8 +95,8 @@ export function RelationPills({
                 onClick={() => onChange(option)}
               >
                 <span className="relation-pills__row">
-                  <span className="relation-pills__name">{label}</span>
                   {selected ? <span className="relation-pills__chosen">{selectedWord}</span> : null}
+                  <span className="relation-pills__name">{label}</span>
                 </span>
                 <span className="relation-pills__explain">{explanations[option] ?? ''}</span>
               </button>

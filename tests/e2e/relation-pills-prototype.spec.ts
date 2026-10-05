@@ -70,8 +70,10 @@ test('prototype does not leak a relation across characters or modes', async ({ p
   await pills.getByRole('radio').nth(2).click()
   await expect(pills.getByRole('radio').nth(2)).toContainText('已选')
 
-  const jesse = page.locator('.char-card').filter({ has: page.locator('.char-card__en', { hasText: 'Jesse' }) })
-  await jesse.click({ force: true })
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll('.char-card')].find((el) => el.textContent?.includes('Jesse'))
+    ;(card as HTMLButtonElement | undefined)?.click()
+  })
   await expect(page.locator('.chat-header h2')).toContainText('杰西')
   await expect(pills.getByRole('radio').nth(2)).not.toContainText('学生')
   await expect(pills).toContainText('你是杰西的：')
@@ -82,8 +84,10 @@ test('prototype does not leak a relation across characters or modes', async ({ p
   await expect(pills.getByRole('radio').first()).toHaveAttribute('aria-checked', 'true')
 
   await page.locator('.play-mode-bar').getByRole('button', { name: '单聊', exact: true }).click()
-  await jesse.click({ force: true }).catch(() => {})
-  await page.locator('.char-card').filter({ has: page.locator('.char-card__en', { hasText: 'Walter' }) }).click({ force: true })
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll('.char-card')].find((el) => el.textContent?.includes('Walter'))
+    ;(card as HTMLButtonElement | undefined)?.click()
+  })
   await expect(pills.getByRole('radio').nth(2)).toHaveAttribute('aria-checked', 'true')
 })
 

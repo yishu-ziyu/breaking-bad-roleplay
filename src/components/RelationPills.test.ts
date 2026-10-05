@@ -50,7 +50,7 @@ describe('RelationPills prototype', () => {
 
   it('marks the current option in text and expands its one-line explanation', () => {
     const html = render({ value: 'lab partner' })
-    assert.match(html, /is-selected[^>]*>[\s\S]*实验室搭档[\s\S]*已选[\s\S]*一起干活的搭档/)
+    assert.match(html, /is-selected[^>]*>[\s\S]*已选[\s\S]*实验室搭档[\s\S]*一起干活的搭档/)
     assert.match(html, /aria-checked="true"/)
     assert.match(html, /aria-label="实验室搭档 · 已选"/)
   })

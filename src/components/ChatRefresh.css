@@ -249,7 +249,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  align-items: stretch;
+  align-items: flex-start;
 }
 .chat-refresh .relation-pills__option {
   display: flex;
@@ -270,19 +270,21 @@
 }
 .chat-refresh .relation-pills__row {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px 8px;
 }
 .chat-refresh .relation-pills__name {
   font: 600 13px/1.3 'Noto Sans SC', 'PingFang SC', sans-serif;
 }
 .chat-refresh .relation-pills__chosen {
+  flex: 0 0 auto;
   font: 600 11px/1.2 'Noto Sans SC', 'PingFang SC', sans-serif;
   letter-spacing: 0.04em;
 }
 .chat-refresh .relation-pills__explain {
   display: block;
-  max-width: 28em;
+  max-width: 20em;
   max-height: 0;
   margin: 0;
   overflow: hidden;
